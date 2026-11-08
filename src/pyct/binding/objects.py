@@ -1,24 +1,26 @@
 """An object in the walk: whether its attributes are followed, which they are, and how its
 copy takes a new value for one.
 
-An object is followed when its class copies by Python's default route and it holds an
-attribute, or is a subclass of dict or list, and then once ``copy.deepcopy`` makes a new object
-of it of the same type, which is also the test that it can be copied: a module or an object
-holding a lock is refused, and reaches the target as it came. A class, a function, an enum
-member and a bound method are never followed.
+An object is followed when its class copies by Python's default route (``copies_by_default``)
+and it holds an attribute, or is a subclass of dict or list, and then once ``copy.deepcopy``
+makes a faithful copy of it (``faithful``), which is also the test that it can be copied: a
+module or an object holding a lock is refused, and reaches the target as it came. A class, a
+function, an enum member and a bound method are never followed.
 """
 
 from __future__ import annotations
 
+import copyreg
 import keyword
 import types
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import cast
 
 from pyct.core.foundation.branch import Expression
 
-# the methods a class may copy itself by, in place of Python's default route
-_HOOKS = ("__deepcopy__", "__copy__", "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__")
+# the methods deepcopy's route calls, or makes the new object by, that a class may write its own
+_HOOKS = ("__deepcopy__", "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__", "__new__")
 
 # what a hook built into Python is: object's own, or a builtin or extension type's
 _BUILT_IN = (
@@ -75,15 +77,35 @@ def followed(value: object) -> bool:
 
 def copies_by_default(cls: type) -> bool:
     """Whether deepcopy copies an instance of a class by Python's default route: no class on
-    its MRO defines a copy or pickling hook in Python code. A hook built into Python, object's
-    own or a builtin or extension type's, is that route; one written in Python may give back a
-    copy of any shape, or another object altogether, so what it makes is handed on as made."""
+    its MRO defines ``__deepcopy__``, ``__reduce__``, ``__reduce_ex__``, ``__getstate__``,
+    ``__setstate__`` or ``__new__`` in Python code, and none has a reducer registered in
+    ``copyreg.dispatch_table``. A method built into Python, object's own or a builtin or
+    extension type's, is that route."""
     for each in cls.__mro__:
+        if each in copyreg.dispatch_table:
+            return False
         for name in _HOOKS:
             hook = each.__dict__.get(name)
             if hook is not None and not isinstance(hook, _BUILT_IN):
                 return False
     return True
+
+
+def faithful(value: object, made: object) -> bool:
+    """Whether a deepcopy is a new object of the original's type and shape: a list subclass's
+    length, a dict subclass's keys, equal and in the same order, and the keys of the
+    ``__dict__``, as the original holds them."""
+    if made is value or type(made) is not type(value):
+        return False
+    # the copy is of the value's own type, so a list's copy is a list and a dict's a dict
+    if isinstance(value, list) and list.__len__(cast(list[object], made)) != list.__len__(value):
+        return False
+    if isinstance(value, dict) and list(dict.keys(cast(dict[object, object], made))) != list(
+        dict.keys(value)
+    ):
+        return False
+    fields, copied = own_fields(value), own_fields(made)
+    return (fields is None) == (copied is None) and list(fields or ()) == list(copied or ())
 
 
 def attributes(value: object, made: object) -> Attributes:

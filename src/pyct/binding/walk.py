@@ -1,5 +1,6 @@
-"""One walk of a seed: every dict, list and tuple rebuilt, every object's attributes followed,
-and every value bind tracks handed to a visitor.
+"""One walk of a seed: every dict, list and tuple rebuilt, the attributes of each object whose
+class passes the copy rule (``objects``) followed, and every value bind tracks handed to a
+visitor.
 
 bind, the seed's leaves and the model all read this one walk, so they cannot disagree about
 which values are tracked, what each is named, or which lists and dicts are tracked whole.
@@ -22,9 +23,8 @@ from pyct.binding.tuples import (
     PlainCopy,
     Slot,
     TupleBuild,
+    build_order,
     buildable,
-    holding,
-    innermost_first,
 )
 from pyct.core.foundation.branch import Expression
 
@@ -118,8 +118,10 @@ class Walk:
     the walk does not follow is held back: once every path is walked, each
     tuple is built from its items, innermost first, of its own type, and
     each held-back value is copied whole by deepcopy over the walk's copies,
-    and each goes everywhere the walk put it at once. So a set, a deque or a
-    bound method holds the same tuple as every other path.
+    the tuples built so far among them, and each goes everywhere the walk
+    put it at once. So a set, a deque or a bound method holds the same
+    tuple as every other path, and so does a held-back value inside a
+    tuple, unless it holds a tuple that itself holds a held-back value.
     """
 
     def __init__(self, visitor: Visitor) -> None:
@@ -201,7 +203,7 @@ class Walk:
         """A container's or an object's copy, made the first time the walk reaches it, and what
         it takes; None for a copy handed on as it is (see ``_takes``)."""
         if type(value) is not list and type(value) is not dict:
-            made = self._deep_copy(value, _followed_copy)
+            made = self._deep_copy(value, _followed_copy, faithful_only=True)
             return made, _takes(value, made, place.check)
         items: list[object] | dict[object, object]
         if isinstance(value, list) and access is not None:
@@ -259,23 +261,29 @@ class Walk:
     def _finish(self) -> None:
         """Build every tuple and copy every value held back, now that every path is walked.
 
-        Tuples go innermost first. One that holds a value held back, itself
-        or through a tuple inside it, waits until those values are copied,
-        and they are copied after every other tuple is built, so each copy
+        Tuples go in ``build_order``: each after the tuples its items hold,
+        and just after the values held back among its items are copied. Each
+        built tuple joins the walk's copies, which every later deepcopy reads,
+        and the values held back that no tuple holds are copied last, so each
         holds the tuples the walk built.
         """
-        order = innermost_first(self._tuples.values(), self._owners)
-        waiting = holding(order, self._plain.values(), self._owners)
-        for build in order:
-            if id(build) not in waiting:
-                self._build(build)
+        copied: set[int] = set()
+        order = build_order(list(self._tuples.values()), self._plain.values(), self._owners)
+        for build, among in order:
+            for plain in among:
+                self._copy_whole(plain, copied)
+            self._build(build)
         for plain in self._plain.values():
-            copied = self._deep_copy(plain.value, _any_copy)
-            for into, slot in plain.placements:
-                _put(into, slot, copied, plain.value)
-        for build in order:
-            if id(build) in waiting:
-                self._build(build)
+            self._copy_whole(plain, copied)
+
+    def _copy_whole(self, plain: PlainCopy, copied: set[int]) -> None:
+        """Copy a value held back, once, and put the copy everywhere the walk put it."""
+        if id(plain) in copied:
+            return
+        copied.add(id(plain))
+        made = self._deep_copy(plain.value, _any_copy)
+        for into, slot in plain.placements:
+            _put(into, slot, made, plain.value)
 
     def _build(self, build: TupleBuild) -> None:
         """Build a tuple from its items, with ``tuple.__new__`` so a namedtuple's own
@@ -285,7 +293,9 @@ class Walk:
         for into, slot in build.placements:
             _put(into, slot, made, build.value)
 
-    def _deep_copy(self, value: object, joins: Callable[[object], bool]) -> object:
+    def _deep_copy(
+        self, value: object, joins: Callable[[object], bool], *, faithful_only: bool = False
+    ) -> object:
         """A copy of a value the walk does not rebuild, or the value itself when it has none.
 
         deepcopy runs any ``__deepcopy__`` or pickling hook a value brings,
@@ -293,7 +303,10 @@ class Walk:
         came. deepcopy records a copy before it fills it, so it copies into a
         scratch memo over the walk's own, and only a copy that finishes joins
         the walk's: a refused one leaves no half-made copy behind. Of the
-        copies made inside the value, only those ``joins`` takes join.
+        copies made inside the value, only those ``joins`` takes join, and
+        with ``faithful_only`` none does unless the copy is faithful (see
+        ``objects.faithful``), so nothing under a copy handed on plain is
+        followed.
         """
         scratch = _Scratch(self._copies)
         try:
@@ -303,7 +316,8 @@ class Walk:
         # deepcopy keeps what it copied alive in a list under the memo's own identity, which the
         # scratch memo gives up when it goes, so the walk keeps them instead
         self._kept.extend(scratch.pop(id(scratch), []))
-        self._copies.update((key, made) for key, made in scratch.items() if joins(made))
+        if not faithful_only or objects.faithful(value, copied):
+            self._copies.update((key, made) for key, made in scratch.items() if joins(made))
         if copied is not value:
             self._copies[id(value)] = copied
             self._kept.append(value)
@@ -358,14 +372,15 @@ def _takes(value: object, made: object, check: Check | None) -> _Insides | None:
     """What a value takes from the walk into its copy: a list's items, a dict's, or an object's
     attributes.
 
-    None for a copy that is the value itself, or one of another type, which deepcopy hands
-    back for a class that copies itself: that copy is handed on as deepcopy made it.
+    None for a copy that is not faithful to the value (see ``objects.faithful``), as a class
+    whose own ``append`` or ``__setitem__`` changes what it holds makes: that copy is handed
+    on as deepcopy made it.
     """
     if type(value) is list:
         return list(cast(list[object], value))
     if type(value) is dict:
         return keyed(cast(dict[object, object], value), check)
-    if made is value or type(made) is not type(value):
+    if not objects.faithful(value, made):
         return None
     if isinstance(value, list):
         return list(value)

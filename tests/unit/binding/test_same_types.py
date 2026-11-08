@@ -1,7 +1,11 @@
+import enum
 import json
 import time
 from collections import defaultdict, deque, namedtuple
+from dataclasses import dataclass
 from typing import Any
+
+import pytest
 
 from pyct.binding.bind import Seed, bind, leaves
 from pyct.binding.model import apply
@@ -140,8 +144,11 @@ def test_a_tuple_python_cannot_build_from_its_items_is_copied_whole_and_plain() 
     assert leaves(seed) == {}
 
 
-class IdentityKey:
-    """A key equal only to itself, as an object with no ``__eq__`` of its own is."""
+@dataclass(frozen=True)
+class Key:
+    """A key deepcopy copies to a new object equal to it."""
+
+    name: str
 
 
 class Table(dict[object, object]):
@@ -149,8 +156,9 @@ class Table(dict[object, object]):
 
 
 def test_a_dict_subclass_takes_its_values_under_the_keys_its_copy_holds() -> None:
-    # deepcopy copies the keys, and a key equal only to itself is found only as the copy's own
-    table = Table({IdentityKey(): 1, "n": 2})
+    # deepcopy copies the keys, and the value goes in under the copy's own key, not the seed's
+    key = Key("k")
+    table = Table({key: 1, "n": 2})
 
     args: dict[str, Any] = bind({"t": table}, [])
 
@@ -227,3 +235,33 @@ def test_tuples_shared_at_every_level_are_built_once_each() -> None:
 
     assert time.monotonic() - started < 2
     assert len(named) == 1
+
+
+class Color(enum.Enum):
+    RED = 1
+
+
+@pytest.mark.parametrize(
+    "held", [Color.RED, b"k", frozenset({1})], ids=["enum", "bytes", "frozenset"]
+)
+def test_a_tuple_holding_a_value_copied_whole_is_one_tuple_for_every_holder(held: object) -> None:
+    p = (held, 1)
+
+    args: dict[str, Any] = bind({"seen": {p}, "q": deque([p]), "p": p}, [])
+
+    made = args["p"]
+    assert isinstance(made[1], ConcolicInt)
+    assert next(iter(args["seen"])) is made and args["q"][0] is made
+
+
+@pytest.mark.parametrize("first", ["q", "t"])
+def test_a_value_copied_whole_holds_the_tuple_the_walk_builds(first: str) -> None:
+    t = (0, deque())
+    q = deque([t])
+    seed: dict[str, object] = {"q": q, "t": t} if first == "q" else {"t": t, "q": q}
+
+    args: dict[str, Any] = bind(seed, [])
+
+    made = args["t"]
+    assert args["q"][0] is made and isinstance(made[0], ConcolicInt)
+    assert type(t[0]) is int and q[0] is t

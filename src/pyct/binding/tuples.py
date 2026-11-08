@@ -5,7 +5,7 @@ each put everywhere the walk put it.
 
 from __future__ import annotations
 
-from collections.abc import Hashable, Iterable, Mapping
+from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -58,15 +58,15 @@ class PlainCopy:
 def buildable(value: tuple[object, ...]) -> bool:
     """Whether ``tuple.__new__`` builds a tuple of this one's type that loses nothing of it.
 
-    A tuple, or a subclass that copies by Python's default route and whose
-    instance holds nothing in a ``__dict__``, a namedtuple and one with
-    methods of its own say. A struct sequence such as ``time.struct_time``
-    refuses to be built so.
+    A tuple, or a subclass whose instance holds nothing in a ``__dict__``, a
+    namedtuple and one with methods of its own say. No copy or pickling hook
+    of the class runs, so none is read. A struct sequence such as
+    ``time.struct_time`` refuses to be built so.
     """
     kind = type(value)
     if kind is tuple:
         return True
-    if not objects.copies_by_default(kind) or objects.own_fields(value):
+    if objects.own_fields(value):
         return False
     try:
         tuple.__new__(kind, ())
@@ -75,8 +75,32 @@ def buildable(value: tuple[object, ...]) -> bool:
     return True
 
 
-def innermost_first(
-    builds: Iterable[TupleBuild], owners: Mapping[int, TupleBuild]
+def build_order(
+    builds: Sequence[TupleBuild], plain: Iterable[PlainCopy], owners: Mapping[int, TupleBuild]
+) -> list[tuple[TupleBuild, list[PlainCopy]]]:
+    """Each tuple with the values held back placed among its items, in the order to build them.
+
+    Each tuple comes after every tuple its items hold. The tuples that hold
+    no value held back, themselves or through a tuple their items hold, come
+    first, so a value held back that a tuple holds is copied over every one
+    of them.
+    """
+    order = _innermost_first(builds, owners)
+    among: dict[int, list[PlainCopy]] = {}
+    for each in plain:
+        for owner in _owners_of(each.placements, owners):
+            among.setdefault(id(owner), []).append(each)
+    waiting = set(among)
+    for build in order:
+        if id(build) in waiting:
+            waiting.update(id(owner) for owner in _owners_of(build.placements, owners))
+    ready = [build for build in order if id(build) not in waiting]
+    later = [build for build in order if id(build) in waiting]
+    return [(build, among.get(id(build), [])) for build in ready + later]
+
+
+def _innermost_first(
+    builds: Sequence[TupleBuild], owners: Mapping[int, TupleBuild]
 ) -> list[TupleBuild]:
     """The tuples in an order that builds each after every tuple its items hold."""
     inside: dict[int, list[TupleBuild]] = {}
@@ -96,18 +120,6 @@ def innermost_first(
                 stack.append((each, True))
                 stack.extend((inner, False) for inner in inside.get(id(each), ()))
     return order
-
-
-def holding(
-    order: list[TupleBuild], plain: Iterable[PlainCopy], owners: Mapping[int, TupleBuild]
-) -> set[int]:
-    """The tuples that hold a value held back, themselves or through a tuple their items hold,
-    by identity, given the tuples innermost first."""
-    waiting = {id(owner) for each in plain for owner in _owners_of(each.placements, owners)}
-    for build in order:
-        if id(build) in waiting:
-            waiting.update(id(owner) for owner in _owners_of(build.placements, owners))
-    return waiting
 
 
 def _owners_of(

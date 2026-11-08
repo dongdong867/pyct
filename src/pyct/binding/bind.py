@@ -36,9 +36,10 @@ def bind(
     of that access, so its keys and its changes are.
 
     Every dict, list and tuple the walk reaches is rebuilt, whatever key it
-    sits under, and every other value deepcopy can copy is copied, an
-    object's attributes followed into its copy, so a change the
-    target makes to a copy reaches neither the seed nor a later input. A
+    sits under, and every other value deepcopy can copy is copied, the
+    attributes of an object whose class passes the copy rule followed into
+    its copy (see ``objects``), so a change the target makes to a copy
+    reaches neither the seed nor a later input. A
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
     (see ``Walk``). ``checks`` is what each parameter's annotation asks, which marks a
@@ -154,9 +155,12 @@ class Noted:
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         made: list[object] = [None] * len(value)
-        # a list inside a tracked list sits at an index
-        row = (id(place.into), cast(int, place.slot))
-        where = row if place.in_list else leaf_name(place.access)
+        where: str | tuple[int, int]
+        if place.in_list:
+            # a list inside a tracked list sits at an index
+            where = (id(place.into), cast(int, place.slot))
+        else:
+            where = leaf_name(place.access)
         check = place.check
         each = check.each if isinstance(check, Items) and check.kind is list else None
         self.made.append((made, where, each))
