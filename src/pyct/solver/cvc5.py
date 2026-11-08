@@ -1,6 +1,7 @@
 """Ask cvc5 whether a path can be taken, and for an input that takes it."""
 
 import logging
+import math
 import subprocess
 from collections.abc import Mapping
 from dataclasses import replace
@@ -62,10 +63,21 @@ LOOKUP_STEPS_PER_SECOND = 35_000
 CHOSEN_SECONDS = 1.0
 
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
-# second of the solve's limit, so a path's outcome never turns on how long the first ask took.
-# Each cut of a list at open clamps doubles them: ten cuts take about 10,000 and eleven about
-# 20,500, so at the 10 s default ten are asked and eleven given up at once
-UNSETTLED_STEPS_PER_SECOND = 2_000
+# square root of a second of the solve's limit, so a path's outcome never turns on how long the
+# first ask took. Each cut of a list at open clamps doubles the steps, and up to ten cuts cvc5's
+# time grows about with their square, so the steps a limit allows grow with its square root.
+# cvc5 1.4.2, three runs at a load of about 4:
+#
+#   cuts   steps  seconds
+#      7   1,271  0.17-0.18
+#      8   2,551  0.64-0.68
+#      9   5,111  2.64-2.76
+#     10  10,231  11.3-12.3
+#
+# 1 s allows 2,700 steps, 2 s 3,818, 5 s 6,037 and the 10 s default 8,538. So eight cuts are
+# asked at 1 s and 2 s, and nine at 5 s and 10 s; ten are given up at once at 10 s. Each row
+# above took 72% to 86% of the shortest limit that asks it
+UNSETTLED_STEPS_PER_ROOT_SECOND = 2_700
 
 # how often a read that runs long settles the clamps it went through before every clamp settles
 SETTLE_ROUNDS = 4
@@ -111,8 +123,8 @@ def solve(
     clamps it went through settled as the input had them (see ``_written``). An unsat answer
     to that settled program asks the unsettled one in what is left of the limit, and only an
     unsat to that is an ``Unsat()``; an unsettled program whose reads together run past
-    ``UNSETTLED_STEPS_PER_SECOND`` for each second of ``timeout`` is given up as an
-    ``Unknown()``.
+    ``UNSETTLED_STEPS_PER_ROOT_SECOND`` times the square root of ``timeout`` is given up as
+    an ``Unknown()``.
 
     A program that holds a repeated list's length, or a bound some form is exact inside, as a
     float floor division's, answers the target's own inputs when it is sat. An unsat to it asks
@@ -270,7 +282,8 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool, P
         placed = placed or (written is not None and written.placed)
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
-        origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
+        most = int(UNSETTLED_STEPS_PER_ROOT_SECOND * math.sqrt(timeout))
+        origin = replace(origin, steps=None, most=most)
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat | Unknown) and written is not None and written.fixed:
         logger.debug("a read from a split's end held to c* pieces: asking at the input's own")
@@ -424,7 +437,7 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     (``replies.core_of``).
     """
     text = written.text + WHY
-    command = argv(timeout)
+    command, ran = argv(timeout, text), options(timeout, text)
     logger.debug("asking cvc5 %s about:\n%s", command, text)
     # its own clock, apart from the one the limit is read on
     started = perf_counter()
@@ -439,11 +452,11 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        took(Given(text, options(timeout), answered(None, Timeout()), perf_counter() - started))
+        took(Given(text, ran, answered(None, Timeout()), perf_counter() - started))
         return Timeout(), frozenset()
     answer = _read(finished.stdout, finished.stderr, written)
     heard = answered(finished.stdout, answer)
-    took(Given(text, options(timeout), heard, perf_counter() - started))
+    took(Given(text, ran, heard, perf_counter() - started))
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:

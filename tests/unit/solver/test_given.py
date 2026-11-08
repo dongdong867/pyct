@@ -4,12 +4,41 @@ runs as pyct did."""
 import subprocess
 from pathlib import Path
 
-from pyct.core.foundation.branch import Branch, Site
+import pytest
+
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
-from pyct.solver.given import Given, answered, taking, took, write
+from pyct.solver.given import ARGUMENTS, Given, answered, argv, options, taking, took, write
+from pyct.solver.render import program
 
 SITE = Site(file="t.py", line=2, col=7)
+
+LEAVES: dict[str, type] = {"n": int, "x": float, "s": str}
+
+# cvc5 1.4.2 answers a program that converts between a double and a real within the limit with
+# these, the first kind where the program holds a string and the second where it does not
+STRINGS_ADDED = {"--no-strings-lazy-pp": "(set-option :strings-lazy-pp false)"}
+OTHERS_ADDED = {
+    "--decision=internal": "(set-option :decision internal)",
+    "--nl-cov": "(set-option :nl-cov true)",
+}
+
+# a path of each kind, and the options cvc5 gets for it beside today's
+KINDS = [
+    # a double read as a real
+    pytest.param(["<", ["floor", "x"], "n"], OTHERS_ADDED, id="double-to-real"),
+    # an int's real rounded to a double, which reads no double as a real
+    pytest.param([">", ["+", "n", 0.5], "x"], OTHERS_ADDED, id="real-to-double"),
+    # a string's digits rounded to a double
+    pytest.param(["==", ["float", "s"], 100000.0], STRINGS_ADDED, id="string-to-double"),
+    pytest.param([">", ["+", "n", 1], 0], {}, id="ints"),
+    pytest.param([">", ["+", "x", 1.5], 0.0], {}, id="doubles"),
+    pytest.param(["==", ["len", "s"], 3], {}, id="strings"),
+    # a string that only spells a conversion, a quote inside it among them
+    pytest.param(["==", "s", repr("(fp.to_real x)")], {}, id="spelled-to-real"),
+    pytest.param(["==", "s", repr('say "((_ to_fp 11 53) RNE" now')], {}, id="spelled-to-double"),
+]
 
 
 def test_a_program_is_kept_only_while_a_caller_takes_them() -> None:
@@ -69,3 +98,58 @@ def test_write_numbers_an_ask_s_programs_and_cvc5_runs_each(tmp_path: Path) -> N
     for name in ("ask-3.smt2", "ask-3-2.smt2"):
         ran = subprocess.run(["cvc5", str(tmp_path / name)], capture_output=True, text=True)
         assert ran.stdout.splitlines()[0] == "sat", ran
+
+
+def _text(expression: Expression) -> str:
+    fork = Branch(expression=expression, taken=True, site=SITE)
+    return program((fork,), LEAVES).text
+
+
+@pytest.mark.parametrize(("expression", "added"), KINDS)
+def test_cvc5_gets_options_by_what_the_program_converts(
+    expression: Expression, added: dict[str, str]
+) -> None:
+    text = _text(expression)
+
+    assert argv(2.5, text)[1:] == [*ARGUMENTS, "--tlimit-per=2500", *added]
+    assert options(2.5, text) == (
+        "(set-option :produce-models true)",
+        "(set-option :strings-model-max-len 1000000)",
+        "(set-option :tlimit-per 2500)",
+        *added.values(),
+    )
+
+
+@pytest.mark.parametrize(("expression", "added"), KINDS)
+def test_a_kept_program_s_option_lines_are_what_it_ran_with(
+    expression: Expression, added: dict[str, str]
+) -> None:
+    fork = Branch(expression=expression, taken=False, site=SITE)
+    with taking() as programs:
+        solve((fork,), LEAVES, 10.0)
+
+    assert programs
+    for kept in programs:
+        assert kept.options[3:] == tuple(added.values())
+
+
+@pytest.mark.parametrize(
+    ("expression", "said"),
+    [
+        (["<", ["floor", "x"], "n"], "sat\ninternal\ntrue\ntrue\n"),
+        (["==", ["float", "s"], 100000.0], "sat\njustification\nfalse\nfalse\n"),
+    ],
+)
+def test_the_option_lines_set_what_the_command_line_does(
+    tmp_path: Path, expression: Expression, said: str
+) -> None:
+    text = _text(expression)
+    # cvc5 reports the values it runs with only once a check has set its defaults
+    asked = ["(get-option :decision)", "(get-option :nl-cov)", "(get-option :strings-lazy-pp)"]
+    query = "\n".join(["(set-logic ALL)", "(assert true)", "(check-sat)", *asked]) + "\n"
+    (tmp_path / "set.smt2").write_text("\n".join(options(10.0, text)) + "\n" + query)
+
+    by_flags = subprocess.run(argv(10.0, text), input=query, capture_output=True, text=True)
+    by_lines = subprocess.run(["cvc5", str(tmp_path / "set.smt2")], capture_output=True, text=True)
+
+    assert by_lines.stdout == by_flags.stdout == said, (by_flags, by_lines)
