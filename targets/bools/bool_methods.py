@@ -47,7 +47,9 @@ class Spread:
         self.v = v
 
     def __bool__(self) -> bool:
-        return self.v != 0
+        return (
+            self.v
+            != 0)
 
 
 def __bool__(v: int) -> bool:

@@ -31,6 +31,10 @@ def rebuilt_from_text(x: int) -> object:
 
 def ranged(n: int) -> str:
     r = range(n)
-    if classes.is_range(r) and classes.class_of(r) is range and classes.rebuild(r, 3) == range(3):
+    if (
+        classes.is_range(r)
+        and classes.class_of(r) is range
+        and classes.rebuild(r, 3) == range(3)
+    ):
         return "python"
     return "other"
