@@ -1,12 +1,13 @@
 import inspect
 from collections.abc import Callable
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 from pyct.binding.annotations import Check
 from pyct.config.command_line import UsageError
-from pyct.run import seed_checks
+from pyct.run import object_checks, seed_checks
 from pyct.run.seeds_file import FileSeed, SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target
 
@@ -151,3 +152,46 @@ def test_checked_reads_the_target_s_annotations_once_for_every_line(
     checked_seeds(target_for(name_and_age), file)
 
     assert calls == [name_and_age]
+
+
+class Cart:
+    def __init__(self, owner: str) -> None:
+        self.owner = owner
+
+    def total(self, discount: int) -> int:
+        return discount
+
+
+def test_checked_reads_a_method_s_and_its_constructor_s_annotations_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+
+    def counting(module: ModuleType) -> None:
+        real = module.checked_annotations
+
+        def counted(signature: inspect.Signature, fn: Callable[..., object]) -> dict[str, Check]:
+            calls.append(fn)
+            return real(signature, fn)
+
+        monkeypatch.setattr(module, "checked_annotations", counted)
+
+    counting(seed_checks)
+    counting(object_checks)
+    target = Target(
+        spec="m::Cart.total",
+        fn=Cart.total,
+        file="m.py",
+        signature=inspect.signature(Cart.total),
+        self_class=Cart,
+        self_name="self",
+        constructor=inspect.signature(Cart),
+    )
+    lines = (
+        (1, '{"self": {"owner": "a"}, "discount": 1}'),
+        (2, '{"self": {"owner": "b"}, "discount": 2}'),
+    )
+
+    checked_seeds(target, SeedsFile("s.jsonl", lines))
+
+    assert calls == [Cart.total, Cart]

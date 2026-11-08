@@ -87,7 +87,12 @@ def check_seed(target: Target, seed: Mapping[str, object]) -> None:
 
 
 def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
-    """Every reason to refuse a parsed seed: its names, then its types (``SeedCheck``)."""
+    """Every reason to refuse a parsed seed: its names, then its types.
+
+    A wrapper around ``SeedCheck.refusals`` for one seed. A new seed check
+    belongs in ``SeedCheck.refusals``, so the command line and ``--seeds``
+    both apply it.
+    """
     return SeedCheck.of(target).refusals(seed)
 
 
@@ -95,24 +100,27 @@ def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
 class SeedCheck:
     """A target's seed checks, read once for every seed it is given: its signature, what its
     parameters' annotations ask, and, for a method whose instance each input builds, the
-    parameter that holds the constructor's arguments and the check on that object."""
+    parameter that holds the constructor's arguments with the check on that object.
+
+    ``refusals`` is the one place every seed check runs, for ``--args`` and
+    for each line of ``--seeds``, so a new seed check belongs there.
+    """
 
     signature: inspect.Signature
     checks: Mapping[str, Check]
-    self_name: str | None = None
-    under_self: ObjectCheck | None = None
+    under_self: tuple[str, ObjectCheck] | None = None
 
     @classmethod
     def of(cls, target: Target) -> SeedCheck:
         """The checks for ``target``. The object under ``self`` is checked against the
-        constructor, and the annotation on ``self`` itself is not read."""
+        constructor, and the annotation on ``self`` itself is not checked."""
         checks = checked_annotations(target.signature, target.fn)
         name = target.self_name
         if target.self_class is None or name is None:
             return cls(target.signature, checks)
         others = {key: check for key, check in checks.items() if key != name}
-        under_self = ObjectCheck.of(target.self_class, target.constructor)
-        return cls(target.signature, others, name, under_self)
+        under_self = (name, ObjectCheck.of(target.self_class, target.constructor))
+        return cls(target.signature, others, under_self)
 
     def refusals(self, seed: Mapping[str, object]) -> list[str]:
         """Every reason to refuse ``seed``.
@@ -125,10 +133,10 @@ class SeedCheck:
         fit = _fit_line(self.signature, seed)
         if fit is not None:
             return [fit]
-        name = self.self_name
         lines: list[str] = []
-        if self.under_self is not None and name is not None and name in seed:
-            lines = self.under_self.lines(name, seed[name])
+        if self.under_self is not None and self.under_self[0] in seed:
+            name, check = self.under_self
+            lines = check.lines(name, seed[name])
         return lines + contradictions(self.checks, seed)
 
 
