@@ -467,7 +467,7 @@ def test_an_unsat_under_settled_clamps_asks_the_unsettled_program(
     monkeypatch.setattr(cvc5_module, "_solved", solved)
 
     assert solve((), {}, 10.0) == Sat({})
-    # one read takes 100 steps a second of the limit; the unsettled program's reads share 750
-    # a second of the limit, however long the settled ask took
+    # one read takes 100 steps a second of the limit; the unsettled program's reads share 2,700
+    # times the square root of the limit, however long the settled ask took
     assert [origin.steps for origin in asked] == [1_000, None]
-    assert [origin.most for origin in asked] == [None, 7_500]
+    assert [origin.most for origin in asked] == [None, 8_538]
