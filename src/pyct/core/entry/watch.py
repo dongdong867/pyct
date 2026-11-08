@@ -10,8 +10,9 @@ pyct's above it, and every function here hands back what it was given.
 
 pyct sees inside a function of the target's package, whose module runs with
 the builtins pyct binds, so a call of one, reached directly or through a
-bound method, a `functools.partial`, a decorator's wrapper that names it as
-``__wrapped__`` or its class's `__call__`, is not judged: the calls and
+bound method, a `functools.partial`, a function or `functools.lru_cache`
+wrapper that holds it in its own ``__wrapped__``, as `functools.wraps`
+writes it, or its class's `__call__`, is not judged: the calls and
 operations inside it are, so a cached answer of `functools.lru_cache`
 records nothing. Any other callee is, as one
 written in C or one outside the target's package (run-quiet-loss-downgrade).
@@ -48,16 +49,18 @@ import threading
 import types
 from collections.abc import Callable
 
-from pyct.core.entry import bound
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import Downgrade, caller_site
+from pyct.core.foundation.package_builtins import binds
 
 # Python's own, which each watched call reads: the target may put others in `builtins` while
 # one of its calls runs
 _getattr, _id, _len, _next, _range, _set, _type = getattr, id, len, next, range, set, type
 _PARTIAL = functools.partial
-_object_attribute, _dict_get = object.__getattribute__, dict.get
+_dict_get = dict.get
+# the type of a `functools.lru_cache` wrapper, which holds what it wraps as a function does
+_LRU_WRAPPER = functools._lru_cache_wrapper  # pyrefly: ignore[missing-attribute]
 _chain, _islice = itertools.chain, itertools.islice
 
 # the types a plain answer is made of, and the containers that may hold them
@@ -204,35 +207,33 @@ def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:
 
 def _judged(callee: object) -> bool:
     """Whether a callee is one pyct cannot see inside: anything but a function of the target's
-    package, reached through a bound method, a `functools.partial`, a decorator's wrapper that
-    names it as ``__wrapped__``, or an object's own `__call__`."""
-    function = callee
+    package, reached through a bound method, a `functools.partial`, a wrapper that holds it in
+    its own ``__wrapped__`` (`_wrapped`), or an object's own `__call__`."""
+    function: object = callee
     for _ in _range(_MOST_WRAPPED):
         kind = _type(function)
-        if kind is types.FunctionType and bound.binds(function.__builtins__):  # pyrefly: ignore[missing-attribute]
+        if kind is types.FunctionType and binds(function.__builtins__):  # pyrefly: ignore[missing-attribute]
             return False
-        if kind is types.MethodType:
+        if kind is types.FunctionType or kind is _LRU_WRAPPER:
+            function = _wrapped(function)
+        elif kind is types.MethodType:
             function = function.__func__  # pyrefly: ignore[missing-attribute]
         elif kind is _PARTIAL:
             function = function.func  # pyrefly: ignore[missing-attribute]
-        elif (wrapped := _wrapped(function)) is not None:
-            function = wrapped
-        elif _type(_getattr(kind, "__call__", None)) is types.FunctionType:
-            function = kind.__call__  # pyrefly: ignore[missing-attribute]
         else:
+            function = _getattr(kind, "__call__", None)
+            if _type(function) is not types.FunctionType:
+                return True
+        if function is None:
             return True
     return True
 
 
-def _wrapped(function: object) -> object:
-    """The function a decorator's wrapper names as its ``__wrapped__``, as `functools.wraps`
-    and `functools.update_wrapper` write it, read from the wrapper's own attributes alone, else
-    None."""
-    try:
-        held = _object_attribute(function, "__dict__")
-    except AttributeError:
-        return None
-    return _dict_get(held, "__wrapped__") if _type(held) is dict else None
+def _wrapped(wrapper: object) -> object:
+    """What a function or a `functools.lru_cache` wrapper holds in its own ``__wrapped__``, as
+    `functools.wraps`, `functools.update_wrapper` and `functools.lru_cache` write it, else
+    None. Neither type can be subclassed, so its ``__dict__`` is Python's own."""
+    return _dict_get(wrapper.__dict__, "__wrapped__")  # pyrefly: ignore[missing-attribute]
 
 
 def _tracked_in(value: object) -> object:

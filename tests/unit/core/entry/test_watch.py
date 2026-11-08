@@ -308,6 +308,15 @@ class Sizes:
         return bin(v).count('1') > 1
 
 partial = functools.partial(is_big)
+
+class Retry:
+    def __init__(self, fn):
+        functools.update_wrapper(self, fn)
+
+    def __call__(self, v):
+        return bin(v).count('1') > 1
+
+retry = Retry(bin)
 """
 
 
@@ -350,6 +359,9 @@ class _Answers:
             lambda: functools.singledispatch(_in_the_package(HELPER, "is_big")),
             id="singledispatch",
         ),
+        pytest.param(
+            lambda: _in_the_package(HELPER, "retry"), id="an object that wraps a C function"
+        ),
     ],
 )
 def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any]) -> None:
@@ -359,6 +371,25 @@ def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any
     answer(called(function)(given(tracked(3, sink))), "is_big")
 
     assert lost(sink) == []
+
+
+class _Guarded:
+    """A callable outside the target's package whose ``__dict__`` raises, as a proxy's may."""
+
+    def __call__(self, value: object) -> int:
+        return bin(value).count("1")  # pyrefly: ignore[bad-argument-type]
+
+    @property
+    def __dict__(self) -> dict[str, object]:  # pyrefly: ignore[bad-override]
+        raise RuntimeError("no dict")
+
+
+def test_a_callable_s_own_dict_is_not_read() -> None:
+    sink: list[SinkItem] = []
+
+    answer(called(_Guarded())(given(tracked(3, sink))), "guarded")
+
+    assert [name for name, _ in lost(sink)] == ["guarded"]
 
 
 def test_a_callable_s_own_attribute_lookup_does_not_place_it() -> None:

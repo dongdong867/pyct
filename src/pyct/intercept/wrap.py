@@ -38,7 +38,8 @@ import copy
 import functools
 from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
-from pyct.core.entry.bound import BOUND, PackageBuiltins
+from pyct.core.entry.bound import BOUND
+from pyct.core.foundation.package_builtins import PackageBuiltins
 
 _BUILTINS = vars(builtins)
 # dict's own, held here: a write may clear ``builtins``, and these must still run after it
