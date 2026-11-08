@@ -102,3 +102,25 @@ def test_distinct_counts_two_nans_as_the_same_seed() -> None:
     seeds = [FileSeed({"x": float("nan")}, "s", 1), FileSeed({"x": float("nan")}, "s", 2)]
 
     assert distinct(seeds)[1] == ("skipped s:2, same seed as line 1",)
+
+
+def test_read_leaves_a_byte_order_mark_out_of_the_first_line(tmp_path: Path) -> None:
+    name = written(tmp_path, b'\xef\xbb\xbf{"x": 1}\n')
+
+    assert read_seeds_file(name).lines == ((1, '{"x": 1}'),)
+
+
+def test_read_refuses_an_empty_name() -> None:
+    with pytest.raises(UsageError, match="^--seeds needs a file name$"):
+        read_seeds_file("")
+
+
+def test_checked_keeps_a_reason_with_a_line_break_on_one_line() -> None:
+    file = SeedsFile("s.jsonl", ((1, '{"a\\nb": 5}'),))
+
+    with pytest.raises(UsageError) as raised:
+        checked_seeds(target_for(anything), file)
+
+    reason = str(raised.value)
+    assert reason.startswith("s.jsonl:1: args (a\nb) do not fit (x): ")
+    assert reason.count("s.jsonl:1: ") == 1

@@ -12,4 +12,5 @@ def test_missing_args_message_names_the_parameters_and_both_forms() -> None:
     assert "required" in message
     assert "x, name" in message
     assert "--args" in message
+    assert "--seeds" in message
     assert "MODULE::FUNCTION JSON" in message

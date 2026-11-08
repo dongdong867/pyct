@@ -9,12 +9,12 @@ from pyct.binding.bind import Seed
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
-from pyct.results.coverage import Progress, Scope
+from pyct.results.coverage import Progress, Reach, Scope
 from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
-from pyct.run.run import Attempt, Bounds, _seed_attempt, run
+from pyct.run.run import Attempt, Bounds, _covered_or_plateau, _seed_attempt, run
 from pyct.run.target import load_target
 
 # `bucket(x)`: x < 100, then x < 10 under it; 5, 50 and 500 take its three paths
@@ -159,3 +159,15 @@ def test_a_waiting_seed_does_not_run_once_the_budget_is_spent() -> None:
 
 def test_no_seed_pass_once_no_seed_waits() -> None:
     assert _seed_attempt(refused, deque(), Bounds(), no_input_yet()) is None  # pyrefly: ignore[bad-argument-type]
+
+
+def test_one_seed_that_gains_nothing_still_gives_the_solver_a_turn() -> None:
+    # a seed that covers no line in scope, as a function from another file covers none
+    progress = no_input_yet()
+    progress.add(frozenset(), Reach())
+
+    assert _covered_or_plateau(Bounds(plateau=1, seeds=1), progress) is None
+    progress.add(frozenset(), Reach())
+    assert _covered_or_plateau(Bounds(plateau=1, seeds=1), progress) == Stop(
+        StopKind.NO_GAIN, plateau=1
+    )

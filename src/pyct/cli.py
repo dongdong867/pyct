@@ -153,8 +153,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     Checks run in this order: target form, seed shape or the seeds file's
     read, budget, plateau, solver timeout, goal, dump folder, import and
     signature, seed present, seed fits, seed types, cvc5. A seeds file's
-    lines take the last three in one pass after the import, so every bad
-    line is named at once. A line that repeats an earlier seed is said once
+    lines take the shape, fit and type checks in one pass after the import,
+    so every bad line is named at once. A line that repeats an earlier seed is said once
     the checks pass, before the first input.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
@@ -456,11 +456,12 @@ def check_spec(spec: str) -> None:
 
 
 def missing_args_message(signature: inspect.Signature) -> str:
-    """Name the parameters the seed must give, and both ways to pass it."""
+    """Name the parameters the seed must give, and each way to pass it."""
     parameters = ", ".join(signature.parameters) or "no parameters"
     return (
         f"args are required: a JSON object for {parameters}\n"
-        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args"
+        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
+        f" or a file of them through --seeds"
     )
 
 

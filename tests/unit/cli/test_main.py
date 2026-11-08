@@ -34,8 +34,8 @@ CHECKS = (
 )
 
 
-def record_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """Wrap each of ``CHECKS`` in ``pyct.cli`` so every call is noted, then made as before."""
+def record_calls(monkeypatch: pytest.MonkeyPatch, names: tuple[str, ...] = CHECKS) -> list[str]:
+    """Wrap each of ``names`` in ``pyct.cli`` so every call is noted, then made as before."""
     called: list[str] = []
 
     def recording(name: str, real: Callable[..., object]) -> Callable[..., object]:
@@ -45,7 +45,7 @@ def record_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
         return wrapper
 
-    for name in CHECKS:
+    for name in names:
         monkeypatch.setattr(cli, name, recording(name, getattr(cli, name)))
     return called
 
@@ -255,3 +255,28 @@ def test_sweep_lists_a_package_without_opening_the_interception(
 
     assert main(["sweep", "targets.sweep.shop", "--list"]) == 0
     assert capsys.readouterr().out
+
+
+def test_main_reads_a_seeds_file_where_it_reads_a_seed_and_checks_its_lines_after_the_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    seeds = tmp_path / "seeds.jsonl"
+    seeds.write_text('{"x": 3}\n', encoding="utf-8")
+    names = (*CHECKS, "read_seeds_file", "checked_seeds")
+    called = record_calls(monkeypatch, names)
+
+    code = main(["run", "targets.flip.no_check::echo", "--seeds", str(seeds)])
+
+    assert code == 0
+    assert called == [
+        "check_spec",
+        "read_seeds_file",
+        "parse_budget",
+        "parse_plateau",
+        "parse_solver_timeout",
+        "load_target",
+        "checked_seeds",
+        "locate",
+        "run",
+    ]

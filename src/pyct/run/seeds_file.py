@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.config.command_line import UsageError
-from pyct.run.seed_checks import check_seed_fits, check_seed_types, parse_seed
+from pyct.run.seed_checks import check_seed_fits, parse_seed, type_contradictions
 from pyct.run.target import Target
 
 # what JSON reads as space between values within a line: a line of only these is blank
@@ -39,14 +39,17 @@ class FileSeed:
 
 
 def read_seeds_file(name: str) -> SeedsFile:
-    """Read the file ``name`` names. Refuse one that cannot be read, or holds only blank lines.
+    """Read the file ``name`` names. Refuse an empty name, and a file that cannot be read or
+    holds only blank lines. A byte-order mark at the file's start is not part of its first line.
 
     A line ends where Python's text reading ends one, at ``\\n``, ``\\r\\n`` or
     ``\\r``; a line separator ``splitlines`` would also split on, such as
     U+2028 inside a JSON string, stays in its line.
     """
+    if not name:
+        raise UsageError("--seeds needs a file name")
     try:
-        text = Path(name).read_text(encoding="utf-8")
+        text = Path(name).read_text(encoding="utf-8-sig")
     except OSError as error:
         raise UsageError(f"cannot read {name}: {error.strerror}") from error
     except UnicodeDecodeError as error:
@@ -67,20 +70,24 @@ def checked_seeds(target: Target, file: SeedsFile) -> tuple[FileSeed, ...]:
     seeds: list[FileSeed] = []
     refusals: list[str] = []
     for number, text in file.lines:
-        try:
-            seeds.append(FileSeed(_checked(target, text), file.name, number))
-        except UsageError as error:
-            refusals += [f"{file.name}:{number}: {reason}" for reason in str(error).splitlines()]
+        seed, reasons = _checked(target, text)
+        refusals += [f"{file.name}:{number}: {reason}" for reason in reasons]
+        if seed is not None:
+            seeds.append(FileSeed(seed, file.name, number))
     if refusals:
         raise UsageError("\n".join(refusals))
     return tuple(seeds)
 
 
-def _checked(target: Target, text: str) -> Mapping[str, object]:
-    seed = parse_seed(text)
-    check_seed_fits(target.signature, seed)
-    check_seed_types(target, seed)
-    return seed
+def _checked(target: Target, text: str) -> tuple[Mapping[str, object] | None, list[str]]:
+    """The line's seed and no reason, or no seed and each reason the line is refused."""
+    try:
+        seed = parse_seed(text)
+        check_seed_fits(target.signature, seed)
+    except UsageError as error:
+        return None, [str(error)]
+    reasons = type_contradictions(target, seed)
+    return (None, reasons) if reasons else (seed, [])
 
 
 def distinct(seeds: Sequence[FileSeed]) -> tuple[tuple[FileSeed, ...], tuple[str, ...]]:

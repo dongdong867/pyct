@@ -7,14 +7,12 @@ import itertools
 import platform
 import time
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import assert_never
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.resolve import checked_annotations
-from pyct.branches.compare import compare
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
@@ -22,15 +20,12 @@ from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
 from pyct.core.foundation.branch import ForkSite
-from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Progress, Scope, no_gain
 from pyct.results.record import (
     Environment,
     InputRecord,
     Miss,
-    MissWhy,
     RunResult,
-    Source,
     Stop,
     StopKind,
 )
@@ -38,10 +33,11 @@ from pyct.run.as_found import modules_as_found
 from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
+from pyct.run.records import miss_why, record_of
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver import walk_keys
-from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
+from pyct.solver.answer import Answer, Error, Sat, Timeout
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import taking
 from pyct.solver.locate import locate, version
@@ -209,7 +205,7 @@ def _inputs(call: Call, copies: Sequence[Seed], bounds: Bounds, told: Told) -> L
     """
     first = copies[0]
     try:
-        seeded = _record_of(first.args, call(first.args, bounds.until))
+        seeded = record_of(first.args, call(first.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
     return _loop(call, copies, seeded, bounds, told)
@@ -266,19 +262,25 @@ def _loop(
     numbers = itertools.count(1)
     while True:
         _let_go(inputs, tree.oldest)
-        attempt = _seed_attempt(call, waiting, bounds, progress) or _attempt(
-            call, inputs, tree, bounds, progress
-        )
-        if attempt.asked is not None:
-            told.ask(dataclasses.replace(attempt.asked, number=next(numbers)))
+        attempt = _seed_attempt(call, waiting, bounds, progress)
+        if attempt is None:
+            attempt = _attempt(call, inputs, tree, bounds, progress)
+        _hand_out(attempt, told, numbers, misses)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
-        if attempt.miss is not None:
-            misses.append(attempt.miss)
-            told.miss(attempt.miss)
         if attempt.ran is not None:
             inputs[len(records)] = attempt.ran.seed
             records.append(_took(attempt.ran.record, told, tree, progress))
+
+
+def _hand_out(attempt: Attempt, told: Told, numbers: Iterator[int], misses: list[Miss]) -> None:
+    """Hand out the pass's ask, numbered, and its miss, which the run keeps. A pass that stops
+    has no miss."""
+    if attempt.asked is not None:
+        told.ask(dataclasses.replace(attempt.asked, number=next(numbers)))
+    if attempt.miss is not None:
+        misses.append(attempt.miss)
+        told.miss(attempt.miss)
 
 
 def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> InputRecord:
@@ -339,8 +341,7 @@ def _attempt(
     that fork.
     """
     left = _seconds_left(bounds.until)
-    # a deadline that has passed is no time at all; cvc5 reads --tlimit-per=0 as no limit
-    if left is not None and left <= 0:
+    if _spent(left):
         return Attempt(stop=Stop(StopKind.BUDGET))
     wanted = tree.next()
     if wanted is None:
@@ -357,11 +358,11 @@ def _attempt(
         stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
         return Attempt(stop=stop, unrun=unrun, asked=asked)
     if not isinstance(answer, Sat):
-        miss = Miss(wanted.aim.site, _why(answer), wanted.aim.raising, seconds)
+        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, seconds)
         return Attempt(miss=miss, asked=asked)
     solved = apply(origin, answer.model)
     try:
-        record = _record_of(solved.args, call(solved.args, bounds.until), wanted, seconds)
+        record = record_of(solved.args, call(solved.args, bounds.until), wanted, seconds)
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error), unrun=unrun, asked=asked)
     return Attempt(ran=Ran(record, solved), asked=asked)
@@ -373,20 +374,21 @@ def _seed_attempt(
     """One pass for the next seed still waiting: the clock, the coverage, then the seed. None
     when no seed waits.
 
-    No fork is picked while a seed waits, so neither ``no fork to flip`` nor the
-    plateau holds; the budget and full coverage stop the run as ``_attempt``
-    says, and the seeds after it do not run.
+    No fork is picked while a seed waits, so ``no fork to flip`` does not
+    hold, and the plateau never does before the last seed; the budget and full
+    coverage stop the run as ``_attempt`` says, and the seeds after it do not
+    run.
     """
     if not waiting:
         return None
     copy = waiting.popleft()
-    left = _seconds_left(bounds.until)
-    if left is not None and left <= 0:
+    if _spent(_seconds_left(bounds.until)):
         return Attempt(stop=Stop(StopKind.BUDGET))
-    if bounds.goal is Goal.COVERAGE and progress.full():
-        return Attempt(stop=Stop(StopKind.FULL))
+    stop = _covered_or_plateau(bounds, progress)
+    if stop is not None:
+        return Attempt(stop=stop)
     try:
-        record = _record_of(copy.args, call(copy.args, bounds.until))
+        record = record_of(copy.args, call(copy.args, bounds.until))
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error))
     return Attempt(ran=Ran(record, copy))
@@ -431,49 +433,6 @@ def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
         del inputs[path]
 
 
-def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:
-    """What the solver said about a fork it gave no input for, in the run's own words.
-
-    A match rather than a table, so a new answer fails the type check
-    instead of a run.
-    """
-    match answer:
-        case Unsat():
-            return MissWhy.UNSAT
-        case Unknown():
-            return MissWhy.UNKNOWN
-        case Timeout():
-            return MissWhy.TIMEOUT
-        case _:
-            assert_never(answer)
-
-
-def _record_of(
-    args: Mapping[str, object],
-    executed: ExecutionResult,
-    wanted: Plan | None = None,
-    seconds: float | None = None,
-) -> InputRecord:
-    """What one input did. A plan makes it the solver's, aimed and read against that plan, and
-    ``seconds`` is how long the ask for it took.
-
-    The lines are the tracer's, unmeasured: Coverage.of is where the scope is applied.
-    """
-    return InputRecord(
-        args=args,
-        forks=executed.branches,
-        facts=executed.facts,
-        covered_lines=executed.lines,
-        failure=executed.failure,
-        downgrades=executed.downgrades,
-        source=Source.SEED if wanted is None else Source.SOLVER,
-        aim=None if wanted is None else wanted.aim,
-        mismatch_at=None if wanted is None else compare(wanted.prefix, executed.branches),
-        reach=executed.reach,
-        solver_seconds=seconds,
-    )
-
-
 def _deadline_for(budget: Budget) -> float | None:
     """The monotonic instant the call must end by. No seconds, no deadline."""
     return None if budget.seconds is None else time.monotonic() + budget.seconds
@@ -482,6 +441,12 @@ def _deadline_for(budget: Budget) -> float | None:
 def _seconds_left(until: float | None) -> float | None:
     """The seconds the deadline still allows. No deadline, no limit."""
     return None if until is None else until - time.monotonic()
+
+
+def _spent(left: float | None) -> bool:
+    """Whether the budget is spent. A deadline that has passed is no time at all; cvc5 reads
+    ``--tlimit-per=0`` as no limit."""
+    return left is not None and left <= 0
 
 
 def _solve_limit(bounds: Bounds, left: float | None) -> float:

@@ -86,6 +86,11 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
 
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
     """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target.signature, target.fn), seed)
+    lines = type_contradictions(target, seed)
     if lines:
         raise UsageError("\n".join(lines))
+
+
+def type_contradictions(target: Target, seed: Mapping[str, object]) -> list[str]:
+    """Each value of the seed that contradicts an annotation, one reason each."""
+    return contradictions(checked_annotations(target.signature, target.fn), seed)
