@@ -42,8 +42,7 @@ class FileSeed:
 
 def read_seeds_file(name: str) -> SeedsFile:
     """Read the file ``name`` names. Refuse an empty name, and a file that cannot be read or
-    holds only blank lines. A byte-order mark at a line's start is not part of the line, so a
-    file made by joining files that start with one reads as they do.
+    holds only blank lines. A byte-order mark at a line's start is not part of the line.
 
     A line ends where Python's text reading ends one, at ``\\n``, ``\\r\\n`` or
     ``\\r``; a line separator ``splitlines`` would also split on, such as
