@@ -197,6 +197,19 @@ def test_a_fresh_interpreter_runs_a_target_a_dotted_name_names(
     assert [branch.taken for branch in result.branches] == [False]
 
 
+def test_a_fresh_interpreter_builds_the_instance_a_method_runs_on() -> None:
+    inputs = Inputs(load_target("targets.classes.cart::Cart.total"), Isolation.FRESH)
+
+    result = inputs({"self": {"owner": "ann"}, "discount": 5}, None)
+
+    assert result.failure is None
+    owner_is_admin = ["==", ["[]", "self", "'owner'"], "'admin'"]
+    assert [branch.expression for branch in result.branches] == [
+        owner_is_admin,
+        [">", "discount", 10],
+    ]
+
+
 def store_reads() -> int:
     """How many times ``store.till``, a property, has been read since its module imported."""
     return sys.modules["targets.classes.cart"].Store.reads

@@ -59,6 +59,7 @@
     {"set": "v2", "target": "targets.bools.untested::positive", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.classes.cart::Cart", "seed": {"owner": "ann"}},
     {"set": "v2", "module": "targets.classes.lazy", "left_out": "gives its one function through the module's __getattr__, which no top-level def names"},
+    {"set": "v2", "target": "targets.classes.shop::Cart", "seed": {"owner": "ann"}},
     {"set": "v2", "target": "targets.compare.decorated::classify", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.compare.decorator", "left_out": "the decorator of targets.compare.decorated, not a target"},
     {"set": "v2", "target": "targets.compare.helper_beside::route", "seed": {"x": 0}},

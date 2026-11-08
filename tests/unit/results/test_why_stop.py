@@ -279,6 +279,7 @@ SHAPES = {
 }
 
 
+@pytest.mark.serial
 @pytest.mark.parametrize("shape", list(SHAPES))
 def test_the_clock_is_read_often_through_each_large_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str

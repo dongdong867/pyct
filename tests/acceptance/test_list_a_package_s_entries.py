@@ -142,7 +142,7 @@ def test_lists_methods_as_skipped() -> None:
     for name in ("Cart.empty", "Cart.rate", "Cart.total", "Parser.parse"):
         row = row_named(result.stdout, module, name)
         assert (row["status"], row["seed"]) == ("skipped", None)
-        assert row["reason"] == "pyct run cannot call a method yet"
+        assert row["reason"] == "sweep gives no seed for a method yet"
     expected = ["Cart", "Cart.empty", "Cart.rate", "Cart.total", "Parser.parse", "Special"]
     assert names(result.stdout) == expected
 
