@@ -141,10 +141,10 @@ def whole_at(head: str, operands: Sequence[object], kinds: Sequence[type | None]
     if head not in _SWAPPED or float not in kinds:
         return None
     at = next((at for at, kind in enumerate(kinds) if kind is int or kind is bool), None)
-    plain = None if at is None else operands[at]
-    if at is None or (isinstance(plain, int) and _held(plain)):
+    if at is None:
         return None
-    return at
+    plain = operands[at]
+    return None if isinstance(plain, int) and _held(plain) else at
 
 
 def _held(number: int) -> bool:
