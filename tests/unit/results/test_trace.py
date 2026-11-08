@@ -474,3 +474,11 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
+
+
+def test_render_trace_names_where_a_seed_came_from_after_its_source() -> None:
+    record = InputRecord(args={"x": 1}, forks=(FORK,), covered_lines=frozenset({6, 5}))
+
+    text = render_trace(record, COVERAGE, label="seeds.jsonl:3")
+
+    assert text.splitlines()[0] == 'seed seeds.jsonl:3 {"x": 1}'

@@ -24,15 +24,19 @@ from pyct.results.why_render import why_line
 
 
 def render_trace(
-    record: InputRecord, coverage: Coverage, printed: PrintedForks | None = None
+    record: InputRecord,
+    coverage: Coverage,
+    printed: PrintedForks | None = None,
+    label: str | None = None,
 ) -> str:
     """One fact per line, each line ending in a newline: head, forks, coverage, end, losses.
 
     ``printed`` is each fork's expression as `printed_forks` cut it, for a
     caller that cut them once for the trace and the stdout line alike.
+    ``label`` follows the head's first word, as ``seed FILE:N``.
     """
     shown = printed_forks(record.forks) if printed is None else printed
-    lines = _head(record)
+    lines = _head(record, label)
     lines += _forks(record.forks, shown.expressions)
     lines += _cut_forks(len(record.forks), shown.cut_from)
     lines += _coverage(coverage)
@@ -137,9 +141,10 @@ def _stopped(stop: Stop) -> list[str]:
     return [f"stopped: {stop.reason}", *_indented(stop.detail)]
 
 
-def _head(record: InputRecord) -> list[str]:
+def _head(record: InputRecord, label: str | None) -> list[str]:
     """Where the input came from, and, when the solver aimed it, whether it landed."""
-    lines = [f"{record.source.value} {json.dumps(record.args)}"]
+    source = record.source.value if label is None else f"{record.source.value} {label}"
+    lines = [f"{source} {json.dumps(record.args)}"]
     if record.aim is None:
         return lines
     lines.append(_aim(record.aim))

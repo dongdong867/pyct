@@ -1,14 +1,20 @@
 """A caller of run() gives it several seeds: each runs, in order, before any solver input."""
 
+import time
+from collections import deque
+
 import pytest
 
+from pyct.binding.bind import Seed
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
+from pyct.results.coverage import Progress, Scope
 from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
-from pyct.run.run import run
+from pyct.run.process import InputStartError
+from pyct.run.run import Attempt, Bounds, _seed_attempt, run
 from pyct.run.target import load_target
 
 # `bucket(x)`: x < 100, then x < 10 under it; 5, 50 and 500 take its three paths
@@ -19,6 +25,10 @@ NO_CHECK = "targets.flip.no_check::echo"
 THREE_DEEP = "targets.flip.flips_gain_nothing::three_deep"
 # `probe(x)`: raises below 10
 RAISES = "targets.flip.raises_after_a_check::probe"
+
+
+def no_input_yet() -> Progress:
+    return Progress(Scope(file="", lines=frozenset()), frozenset())
 
 
 def sources(records: tuple[InputRecord, ...]) -> list[Source]:
@@ -122,3 +132,30 @@ def test_a_seed_that_raises_does_not_stop_the_seeds() -> None:
     assert failure is not None
     assert failure.kind is FailureKind.TARGET_RAISED
     assert result.records[1].failure is None
+
+
+def refused(args: object, until: float | None) -> object:
+    raise InputStartError("could not start a child process: refused")
+
+
+def test_a_later_seed_that_cannot_start_stops_the_run() -> None:
+    waiting = deque([Seed.of({"x": 2})])
+
+    attempt = _seed_attempt(refused, waiting, Bounds(), no_input_yet())  # pyrefly: ignore[bad-argument-type]
+
+    assert attempt == Attempt(
+        stop=Stop(StopKind.COULD_NOT_START, "could not start a child process: refused")
+    )
+
+
+def test_a_waiting_seed_does_not_run_once_the_budget_is_spent() -> None:
+    waiting = deque([Seed.of({"x": 2})])
+    spent = Bounds(until=time.monotonic() - 1)
+
+    attempt = _seed_attempt(refused, waiting, spent, no_input_yet())  # pyrefly: ignore[bad-argument-type]
+
+    assert attempt == Attempt(stop=Stop(StopKind.BUDGET))
+
+
+def test_no_seed_pass_once_no_seed_waits() -> None:
+    assert _seed_attempt(refused, deque(), Bounds(), no_input_yet()) is None  # pyrefly: ignore[bad-argument-type]
