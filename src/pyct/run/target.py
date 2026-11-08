@@ -59,9 +59,10 @@ class Target:
     ``self_name`` is that method's first parameter, when it takes a position:
     the seed's key for the constructor's arguments, from which each input
     builds the instance. With none, no instance is built, and each seed
-    value goes to the method as given. ``constructor`` is the
-    class's signature, as Python reads it at load, or None when Python
-    cannot read it; the instance is still built then.
+    value goes to the method as given. ``constructor`` is the class's
+    signature, as Python reads it at load, for a target that builds an
+    instance. It is None for every other target, and for one whose class's
+    signature Python cannot read; that instance is still built.
 
     ``followed`` is the spec ``load_target`` followed and the callable it
     reached, which a fresh interpreter finds by following that spec again.

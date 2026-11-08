@@ -15,18 +15,10 @@ class Size(enum.IntEnum):
 
 
 class Member:
-    def __init__(  # noqa: PLR0913 - one parameter per kind of default
-        self,
-        name: str,
-        vip: bool = False,
-        rank: int = 2,
-        rate: float = 0.5,
-        note: str = "",
-        tags: list[str] | None = None,
-        size: Size = Size.SMALL,
-        *extra: object,
-        level: int = 3,
-        **more: object,
+    """A constructor with a default of each simple type."""
+
+    def __init__(
+        self, name: str, vip: bool = False, rank: int = 2, rate: float = 0.5, note: str = ""
     ) -> None:
         self.name = name
         self.vip = vip
@@ -35,6 +27,24 @@ class Member:
         if self.vip:
             return 5
         return 10
+
+
+class Gathering:
+    """A constructor whose other defaults, and gathering parameters, Python fills itself."""
+
+    def __init__(
+        self,
+        name: str,
+        tags: list[str] | None = None,
+        size: Size = Size.SMALL,
+        *extra: object,
+        level: int = 3,
+        **more: object,
+    ) -> None:
+        self.name = name
+
+    def show(self) -> str:
+        return self.name
 
 
 class Unread:
@@ -72,13 +82,19 @@ def test_a_left_out_int_float_str_or_bool_default_is_filled_after_the_given_keys
 
     filled = with_defaults(MEMBER, seed)
 
-    assert filled == {
-        "self": {"name": "ann", "rank": 9, "vip": False, "rate": 0.5, "note": "", "level": 3}
-    }
+    assert filled == {"self": {"name": "ann", "rank": 9, "vip": False, "rate": 0.5, "note": ""}}
     fields = filled["self"]
     assert isinstance(fields, dict)
-    assert list(fields) == ["name", "rank", "vip", "rate", "note", "level"]
+    assert list(fields) == ["name", "rank", "vip", "rate", "note"]
     assert seed == {"self": {"name": "ann", "rank": 9}}
+
+
+def test_only_a_simple_default_is_filled_a_keyword_only_one_too() -> None:
+    gathering = target_of(Gathering, Gathering.show, inspect.signature(Gathering))
+
+    assert with_defaults(gathering, {"self": {"name": "ann"}}) == {
+        "self": {"name": "ann", "level": 3}
+    }
 
 
 def test_a_seed_whose_self_is_not_a_dict_is_left_as_it_came() -> None:
@@ -116,7 +132,7 @@ def test_each_of_several_seeds_takes_its_left_out_defaults_and_keeps_its_keys() 
 
     result = run(MEMBER, seeds, isolation=Isolation.IN_PROCESS)
 
-    simple = {"rank": 2, "rate": 0.5, "note": "", "level": 3}
+    simple = {"rank": 2, "rate": 0.5, "note": ""}
     assert [record.args for record in result.records[:2]] == [
         {"self": {"name": "ann", "vip": False, **simple}},
         {"self": {"name": "bob", "vip": True, **simple}},

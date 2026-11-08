@@ -1,15 +1,11 @@
 """The constructor parameters a seed leaves out under ``self``, filled with simple defaults."""
 
-import inspect
 from collections.abc import Mapping
 
 from pyct.run.target import Target
 
 # the defaults a left-out parameter is filled with, matched by exact type: values bind tracks
 _SIMPLE: tuple[type, ...] = (int, float, str, bool)
-
-# the parameters that gather what no other takes, which Python fills itself
-_GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
 
 
 def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, object]:
@@ -30,7 +26,6 @@ def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, ob
         return seed
     given: dict[str, object] = dict(fields)
     for parameter in constructor.parameters.values():
-        left_out = parameter.kind not in _GATHERING and parameter.name not in given
-        if left_out and type(parameter.default) in _SIMPLE:
+        if parameter.name not in given and type(parameter.default) in _SIMPLE:
             given[parameter.name] = parameter.default
     return {**seed, name: given}
