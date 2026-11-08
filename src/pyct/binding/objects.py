@@ -37,9 +37,10 @@ class Attribute:
 
 
 def followed(value: object) -> bool:
-    """Whether a value that is no int, float, str, bool or None is an object whose attributes
-    the walk follows, given a copy: anything but a list, a dict, a tuple and a bound method."""
-    return not isinstance(value, list | dict | tuple | types.MethodType)
+    """Whether the walk follows what a value that is no int, float, str, bool or None holds,
+    given a copy: a list's or a dict's items, a tuple's, any other object's attributes, and
+    nothing of a bound method's."""
+    return not isinstance(value, types.MethodType)
 
 
 def attributes(value: object, made: object) -> Iterator[tuple[Attribute, object]]:

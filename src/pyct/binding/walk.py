@@ -72,6 +72,17 @@ _ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
 type _Pending = tuple[object, Expression | None, Any, Any, Check | None]
 
 
+@dataclass(frozen=True, eq=False)
+class _Build:
+    """A tuple to build once its items are placed, and where it goes: queued before its items,
+    so the stack pops it after every value under them."""
+
+    value: tuple[object, ...]
+    items: list[object]
+    into: Any
+    slot: Any
+
+
 class Walk:
     """One walk of a seed, in seed order, depth first, and never recursive.
 
@@ -86,13 +97,14 @@ class Walk:
 
     A list first reached under a name is tracked whole: the visitor makes its
     copy and says which items it takes, and every value placed in it is a
-    value inside a tracked list. An object is copied by ``copy.deepcopy``, and
-    its attributes are then followed into that copy as a dict's values are
-    (see ``objects``), so the objects inside it are its copies from that one
-    deepcopy, joined to the walk's own. Any other value is copied by deepcopy
-    with a memo that reads the walk's copies, so a list reached through a
-    tuple, say, is the walk's copy of it there too. A value deepcopy cannot
-    copy stays as it came.
+    value inside a tracked list. A tuple's items are placed by index in a
+    list of their own, and the tuple is built from them after, of its own
+    type. An object, a subclass of dict or list among them, is copied by
+    ``copy.deepcopy`` with a memo that reads the walk's copies, and its
+    attributes, or its items, are then followed into that copy (see
+    ``objects``), so the objects inside it are its copies from that one
+    deepcopy, joined to the walk's own. A value deepcopy cannot copy stays as
+    it came, and so does an object it copies as itself.
     """
 
     def __init__(self, visitor: Visitor) -> None:
@@ -104,7 +116,9 @@ class Walk:
         self._kept: list[object] = []
         self._named: set[int] = set()
         self._tracked: set[int] = set()
-        self._pending: list[_Pending] = []
+        # the tuples whose items are still being placed, by the identity of the seed's
+        self._building: set[int] = set()
+        self._pending: list[_Pending | _Build] = []
 
     def rebuilt(
         self, seed: Mapping[str, object], checks: Mapping[str, Check] | None = None
@@ -115,7 +129,11 @@ class Walk:
         rebuilt: dict[str, object] = dict.fromkeys(seed)
         self._later((value, name, rebuilt, name, asked.get(name)) for name, value in seed.items())
         while self._pending:
-            value, access, into, slot, check = self._pending.pop()
+            entry = self._pending.pop()
+            if isinstance(entry, _Build):
+                self._build(entry)
+                continue
+            value, access, into, slot, check = entry
             in_list = id(into) in self._tracked
             placed = self._placed(value, access, Place(access, into, slot, check, in_list))
             _put(into, slot, placed, value)
@@ -128,15 +146,18 @@ class Walk:
     def _placed(self, value: object, access: Expression | None, place: Place) -> object:
         """What goes where ``value`` was: its tracked form, its copy, or the value itself.
 
-        A dict and a list, and not their subclasses, are copied, and their
-        values queued, and so are an object's attributes. A value with no
-        access is never tracked, and neither is anything under it.
+        A dict and a list are copied, and their values queued, and so are an
+        object's attributes, or its items for a subclass of dict or list. A
+        value with no access is never tracked, and neither is anything under
+        it.
         """
         if access is not None and binds(value, access):
             return self._visitor.scalar(value, place)
         if type(value) in _ATOMIC:
             return value
-        if type(value) is not list and type(value) is not dict and not objects.followed(value):
+        if isinstance(value, tuple):
+            return self._tuple(value, access, place)
+        if not objects.followed(value):
             return self._deep_copy(value)
         made = self._copies.get(id(value))
         if made is None:
@@ -156,8 +177,8 @@ class Walk:
     def _made(self, value: object, access: Expression | None, place: Place) -> tuple[Any, Any]:
         """A container's or an object's copy, made the first time the walk reaches it, and what
         it takes: an object's are its attributes, read once it is queued."""
-        if not isinstance(value, list | dict):
-            return self._deep_copy(value, _not_rebuilt), None
+        if type(value) is not list and type(value) is not dict:
+            return self._deep_copy(value, _not_rebuilt), _again(value, place.check)
         if isinstance(value, list) and access is not None:
             made, items = self._visitor.listed(value, place)
             self._tracked.add(id(made))
@@ -172,6 +193,39 @@ class Walk:
         self._copies[id(value)] = made
         self._kept.append(value)
         return made, items
+
+    def _tuple(self, value: tuple[object, ...], access: Expression | None, place: Place) -> object:
+        """A tuple's copy, or None to stand in its place until its items are placed and it is
+        built (see ``_build``).
+
+        A tuple reached again inside itself, through a list, a dict or an
+        object, is copied as deepcopy copies it, over the walk's copies, and
+        that copy is the one every path holds: the values directly in it are
+        plain.
+        """
+        made = self._copies.get(id(value))
+        if made is not None:
+            return made
+        if id(value) in self._building:
+            return self._deep_copy(value)
+        self._building.add(id(value))
+        items: list[object] = [None] * len(value)
+        self._pending.append(_Build(value, items, place.into, place.slot))
+        self._later((item, _step(access, at), items, at, None) for at, item in enumerate(value))
+        return None
+
+    def _build(self, build: _Build) -> None:
+        """Build a tuple whose items are placed, with ``tuple.__new__`` so a namedtuple's own
+        constructor does not run, and put it where it goes: the copy deepcopy made of it while
+        its items were placed, when one was."""
+        value = build.value
+        self._building.discard(id(value))
+        made = self._copies.get(id(value))
+        if made is None:
+            made = tuple.__new__(type(value), build.items)
+            self._copies[id(value)] = made
+            self._kept.append(value)
+        _put(build.into, build.slot, made, value)
 
     def _deep_copy(self, value: object, joins: Callable[[object], bool] = lambda _: True) -> object:
         """A copy of a value the walk does not rebuild, or the value itself when it has none.
@@ -215,9 +269,10 @@ class _Scratch(dict[int, Any]):
 
 
 def _not_rebuilt(made: object) -> bool:
-    """Whether a copy an object's deepcopy made joins the walk's: any but a dict's and a list's,
-    which the walk makes its own of when it reaches them, so they are tracked there."""
-    return type(made) is not list and type(made) is not dict
+    """Whether a copy an object's deepcopy made joins the walk's: any but a dict's, a list's and
+    a tuple's, which the walk makes its own of when it reaches them, so what they hold is
+    followed there."""
+    return type(made) is not list and type(made) is not dict and not isinstance(made, tuple)
 
 
 def _put(into: Any, slot: Any, placed: object, value: object) -> None:

@@ -8,6 +8,7 @@ where an input that changed the caller's value would show it to the next one.
 
 import json
 import sys
+from collections import OrderedDict
 from types import ModuleType
 from typing import Any
 
@@ -15,6 +16,7 @@ import pytest
 
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
+from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
@@ -211,3 +213,50 @@ def test_follows_a_list_and_a_dict_inside_an_object(
     items = ["getattr", "holder", "'items'"]
     seeded = [fork.expression for fork in result.records[0].forks]
     assert [">", ["[]", items, 0], 5] in seeded, seeded
+
+
+def same_types_run(isolation: Isolation, monkeypatch: pytest.MonkeyPatch) -> tuple[Any, Any]:
+    """The run the hands-back-the-same-types criterion names, and the module of its classes."""
+    target, module = loaded("targets.nested.same_types::five_reads", monkeypatch)
+    seed = {
+        "point": (0, 1),
+        "pair": module.Pair(0, 1),
+        "frozen": module.Frozen(0),
+        "ordered": OrderedDict(k=0),
+        "by_id": {1: 0},
+    }
+    return run(target, seed, isolation=isolation), module
+
+
+# run-with-nested-arguments-hands-back-the-same-types, all but its last clause
+@pytest.mark.parametrize("isolation", EVERYWHERE)
+def test_hands_back_the_same_types(isolation: Isolation, monkeypatch: pytest.MonkeyPatch) -> None:
+    result, module = same_types_run(isolation, monkeypatch)
+
+    reads = [
+        [">", ["[]", "point", 0], 5],
+        [">", ["[]", "pair", 0], 5],
+        [">", ["getattr", "frozen", "'n'"], 5],
+        [">", ["[]", "ordered", "'k'"], 5],
+        [">", ["[]", "by_id", 1], 5],
+    ]
+    sides = {(json.dumps(fork.expression), fork.taken) for r in result.records for fork in r.forks}
+    assert all((json.dumps(read), taken) in sides for read in reads for taken in (True, False))
+    assert result.records[0].forks[-1].expression == reads[-1]
+    for record in result.records:
+        assert type(record.args["point"]) is tuple
+        assert type(record.args["pair"]) is module.Pair
+        assert type(record.args["frozen"]) is module.Frozen
+        assert type(record.args["ordered"]) is OrderedDict
+
+
+# run-with-nested-arguments-hands-back-the-same-types, its last clause: no record says the target
+# raised
+@pytest.mark.parametrize("isolation", EVERYWHERE)
+def test_hands_back_the_same_types_with_no_raise(
+    isolation: Isolation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result, _ = same_types_run(isolation, monkeypatch)
+
+    raised = [r.failure for r in result.records if r.failure is not None]
+    assert all(failure.kind is not FailureKind.TARGET_RAISED for failure in raised), raised

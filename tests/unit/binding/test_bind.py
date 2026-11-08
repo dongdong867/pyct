@@ -222,14 +222,15 @@ def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
     assert config["items"].expression == ["+", ["[]", "config", "'items'"], ["[,]", 1]]
 
 
-def test_a_subclass_of_dict_is_a_copy_of_the_same_type_with_plain_values() -> None:
+def test_a_subclass_of_dict_is_a_copy_of_the_same_type_with_its_values_tracked() -> None:
     seed = {"d": OrderedDict(k=1)}
 
     args = bind(seed, [])
 
     d = args["d"]
     assert type(d) is OrderedDict and d is not seed["d"]
-    assert d == {"k": 1} and type(d["k"]) is int
+    assert isinstance(d["k"], ConcolicInt) and d["k"].expression == ["[]", "d", "'k'"]
+    assert seed["d"] == {"k": 1} and type(seed["d"]["k"]) is int
 
 
 def test_a_list_reached_through_a_tuple_is_the_walks_own_copy_there_too() -> None:
@@ -371,21 +372,35 @@ def test_a_list_reached_first_under_a_float_key_is_still_named_by_its_key() -> N
     assert leaves(seed) == {json.dumps(["[]", ["[]", "d", "'k'"], 0]): int}
 
 
+class Wrapped:
+    """An object holding the value it was made with."""
+
+    def __init__(self, held: object) -> None:
+        self.held = held
+
+
 def test_a_copy_that_fails_part_way_leaves_nothing_half_made_behind() -> None:
-    # deepcopy records a list's copy before it copies the items, and the lock refuses
+    # a tuple's items are walked, so the list in it is the walk's own, named through the tuple
     x: list[object] = [threading.Lock(), 0]
+    assert leaves({"t": (x,), "a": x}) == {json.dumps(["[]", ["[]", "t", 0], 1]): int}
+    # deepcopy records an object's copy before it copies what it holds, and the lock refuses
+    w = Wrapped([threading.Lock(), 0])
 
-    assert leaves({"t": (x,), "a": x}) == {json.dumps(["[]", "a", 1]): int}
+    args = bind({"t": [w], "u": w}, [])
+
+    assert args["u"] is w
 
 
-def test_a_value_whose_copy_failed_reaches_the_target_whole() -> None:
+def test_a_value_whose_copy_failed_reaches_the_target_whole_beside_values_followed() -> None:
     y: list[object] = [threading.Lock(), 0]
 
     args = bind({"t": (y,), "u": (y, 1)}, [])
 
-    assert args["t"] == (y,) and args["u"] == (y, 1)
-    u = args["u"]
-    assert isinstance(u, tuple) and u[0] is y and len(y) == 2
+    t, u = args["t"], args["u"]
+    assert isinstance(t, tuple) and isinstance(u, tuple)
+    assert t[0] is u[0] and isinstance(t[0], ConcolicList)
+    assert list.__getitem__(t[0], 0) is y[0] and len(y) == 2
+    assert isinstance(u[1], ConcolicInt) and u[1].expression == ["[]", "u", 1]
 
 
 def test_a_tuple_copied_once_is_the_same_copy_wherever_the_seed_reaches_it() -> None:
@@ -401,7 +416,7 @@ class IdentityKey:
     """A key that is equal only to itself, as an object with no __eq__ of its own is."""
 
 
-def test_a_dict_copied_first_inside_a_tuple_keeps_its_own_keys_when_named() -> None:
+def test_a_dict_reached_first_inside_a_tuple_keeps_its_own_keys_named_through_it() -> None:
     d: dict[object, object] = {IdentityKey(): 1, "n": 2}
 
     args = bind({"t": (d,), "a": d}, [])
@@ -410,7 +425,7 @@ def test_a_dict_copied_first_inside_a_tuple_keeps_its_own_keys_when_named() -> N
     assert isinstance(a, dict) and isinstance(t, tuple) and t[0] is a
     assert len(a) == 2
     assert isinstance(a["n"], ConcolicInt)
-    assert a["n"].expression == ["[]", "a", "'n'"]
+    assert a["n"].expression == ["[]", ["[]", "t", 0], "'n'"]
 
 
 @dataclass(slots=True)
