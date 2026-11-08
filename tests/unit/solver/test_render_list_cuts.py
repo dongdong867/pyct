@@ -38,8 +38,8 @@ def _cut(times: int) -> tuple[Seed, tuple[Branch, ...]]:
         # a read through six cuts runs past the steps a 5 s solve gives one read, so the settled
         # program answers unsat, then the unsettled one answers
         (6, 5.0, 2.0),
-        # ten cuts' reads fit the steps the 10 s default gives the unsettled program's reads
-        (10, 10.0, 10.0),
+        # nine cuts' reads fit the steps the 10 s default gives the unsettled program's reads
+        (9, 10.0, 10.0),
     ],
 )
 def test_a_list_cut_past_what_the_input_held_is_solved_unsettled(
@@ -57,11 +57,11 @@ def test_a_list_cut_past_what_the_input_held_is_solved_unsettled(
 
 
 @needs_cvc5
-@pytest.mark.parametrize("times", [11, 12])
+@pytest.mark.parametrize("times", [10, 11])
 def test_an_unsettled_program_past_its_shared_steps_is_given_up_at_once(
     monkeypatch: pytest.MonkeyPatch, times: int
 ) -> None:
-    # eleven cuts or more double the reads past what the 10 s default gives them: an unknown,
+    # ten cuts or more double the reads past what the 10 s default gives them: an unknown,
     # long before the limit, with cvc5 asked only about the settled program, and for its core
     seed, path = _cut(times)
     asks: list[str] = []

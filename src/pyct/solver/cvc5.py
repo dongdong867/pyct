@@ -63,9 +63,10 @@ CHOSEN_SECONDS = 1.0
 
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
 # second of the solve's limit, so a path's outcome never turns on how long the first ask took.
-# Each cut of a list at open clamps doubles them: ten cuts take about 10,000 and eleven about
-# 20,500, so at the 10 s default ten are asked and eleven given up at once
-UNSETTLED_STEPS_PER_SECOND = 2_000
+# Each cut of a list at open clamps doubles them: nine cuts take about 5,100 and ten about
+# 10,200. cvc5 1.4.2 answers nine cuts' program in about 2.4 s and ten's in about 10.3 s, so at
+# the 10 s default 7,500 are asked, nine cuts and ten given up at once
+UNSETTLED_STEPS_PER_SECOND = 750
 
 # how often a read that runs long settles the clamps it went through before every clamp settles
 SETTLE_ROUNDS = 4
