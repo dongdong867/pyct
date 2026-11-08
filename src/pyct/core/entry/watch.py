@@ -57,6 +57,8 @@ from pyct.core.foundation.package_builtins import binds
 # Python's own, which each watched call reads: the target may put others in `builtins` while
 # one of its calls runs
 _id, _len, _next, _range, _set, _type = id, len, next, range, set, type
+_dict, _list, _tuple = dict, list, tuple
+_classmethod, _staticmethod = classmethod, staticmethod
 _PARTIAL = functools.partial
 _dict_get = dict.get
 # a class's order and its own namespace, read as `type` keeps them, past any metaclass's lookup
@@ -213,7 +215,7 @@ def _judged(callee: object) -> bool:
     package, reached through a bound method, a `functools.partial`, a wrapper that holds it in
     its own ``__wrapped__`` (`_wrapped`), or an object's own `__call__` (`_class_call`)."""
     function: object = callee
-    for _ in _range(_MOST_WRAPPED):
+    for _ in _range(_MOST_WRAPPED + 1):
         kind = _type(function)
         if kind is types.FunctionType and binds(function.__builtins__):  # pyrefly: ignore[missing-attribute]
             return False
@@ -234,12 +236,14 @@ def _judged(callee: object) -> bool:
 
 def _class_call(kind: type) -> object:
     """The `__call__` the nearest class in ``kind``'s order holds, read from the classes' own
-    namespaces, so no lookup of the target's runs, else None."""
+    namespaces past any metaclass's lookup and any descriptor's `__get__`, a static or class
+    method's function unwrapped, else None."""
     for owner in _MRO_OF(kind):
         held = _NAMESPACE_OF(owner)
         if "__call__" in held:
             found = held["__call__"]
-            return found.__func__ if _type(found) is staticmethod else found
+            unwrapped = _type(found) is _staticmethod or _type(found) is _classmethod
+            return found.__func__ if unwrapped else found
     return None
 
 
@@ -256,9 +260,9 @@ def _tracked_in(value: object) -> object:
     kind = _type(value)
     if kind in TRACKED_CLASSES:
         return value
-    if kind is list or kind is tuple:
+    if kind is _list or kind is _tuple:
         items = _islice(value, MOST_ITEMS)  # pyrefly: ignore[no-matching-overload, bad-argument-type]
-    elif kind is dict:
+    elif kind is _dict:
         items = _chain.from_iterable(_islice(value.items(), MOST_ITEMS))  # pyrefly: ignore[missing-attribute]
     else:
         return None
@@ -280,7 +284,7 @@ def _plain(value: object) -> bool:
         if _id(part) in read:
             continue
         read.add(_id(part))
-        if kind is dict:
+        if kind is _dict:
             stack.extend(part.keys())  # pyrefly: ignore[missing-attribute]
             stack.extend(part.values())  # pyrefly: ignore[missing-attribute]
         else:

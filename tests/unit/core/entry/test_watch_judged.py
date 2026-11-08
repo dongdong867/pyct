@@ -3,6 +3,7 @@ reached through what wraps it, read without running the target's code."""
 
 import builtins
 import functools
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -34,6 +35,7 @@ def _in_the_package(source: str, name: str) -> Any:
 IS_BIG = "def is_big(v):\n    return bin(v).count('1') > 1\n"
 HELPER = """
 import functools
+import types
 
 def is_big(v):
     return bin(v).count('1') > 1
@@ -62,6 +64,17 @@ class Fib:
         return bin(v).count('1') > 1
 
 fib = Fib()
+
+class Child(Sizes):
+    pass
+
+class Static:
+    __call__ = staticmethod(is_big)
+
+class Classwide:
+    @classmethod
+    def __call__(cls, v):
+        return bin(v).count('1') > 1
 """
 
 
@@ -108,6 +121,10 @@ class _Answers:
             lambda: _in_the_package(HELPER, "retry"), id="an object that wraps a C function"
         ),
         pytest.param(lambda: _in_the_package(HELPER, "fib"), id="a cached __call__"),
+        pytest.param(lambda: _in_the_package(HELPER, "Child")(), id="an inherited __call__"),
+        pytest.param(lambda: _in_the_package(HELPER, "Static")(), id="a static __call__"),
+        pytest.param(lambda: _in_the_package(HELPER, "Classwide")(), id="a class's __call__"),
+        pytest.param(lambda: _chained(watch._MOST_WRAPPED), id="the most wrappers read"),
     ],
 )
 def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any]) -> None:
@@ -147,15 +164,19 @@ def test_a_callable_s_own_attribute_lookup_does_not_place_it() -> None:
 
 
 @pytest.mark.parametrize(
-    ("name", "replacement"),
-    [("len", lambda _value: 0), ("isinstance", lambda _value, _kind: False)],
-    ids=["len", "isinstance"],
+    ("name", "replacement", "callee"),
+    [
+        ("len", lambda _value: 0, lambda: _in_the_package(HELPER, "is_big")),
+        ("isinstance", lambda _value, _kind: False, lambda: _in_the_package(HELPER, "is_big")),
+        ("staticmethod", lambda function: function, lambda: _in_the_package(HELPER, "Static")()),
+    ],
+    ids=["len", "isinstance", "staticmethod"],
 )
 def test_a_call_into_the_target_s_package_is_not_judged_while_a_builtin_is_replaced(
-    name: str, replacement: object
+    name: str, replacement: object, callee: Callable[[], Any]
 ) -> None:
     sink: list[SinkItem] = []
-    function = _in_the_package(HELPER, "is_big")
+    function = callee()
     python_own = getattr(builtins, name)
     # the target puts a function of its own in `builtins`, which its modules then find
     setattr(builtins, name, replacement)
@@ -167,6 +188,36 @@ def test_a_call_into_the_target_s_package_is_not_judged_while_a_builtin_is_repla
     assert lost(sink) == []
 
 
+def test_a_dict_argument_is_read_while_dict_is_replaced() -> None:
+    sink: list[SinkItem] = []
+    python_dict = builtins.dict
+    builtins.dict = list  # pyrefly: ignore[bad-assignment]
+    try:
+        answer(called(str)(given({"k": tracked(3, sink)})), "str")
+    finally:
+        builtins.dict = python_dict
+
+    assert [name for name, _ in lost(sink)] == ["str"]
+
+
+class _Disguised(dict[str, object]):
+    """A builtins mapping whose ``__class__`` raises, as a function's globals may hold one."""
+
+    @property
+    def __class__(self) -> type:  # pyrefly: ignore[bad-override]
+        raise RuntimeError("no class")
+
+
+def test_a_function_s_builtins_are_told_without_reading_them() -> None:
+    sink: list[SinkItem] = []
+    held = _Disguised(vars(builtins))
+    function = types.FunctionType(_cycling.__code__, {"__builtins__": held})
+
+    answer(called(function)(given(tracked(3, sink))), "disguised")
+
+    assert [name for name, _ in lost(sink)] == ["disguised"]
+
+
 def _cycling(value: int) -> int:
     return bin(value).count("1")
 
@@ -174,10 +225,10 @@ def _cycling(value: int) -> int:
 _cycling.__wrapped__ = _cycling  # pyrefly: ignore[missing-attribute]
 
 
-def _chained() -> Callable[[Any], Any]:
-    """A package function behind more wrappers than the watch reads through."""
+def _chained(count: int) -> Callable[[Any], Any]:
+    """A package function behind ``count`` wrappers of a library's decorator."""
     function = _in_the_package(HELPER, "is_big")
-    for _ in range(watch._MOST_WRAPPED + 1):
+    for _ in range(count):
         function = _decorated(function)
     return function
 
@@ -186,7 +237,7 @@ def _chained() -> Callable[[Any], Any]:
     "callee",
     [
         pytest.param(lambda: _cycling, id="a wrapper that wraps itself"),
-        pytest.param(_chained, id="past the wrappers read"),
+        pytest.param(lambda: _chained(watch._MOST_WRAPPED + 1), id="past the wrappers read"),
     ],
 )
 def test_a_wrapper_the_watch_cannot_read_to_its_end_is_judged(callee: Callable[[], Any]) -> None:
