@@ -102,3 +102,15 @@ def test_a_sweep_usage_error_shows_the_usage_of_sweep() -> None:
         parse_command(["sweep"])
 
     assert str(refused.value).endswith(f"usage: {SWEEP_USAGE}")
+
+
+def test_a_seeds_file_comes_through_its_flag() -> None:
+    assert parse_command(["run", "m::f", "--seeds", "s.jsonl"]) == RunCommand(
+        spec="m::f", seed_text=None, seeds_text="s.jsonl"
+    )
+
+
+@pytest.mark.parametrize("inline", [["{}"], ["--args", "{}"], [""], ["--args", ""]])
+def test_a_seeds_file_beside_an_inline_seed_is_refused(inline: list[str]) -> None:
+    with pytest.raises(UsageError, match="^give the seeds one way"):
+        parse_command(["run", "m::f", *inline, "--seeds", "s.jsonl"])
