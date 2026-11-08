@@ -1,19 +1,35 @@
 """An object in the walk: whether its attributes are followed, which they are, and how its
 copy takes a new value for one.
 
-An object is followed once ``copy.deepcopy`` makes a new object of it, which is also the test
-that it can be copied: a class, a function and an enum member copy as themselves, and a module
-or an object holding a lock is refused, so each reaches the target as it came. A bound method
-is copied and never followed.
+An object is followed once ``copy.deepcopy`` makes a new object of it of the same type, which
+is also the test that it can be copied: a class, a function and an enum member copy as
+themselves, and a module or an object holding a lock is refused, so each reaches the target as
+it came. A bound method is copied and never followed.
 """
 
 from __future__ import annotations
 
+import keyword
 import types
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 from pyct.core.foundation.branch import Expression
+
+
+@dataclass(frozen=True, eq=False)
+class Held:
+    """An object's copy, as the holder the walk writes its attributes into."""
+
+    made: object
+
+
+@dataclass(frozen=True)
+class Attributes:
+    """What an object takes from the walk: each attribute it and its copy both hold, with the
+    object's value, in order."""
+
+    pairs: tuple[tuple[Attribute, object], ...]
 
 
 @dataclass(frozen=True)
@@ -37,13 +53,17 @@ class Attribute:
 
 
 def followed(value: object) -> bool:
-    """Whether the walk follows what a value that is no int, float, str, bool or None holds,
-    given a copy: a list's or a dict's items, a tuple's, any other object's attributes, and
-    nothing of a bound method's."""
+    """Whether the walk follows what a value that is no tuple holds, given a copy: a list's or
+    a dict's items, any other object's attributes, and nothing of a bound method's."""
     return not isinstance(value, types.MethodType)
 
 
-def attributes(value: object, made: object) -> Iterator[tuple[Attribute, object]]:
+def attributes(value: object, made: object) -> Attributes:
+    """What an object takes from the walk, given its copy of the same type."""
+    return Attributes(tuple(_pairs(value, made)))
+
+
+def _pairs(value: object, made: object) -> Iterator[tuple[Attribute, object]]:
     """Each attribute both an object and its copy hold, with the object's value, in order: its
     ``__dict__``'s entries, then each slot its class and bases declare that is set."""
     fields, copied = _fields(value), _fields(made)
@@ -57,7 +77,7 @@ def attributes(value: object, made: object) -> Iterator[tuple[Attribute, object]
         try:
             item = slot.__get__(value, type(value))
             slot.__get__(made, type(made))
-        except AttributeError:
+        except (AttributeError, TypeError):
             continue
         yield Attribute(name, slot), item
 
@@ -65,11 +85,13 @@ def attributes(value: object, made: object) -> Iterator[tuple[Attribute, object]
 def step(holder: Expression | None, attribute: Attribute) -> Expression | None:
     """The access to an attribute, ``["getattr", holder, "'<name>'"]``.
 
-    None when the holder has no access, or the attribute's name is no identifier: no access
-    written as Python would read it names the value there.
+    None when the holder has no access, or the attribute's name is no identifier or is a
+    keyword: no access written as Python would read it names the value there.
     """
     key = attribute.key
     if holder is None or not isinstance(key, str) or not key.isidentifier():
+        return None
+    if keyword.iskeyword(key):
         return None
     return ["getattr", holder, str.__repr__(key)]
 

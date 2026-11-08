@@ -64,7 +64,9 @@ class Both(Slotted):
 
 
 def test_a_slot_is_an_attribute_under_the_name_python_stores_it_after_the_dict() -> None:
-    args = bind({"o": Both()}, [])
+    given: Any = Both()
+
+    args = bind({"o": given}, [])
 
     made: Any = args["o"]
     assert isinstance(made.m, ConcolicInt) and isinstance(made._Slotted__key, ConcolicInt)
@@ -75,6 +77,7 @@ def test_a_slot_is_an_attribute_under_the_name_python_stores_it_after_the_dict()
         name("o", "_Slotted__key"),
         name("o", "n"),
     ]
+    assert type(given.m) is int and type(given._Slotted__key) is int and type(given.own) is int
 
 
 @dataclass(frozen=True)
@@ -88,9 +91,12 @@ class FrozenSlots:
 
 
 def test_a_frozen_dataclass_takes_its_value_as_its_init_stores_it() -> None:
-    args: dict[str, Any] = bind({"f": Frozen(0), "g": FrozenSlots(0)}, [])
+    f, g = Frozen(0), FrozenSlots(0)
+
+    args: dict[str, Any] = bind({"f": f, "g": g}, [])
 
     assert isinstance(args["f"].n, ConcolicInt) and isinstance(args["g"].n, ConcolicInt)
+    assert type(f.n) is int and type(g.n) is int
 
 
 def test_the_model_writes_into_a_copy_of_the_object_and_never_the_seed_s() -> None:
@@ -201,3 +207,120 @@ def test_an_object_inside_is_the_copy_of_the_outer_one_s_deepcopy(
     assert isinstance(made.items, ConcolicList)
     assert made.items.expression == ["getattr", "o", "'items'"]
     assert [value for value in calls if isinstance(value, Rule)] == []
+
+
+class State(enum.IntEnum):
+    NEW = 1
+
+
+class Tag(enum.StrEnum):
+    A = "a"
+
+
+class Job:
+    def __init__(self) -> None:
+        self.state = State.NEW
+        self.tag = Tag.A
+
+
+def test_an_enum_member_inside_an_argument_reaches_the_target_as_the_member() -> None:
+    seed: dict[str, object] = {"job": Job(), "pair": (State.NEW, Tag.A)}
+
+    args: dict[str, Any] = bind(seed, [])
+
+    assert args["job"].state is State.NEW and args["job"].tag is Tag.A
+    assert args["pair"][0] is State.NEW and args["pair"][1] is Tag.A
+    assert leaves(seed) == {}
+
+
+def test_an_int_or_str_subclass_inside_a_dict_or_a_list_passes_through_as_it_came() -> None:
+    seed: dict[str, object] = {"d": {"k": State.NEW}, "xs": [Tag.A, 2]}
+
+    args = bind(seed, [])
+
+    d, xs = args["d"], args["xs"]
+    assert isinstance(d, dict) and isinstance(xs, list)
+    assert dict.__getitem__(d, "k") is State.NEW and list.__getitem__(xs, 0) is Tag.A
+    assert leaves(seed) == {json.dumps(["[]", "xs", 1]): int}
+
+
+class Cache(dict[str, int]):
+    """A dict whose own copy hook hands back an empty one."""
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "Cache":
+        return Cache()
+
+
+class Bag(list[int]):
+    """A list whose own copy hook hands back an empty one."""
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "Bag":
+        return Bag()
+
+
+class Other:
+    __slots__ = ("x",)
+
+
+class Reduced:
+    """An object whose pickling hook builds an object of another type."""
+
+    __slots__ = ("n",)
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    def __reduce__(self) -> tuple[type, tuple[()]]:
+        return (Other, ())
+
+
+def test_a_copy_unlike_its_original_is_handed_on_as_deepcopy_made_it() -> None:
+    args: dict[str, Any] = bind({"c": Cache(k=0), "b": Bag([0]), "r": Reduced()}, [])
+
+    assert type(args["c"]) is Cache and len(args["c"]) == 0
+    assert type(args["b"]) is Bag and len(args["b"]) == 0
+    assert type(args["r"]) is Other
+
+
+class Single:
+    """An object whose own copy hook hands back the object itself."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "Single":
+        memo[id(self)] = self
+        return self
+
+
+def test_an_object_that_copies_as_itself_is_never_written_into_by_a_second_path() -> None:
+    given = Single()
+
+    args = bind({"a": given, "b": given}, [])
+
+    assert args["a"] is given and args["b"] is given
+    assert type(given.n) is int
+
+
+class Owner:
+    def __init__(self) -> None:
+        self.items = [0]
+
+    def method(self) -> int:
+        return len(self.items)
+
+
+def test_a_list_an_object_holds_is_tracked_whichever_path_reaches_it_first() -> None:
+    owner = Owner()
+
+    for seed in ({"f": owner.method, "o": owner}, {"o": owner, "f": owner.method}):
+        args: dict[str, Any] = bind(seed, [])
+
+        assert isinstance(args["o"].items, ConcolicList), list(seed)
+
+
+def test_an_attribute_named_by_a_keyword_is_copied_and_not_named() -> None:
+    rule = Rule()
+    setattr(rule, "class", 0)
+
+    assert leaves({"rule": rule}) == {name("rule", "limit"): int, name("rule", "label"): str}
