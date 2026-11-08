@@ -10,7 +10,7 @@ from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
 from pyct.core.foundation.branch import Branch, SinkItem
 from pyct.solver import cvc5 as cvc5_module
-from pyct.solver.answer import Sat, Unknown
+from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.declared import Program
 from tests.unit.solver.agreement import needs_cvc5
@@ -39,11 +39,8 @@ def _cut(times: int) -> tuple[Seed, tuple[Branch, ...]]:
         # program answers unsat, then the unsettled one answers
         (6, 5.0, 2.0),
         # each cut's reads fit the steps the limit gives the unsettled program's reads, and
-        # cvc5 answers them well inside it: seven cuts in 1 s, eight in 2 s, nine in 5 s and in
-        # the 10 s default
+        # cvc5 answers them well inside it: seven cuts in 1 s, and nine in the 10 s default
         (7, 1.0, 1.0),
-        (8, 2.0, 2.0),
-        (9, 5.0, 5.0),
         (9, 10.0, 10.0),
     ],
 )
@@ -59,6 +56,41 @@ def test_a_list_cut_past_what_the_input_held_is_solved_unsettled(
     assert time.perf_counter() - started < spent
     solved: Any = apply(seed, answer.model).args
     assert len(solved["items"]) >= 3 and solved["items"][-1] == 99
+
+
+@pytest.mark.parametrize(
+    ("times", "limit", "asked"),
+    [
+        (8, 1.0, True),
+        (9, 1.0, False),
+        (8, 2.0, True),
+        (9, 2.0, False),
+        (9, 5.0, True),
+        (10, 5.0, False),
+        (9, 10.0, True),
+        (10, 10.0, False),
+    ],
+)
+def test_the_unsettled_program_is_asked_where_its_steps_fit_the_limit(
+    monkeypatch: pytest.MonkeyPatch, times: int, limit: float, asked: bool
+) -> None:
+    # the steps a limit allows grow with its square root: eight cuts fit 1 s and 2 s, nine fit
+    # 5 s and 10 s, and one cut more is given up. cvc5 is not run: the settled programs answer
+    # unsat, and the unsettled one, written only where its steps fit, sat
+    unsettled: list[Program] = []
+
+    def answered(written: Program, timeout: float) -> Any:
+        if written.narrowed:
+            return Unsat(), frozenset()
+        unsettled.append(written)
+        return Sat({}), frozenset()
+
+    monkeypatch.setattr(cvc5_module, "_ask", answered)
+    seed, path = _cut(times)
+
+    answer = solve(path, seed.leaves, limit, seed.lists, seed.values)
+
+    assert (answer, len(unsettled)) == ((Sat({}), 1) if asked else (Unknown(), 0))
 
 
 @needs_cvc5
