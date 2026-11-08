@@ -26,9 +26,9 @@ def test_covers_the_line_only_an_int_equal_to_a_large_double_reaches() -> None:
 
 
 # compare-an-int-with-a-float-exactly-flips-past-rounding
-def test_flips_a_compare_an_int_takes_only_past_where_a_double_rounds_it() -> None:
-    result = run_pyct("targets.floats.past_rounding::above", '{"x": 0}')
+def test_reaches_the_only_int_between_two_doubles_which_rounding_cannot_reach() -> None:
+    result = run_pyct("targets.floats.past_rounding::between", '{"x": 0}')
 
     assert result.returncode == 0, result.stderr
-    # 2**53 + 1 rounds to the double 2.0**53, but Python compares it exactly and it is above
+    # 2**53 + 1 is the only int between 2.0**53 and the next double, and rounds to one of them
     assert covering(result.stdout, "x", str(FLOATS / "past_rounding.py"), 3) == [2**53 + 1]
