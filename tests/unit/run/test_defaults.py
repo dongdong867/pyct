@@ -109,3 +109,20 @@ def test_a_class_whose_signature_python_cannot_read_is_built_with_no_filled_defa
     assert first.args == {"self": {"n": 1}}
     assert first.failure is None
     assert [fork.expression for fork in first.forks] == [[">", ["[]", "self", "'n'"], 0]]
+
+
+def test_each_of_several_seeds_takes_its_left_out_defaults_and_keeps_its_keys() -> None:
+    seeds = [{"self": {"name": "ann"}}, {"self": {"name": "bob", "vip": True}}]
+
+    result = run(MEMBER, seeds, isolation=Isolation.IN_PROCESS)
+
+    simple = {"rank": 2, "rate": 0.5, "note": "", "level": 3}
+    assert [record.args for record in result.records[:2]] == [
+        {"self": {"name": "ann", "vip": False, **simple}},
+        {"self": {"name": "bob", "vip": True, **simple}},
+    ]
+    vip = ["[]", "self", "'vip'"]
+    assert [[fork.expression for fork in record.forks] for record in result.records[:2]] == [
+        [vip],
+        [vip],
+    ]

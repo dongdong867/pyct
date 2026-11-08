@@ -163,7 +163,7 @@ def run(
 
     The run's coverage adds the lines the target's import ran
     (``Target.import_lines``) to the inputs'; the plateau reads the inputs'
-    alone. For a method whose instance each input builds, the seed's
+    alone. For a method whose instance each input builds, each seed's
     constructor arguments first take the simple defaults it leaves out
     (``with_defaults``).
     """
