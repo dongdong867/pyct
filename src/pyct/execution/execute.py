@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import inspect
 import sys
 import types
@@ -25,6 +26,21 @@ from pyct.results.record import DowngradeCount
 
 
 @dataclass(frozen=True)
+class SelfBuild:
+    """How each call builds the instance a method runs on.
+
+    ``cls`` is the class the target's spec names before the method, and
+    ``name`` the method's first parameter, the seed's key for the
+    constructor's arguments. ``positional`` is the constructor's parameters
+    each construction passes by position, read once at load.
+    """
+
+    cls: type
+    name: str
+    positional: tuple[inspect.Parameter, ...] = ()
+
+
+@dataclass(frozen=True)
 class ExecutionContext:
     """What stays fixed across calls: the callable, the file whose lines count, and what a raise is.
 
@@ -38,6 +54,10 @@ class ExecutionContext:
     from the signature ``load_target`` took; with none, every value goes by
     name. ``checks`` is what each parameter's annotation asks, which says the
     key type of each dict the call binds.
+
+    ``self_build`` says how each call builds the instance a method runs on, from
+    the dict the seed holds under the method's first parameter. A value
+    there of any other type is passed as the instance as given.
     """
 
     fn: Callable[..., object]
@@ -45,6 +65,7 @@ class ExecutionContext:
     alone: bool = False
     positional: tuple[inspect.Parameter, ...] = ()
     checks: Mapping[str, Check] = field(default_factory=dict)
+    self_build: SelfBuild | None = None
 
 
 @dataclass(frozen=True)
@@ -115,10 +136,22 @@ class _Ending:
 
     ``called`` says whether the target was reached: a target that runs in
     C leaves no frame, so blame cannot read that from the traceback.
+    ``in_constructor`` is the class whose constructor raised, for a raise
+    while the instance a method runs on was built.
     """
 
     error: BaseException | None
     called: bool
+    in_constructor: type | None = None
+
+
+@dataclass(frozen=True)
+class _Construction:
+    """One call's construction of the instance a method runs on: the class and its arguments."""
+
+    cls: type
+    positional: tuple[object, ...]
+    keywords: dict[str, object]
 
 
 def _call(
@@ -128,19 +161,54 @@ def _call(
     to write once the sink is read.
 
     A positional-only parameter is passed by position, as ``ctx.positional``
-    names it.
+    names it. The instance a method runs on is built in this frame, inside
+    the block, so the constructor runs under the tracer and the deadline
+    as the method does, and blame reads its frames as a class target's.
     """
-    positional, keywords = call_arguments(ctx.positional, bound)
+    construction, (positional, keywords) = _arguments(ctx, bound)
     called = False
+    in_constructor = None
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
         # the limit goes back after the block, where no alarm of the call's can land
         with _room_below(_depth(sys._getframe()) - 1), block:
             called = True
-            ctx.fn(*positional, **keywords)
+            if construction is None:
+                ctx.fn(*positional, **keywords)
+            else:
+                in_constructor = construction.cls
+                instance = construction.cls(*construction.positional, **construction.keywords)
+                in_constructor = None
+                try:
+                    ctx.fn(instance, *positional, **keywords)
+                finally:
+                    # dropped inside the block, as plain Python drops it once the method
+                    # returns, so its `__del__` runs under the deadline
+                    del instance
     except caught as error:
-        return _Ending(error=error, called=called)
+        return _Ending(error=error, called=called, in_constructor=in_constructor)
     return _Ending(error=None, called=called)
+
+
+def _arguments(
+    ctx: ExecutionContext, bound: Mapping[str, object]
+) -> tuple[_Construction | None, tuple[tuple[object, ...], dict[str, object]]]:
+    """The construction of the instance, when the seed holds a dict for it, and the method's
+    arguments.
+
+    Made before the call, so a raise in pyct's own preparing is never read
+    as the target's. The instance takes the first position, so the method's
+    other arguments leave out the parameter it fills.
+    """
+    self_build = ctx.self_build
+    fields = None if self_build is None else bound.get(self_build.name)
+    if self_build is None or type(fields) is not dict:
+        return None, call_arguments(ctx.positional, bound)
+    construction = _Construction(self_build.cls, *call_arguments(self_build.positional, fields))
+    name = self_build.name
+    rest = {key: value for key, value in bound.items() if key != name}
+    after = tuple(parameter for parameter in ctx.positional if parameter.name != name)
+    return construction, call_arguments(after, rest)
 
 
 @contextlib.contextmanager
@@ -181,17 +249,26 @@ def _ended(tally: Tally, failure: Failure | None) -> Failure | None:
 
 
 def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
-    """The failure a raise ended the call with, or None for a call that returned."""
+    """The failure a raise ended the call with, or None for a call that returned.
+
+    A raise while the instance a method runs on was built is blamed against
+    its class, and the target's raise or ``SystemExit`` says so first.
+    """
     error = ending.error
     # the alarm can land in pyct's own frames too, so the kind is by type, before the rest
     if isinstance(error, DeadlineError):
         # only a fired alarm reaches here, and those tests run without coverage
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")  # pragma: no cover
+    if error is None:
+        return None
     if isinstance(error, SystemExit):
-        return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
-    if error is not None:
-        return blame(fn, error, called=ending.called)
-    return None
+        failure = Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
+    else:
+        blamed = fn if ending.in_constructor is None else ending.in_constructor
+        failure = blame(blamed, error, called=ending.called)
+    if ending.in_constructor is None or failure.kind is FailureKind.PYCT_BUG:
+        return failure
+    return dataclasses.replace(failure, detail=f"building self: {failure.detail}")
 
 
 class _LineTracer:

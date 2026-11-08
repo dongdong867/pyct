@@ -13,10 +13,11 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import TypeGuard
 
+from pyct.binding.annotations import Check, Fields
 from pyct.binding.call import positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.execution.blame import one_line
-from pyct.execution.execute import ExecutionContext
+from pyct.execution.execute import ExecutionContext, SelfBuild
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
@@ -53,7 +54,15 @@ class Target:
     that the class holds without binding. A descriptor that returns a callable
     of its own when read through the class, bound to nothing, counts as one
     that binds to an instance, since only an instance would tell the two
-    apart. The seed's value for ``self`` is passed as given.
+    apart.
+
+    ``self_name`` is that method's first parameter, when it takes a position:
+    the seed's key for the constructor's arguments, from which each input
+    builds the instance. With none, no instance is built, and each seed
+    value goes to the method as given. ``constructor`` is the class's
+    signature, as Python reads it at load, for a target that builds an
+    instance. It is None for every other target, and for one whose class's
+    signature Python cannot read; that instance is still built.
 
     ``followed`` is the spec ``load_target`` followed and the callable it
     reached, which a fresh interpreter finds by following that spec again.
@@ -68,6 +77,8 @@ class Target:
     import_lines: frozenset[int] = frozenset()
     self_class: type | None = None
     followed: tuple[str, Callable[..., object]] | None = None
+    self_name: str | None = None
+    constructor: inspect.Signature | None = None
 
 
 def load_target(
@@ -100,6 +111,7 @@ def load_target(
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
+    self_name = None if self_class is None else _self_name(signature)
     return Target(
         spec=spec,
         fn=fn,
@@ -108,17 +120,68 @@ def load_target(
         import_lines=frozenset(ran),
         self_class=self_class,
         followed=(spec, fn),
+        self_name=self_name,
+        constructor=None if self_class is None or self_name is None else _constructor(self_class),
     )
 
 
 def execution_context(target: Target, *, alone: bool = False) -> ExecutionContext:
     """What each input of ``target`` calls: its callable and file, the parameters passed by
-    position, and what their annotations check. ``alone`` as ``ExecutionContext`` says."""
-    positional = positional_only(target.signature)
-    checks = checked_annotations(target.signature, target.fn)
+    position, what their annotations check, and how it builds the instance a method runs on.
+    ``alone`` as ``ExecutionContext`` says."""
     return ExecutionContext(
-        target.fn, target.file, alone=alone, positional=positional, checks=checks
+        target.fn,
+        target.file,
+        alone=alone,
+        positional=positional_only(target.signature),
+        checks=argument_checks(target),
+        self_build=_self_build(target),
     )
+
+
+def argument_checks(target: Target) -> dict[str, Check]:
+    """What each parameter's annotation asks of the seed.
+
+    For a method whose instance each input builds, the value under its first
+    parameter holds the constructor's arguments, whose keys stay fixed and
+    whose values the constructor's annotations check (``Fields``).
+    """
+    checks = checked_annotations(target.signature, target.fn)
+    if target.self_class is None or target.self_name is None:
+        return checks
+    constructor = target.constructor
+    each = {} if constructor is None else checked_annotations(constructor, target.self_class)
+    return {**checks, target.self_name: Fields(each)}
+
+
+def _self_build(target: Target) -> SelfBuild | None:
+    """How each input builds the instance the target's method runs on, or None for a target
+    that needs none built."""
+    if target.self_class is None or target.self_name is None:
+        return None
+    constructor = target.constructor
+    positional = () if constructor is None else positional_only(constructor)
+    return SelfBuild(target.self_class, target.self_name, positional)
+
+
+def _self_name(signature: inspect.Signature) -> str | None:
+    """The method's first parameter, which Python passes the instance to, when it takes a
+    position; None for a method whose first parameter takes none, or that has none."""
+    first = next(iter(signature.parameters.values()), None)
+    positions = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    return first.name if first is not None and first.kind in positions else None
+
+
+def _constructor(cls: type) -> inspect.Signature | None:
+    """The class's signature, or None when Python cannot read it.
+
+    Reading it can run the class's own code, as ``_signature`` says, so any
+    Exception or a SystemExit means the same: no signature to read.
+    """
+    try:
+        return inspect.signature(cls)
+    except (Exception, SystemExit):
+        return None
 
 
 def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], type | None]:

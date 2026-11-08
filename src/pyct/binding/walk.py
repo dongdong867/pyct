@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, TypeGuard
 
-from pyct.binding.annotations import Check, Items, int_keys, reads_as_int
+from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
 from pyct.core.foundation.branch import Expression
 
 
@@ -156,9 +156,10 @@ class Walk:
             self._tracked.add(id(made))
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
-        elif access is not None:
+        elif access is not None and not isinstance(place.check, Fields):
             made, items = self._visitor.mapped(keyed(value, place.check), place)
         else:
+            # a dict under no access, or under ``Fields``: a plain copy, its keys and length fixed
             items = keyed(value, place.check)
             made = dict.fromkeys(items)
         self._copies[id(value)] = made
@@ -218,13 +219,18 @@ def _items(
     its key when the key can be written as a literal (see ``_key``), and by nothing otherwise.
     It goes in under the copy's own key, in the same order: a copy deepcopy made holds copies
     of the seed's keys, and a key equal only to itself would go in twice. The copy's keys are
-    read in C, since a tracked dict's own walk records forks.
+    read in C, since a tracked dict's own walk records forks. Under ``Fields``, each value takes
+    its own key's check.
     """
     each = _each(check, list if isinstance(value, list) else dict)
     if isinstance(value, list):
         return ((item, _step(access, i), into, i, each) for i, item in enumerate(items))
     pairs = zip(dict.items(items), dict.keys(into), strict=True)
-    return ((item, _step(access, _key(key)), into, slot, each) for (key, item), slot in pairs)
+    fields = check.each if isinstance(check, Fields) else {}
+    return (
+        (item, _step(access, _key(key)), into, slot, fields.get(key, each))
+        for (key, item), slot in pairs
+    )
 
 
 def _each(check: Check | None, kind: type) -> Check | None:
