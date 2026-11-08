@@ -30,7 +30,7 @@ from types import FunctionType, MethodType, ModuleType
 
 from pyct.sweep.seeds import NoSeedError, seed_of
 
-METHOD = "pyct run cannot call a method yet"
+METHOD = "sweep gives no seed for a method yet"
 GENERATED = "generated code"
 
 # the attributes whose Python code makes a class's constructor Python code
