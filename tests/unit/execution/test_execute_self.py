@@ -61,7 +61,7 @@ def built(cls: type, method: object, args: dict[str, object]) -> ExecutionResult
         file=FILE,
         positional=positional_only(signature),
         checks={"self": Fields({})},
-        builds=SelfBuild(cls, "self", constructor),
+        self_build=SelfBuild(cls, "self", constructor),
     )
     return execute(ctx, args)
 

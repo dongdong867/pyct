@@ -55,7 +55,7 @@ class ExecutionContext:
     name. ``checks`` is what each parameter's annotation asks, which says the
     key type of each dict the call binds.
 
-    ``builds`` says how each call builds the instance a method runs on, from
+    ``self_build`` says how each call builds the instance a method runs on, from
     the dict the seed holds under the method's first parameter. A value
     there of any other type is passed as the instance as given.
     """
@@ -65,7 +65,7 @@ class ExecutionContext:
     alone: bool = False
     positional: tuple[inspect.Parameter, ...] = ()
     checks: Mapping[str, Check] = field(default_factory=dict)
-    builds: SelfBuild | None = None
+    self_build: SelfBuild | None = None
 
 
 @dataclass(frozen=True)
@@ -136,18 +136,18 @@ class _Ending:
 
     ``called`` says whether the target was reached: a target that runs in
     C leaves no frame, so blame cannot read that from the traceback.
-    ``building`` is the class whose constructor raised, for a raise while
-    the instance a method runs on was built.
+    ``in_constructor`` is the class whose constructor raised, for a raise
+    while the instance a method runs on was built.
     """
 
     error: BaseException | None
     called: bool
-    building: type | None = None
+    in_constructor: type | None = None
 
 
 @dataclass(frozen=True)
-class _Build:
-    """One call's build of the instance a method runs on: the class and its arguments."""
+class _Construction:
+    """One call's construction of the instance a method runs on: the class and its arguments."""
 
     cls: type
     positional: tuple[object, ...]
@@ -165,43 +165,45 @@ def _call(
     the block, so the constructor runs under the tracer and the deadline
     as the method does, and blame reads its frames as a class target's.
     """
-    build, (positional, keywords) = _arguments(ctx, bound)
+    construction, (positional, keywords) = _arguments(ctx, bound)
     called = False
-    building = None
+    in_constructor = None
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
         # the limit goes back after the block, where no alarm of the call's can land
         with _room_below(_depth(sys._getframe()) - 1), block:
             called = True
-            if build is None:
+            if construction is None:
                 ctx.fn(*positional, **keywords)
             else:
-                building = build.cls
-                instance = build.cls(*build.positional, **build.keywords)
-                building = None
+                in_constructor = construction.cls
+                instance = construction.cls(*construction.positional, **construction.keywords)
+                in_constructor = None
                 ctx.fn(instance, *positional, **keywords)
     except caught as error:
-        return _Ending(error=error, called=called, building=building)
+        return _Ending(error=error, called=called, in_constructor=in_constructor)
     return _Ending(error=None, called=called)
 
 
 def _arguments(
     ctx: ExecutionContext, bound: Mapping[str, object]
-) -> tuple[_Build | None, tuple[tuple[object, ...], dict[str, object]]]:
-    """The build of the instance, when the seed holds a dict for it, and the method's arguments.
+) -> tuple[_Construction | None, tuple[tuple[object, ...], dict[str, object]]]:
+    """The construction of the instance, when the seed holds a dict for it, and the method's
+    arguments.
 
     Made before the call, so a raise in pyct's own preparing is never read
     as the target's. The instance takes the first position, so the method's
     other arguments leave out the parameter it fills.
     """
-    builds = ctx.builds
-    fields = None if builds is None else bound.get(builds.name)
-    if builds is None or type(fields) is not dict:
+    self_build = ctx.self_build
+    fields = None if self_build is None else bound.get(self_build.name)
+    if self_build is None or type(fields) is not dict:
         return None, call_arguments(ctx.positional, bound)
-    build = _Build(builds.cls, *call_arguments(builds.positional, fields))
-    rest = {name: value for name, value in bound.items() if name != builds.name}
-    after = tuple(parameter for parameter in ctx.positional if parameter.name != builds.name)
-    return build, call_arguments(after, rest)
+    construction = _Construction(self_build.cls, *call_arguments(self_build.positional, fields))
+    name = self_build.name
+    rest = {key: value for key, value in bound.items() if key != name}
+    after = tuple(parameter for parameter in ctx.positional if parameter.name != name)
+    return construction, call_arguments(after, rest)
 
 
 @contextlib.contextmanager
@@ -257,9 +259,9 @@ def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
     if isinstance(error, SystemExit):
         failure = Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
     else:
-        blamed = fn if ending.building is None else ending.building
+        blamed = fn if ending.in_constructor is None else ending.in_constructor
         failure = blame(blamed, error, called=ending.called)
-    if ending.building is None or failure.kind is FailureKind.PYCT_BUG:
+    if ending.in_constructor is None or failure.kind is FailureKind.PYCT_BUG:
         return failure
     return dataclasses.replace(failure, detail=f"building self: {failure.detail}")
 

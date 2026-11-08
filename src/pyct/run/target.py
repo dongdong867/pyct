@@ -134,7 +134,7 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
         alone=alone,
         positional=positional_only(target.signature),
         checks=argument_checks(target),
-        builds=_builds(target),
+        self_build=_self_build(target),
     )
 
 
@@ -153,7 +153,7 @@ def argument_checks(target: Target) -> dict[str, Check]:
     return {**checks, target.self_name: Fields(each)}
 
 
-def _builds(target: Target) -> SelfBuild | None:
+def _self_build(target: Target) -> SelfBuild | None:
     """How each input builds the instance the target's method runs on, or None for a target
     that needs none built."""
     if target.self_class is None or target.self_name is None:
