@@ -25,16 +25,16 @@ The calls start and answer in the order Python runs them, so the calls
 that started and have not answered are a stack, one per thread, and each
 answer takes the newest call its own frame started: a call inside an
 argument starts after the call around it and answers before that call's
-next argument. A call that raises never answers. Its entry is dropped when
-its frame starts a call at the same place again, or when a call of a frame
-below it takes an argument or answers, once the frame that left it has
-returned. A stack keeps its newest `MOST_OPEN` entries. A call of the
-target's that starts drops every thread's open calls (``forget``). The count
-of forks and downgrades the watch reads is the process's, on every thread
-(`escapes.RECORDED`). While the interpreter shuts down, as a target's tracer
-can still run, each function hands its value back and does nothing else:
-the modules it reads may be cleared by then, and the function holds what
-tells it so.
+next argument. A call that raises never answers. Its entry is dropped, with
+the entries above it, when its frame starts a call at the same place again,
+or when a call of a frame below it takes an argument or answers, once the
+frame that left it has returned. A stack keeps its newest `MOST_OPEN`
+entries. A call of the target's that starts drops every thread's open calls
+(``forget``). The count of forks and downgrades the watch reads is the
+process's, on every thread (`escapes.RECORDED`). While the interpreter shuts
+down, as a target's tracer can still run, each function hands its value
+back and does nothing else: the modules it reads may be cleared by then, and
+the function holds what tells it so.
 """
 
 from __future__ import annotations
@@ -159,13 +159,33 @@ def _calls() -> list[_Open]:
 
 def _drop_left_at(calls: list[_Open], call: _Open) -> None:
     """Drop the call the frame left open at the place ``call`` starts, and every call after it:
-    the frame runs that place again, so none of them answers."""
+    the frame runs that place again, so none of them answers. The search passes the calls of
+    frames that have returned, and stops at a call of a frame below, still running."""
+    below: set[int] | None = None
     for at in _range(_len(calls) - 1, -1, -1):
-        if calls[at].frame is not call.frame:
+        frame = calls[at].frame
+        if frame is call.frame:
+            if calls[at].at == call.at:
+                del calls[at:]
+                return
+            continue
+        # most often the caller's own call, the one the frame runs inside
+        if frame is call.frame.f_back:
             return
-        if calls[at].at == call.at:
-            del calls[at:]
+        if below is None:
+            below = _frames_below(call.frame)
+        if _id(frame) in below:
             return
+
+
+def _frames_below(frame: types.FrameType) -> set[int]:
+    """The frames below ``frame`` on its thread's stack, which are still running."""
+    below: set[int] = _set()
+    caller = frame.f_back
+    while caller is not None:
+        below.add(_id(caller))
+        caller = caller.f_back
+    return below
 
 
 def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:

@@ -1,5 +1,6 @@
 """A watched call: a tracked argument and a plain answer record a downgrade named as written."""
 
+import builtins
 import contextlib
 import math
 import sys
@@ -226,6 +227,20 @@ def test_a_call_left_open_at_a_site_is_dropped_when_the_site_runs_again() -> Non
     assert [name for name, _ in lost(sink)] == ["bin"]
 
 
+def _raises_from_its_own_call(value: int) -> tuple[int, int]:
+    """A callee whose own watched call raises out of it, left open."""
+    return answer(called(divmod)(given(value), 0), "divmod")
+
+
+def test_a_site_that_runs_again_drops_the_calls_its_callee_left_open_too() -> None:
+    for _ in range(1_000):
+        with contextlib.suppress(ZeroDivisionError):
+            answer(called(_raises_from_its_own_call)(given(1)), "raises")
+
+    # each pass left this frame's call open, and the callee's above it
+    assert len(watch._calls()) == 2
+
+
 def _leaves_one_open() -> None:
     with contextlib.suppress(ZeroDivisionError):
         answer(called(divmod)(given(1), given(0)), "divmod")
@@ -309,6 +324,20 @@ def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any
     function = callee()
 
     answer(called(function)(given(tracked(3, sink))), "is_big")
+
+    assert lost(sink) == []
+
+
+def test_a_call_into_the_target_s_package_is_not_judged_while_len_is_replaced() -> None:
+    sink: list[SinkItem] = []
+    function = _in_the_package(HELPER, "is_big")
+    python_len = builtins.len
+    # the target puts a `len` of its own in `builtins`, which its modules then find
+    builtins.len = lambda _value: 0
+    try:
+        answer(called(function)(given(tracked(3, sink))), "is_big")
+    finally:
+        builtins.len = python_len
 
     assert lost(sink) == []
 

@@ -272,10 +272,17 @@ for _python, _bound in (*BOUND.values(), (_INDEX, index)):
     _dressed(_bound, _python)
 
 
+class PackageBuiltins(dict[str, object]):
+    """The kind of mapping each module of the target's package runs with as its builtins
+    (`pyct.intercept.wrap.LiveBuiltins`), whatever the target puts in `builtins`."""
+
+    __slots__ = ()
+
+
 def binds(builtins: Mapping[str, object]) -> bool:
     """Whether a module's builtins are the ones pyct binds, as each module of the target's
-    package runs with: they find pyct's `len`."""
-    return getattr(builtins.get("len"), "__module__", None) == __name__
+    package runs with."""
+    return isinstance(builtins, PackageBuiltins)
 
 
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,

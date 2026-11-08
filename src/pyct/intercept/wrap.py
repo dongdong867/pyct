@@ -38,7 +38,7 @@ import copy
 import functools
 from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
-from pyct.core.entry.bound import BOUND
+from pyct.core.entry.bound import BOUND, PackageBuiltins
 
 _BUILTINS = vars(builtins)
 # dict's own, held here: a write may clear ``builtins``, and these must still run after it
@@ -78,7 +78,7 @@ class _Values(ValuesView[object]):
         return (self._held[name] for name in reversed(self._held))
 
 
-class LiveBuiltins(dict[str, object]):
+class LiveBuiltins(PackageBuiltins):
     """A module's builtins: what ``builtins`` holds now, with pyct's `len`, `ord` and `chr`.
 
     Every read answers from ``builtins``, and every write, removal or clear

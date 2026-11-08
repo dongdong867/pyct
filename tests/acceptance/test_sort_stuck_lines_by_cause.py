@@ -162,6 +162,11 @@ def test_judges_no_call_into_the_target_s_package() -> None:
     assert [(fork["file"], fork["line"], fork["col"]) for fork in forks] == [(FILE, at, 7)]
     assert downgrades_of(result.stdout) == []
 
+    # an operator loss inside the target's own function stays silent, and adds no call's
+    result = run_pyct(target("lettered"), '{"x": 3}', *SHORT)
+    assert result.returncode == 0, result.stderr
+    assert downgrades_of(result.stdout) == []
+
 
 # run-quiet-loss-downgrade-reads-a-container-passed-to-the-call
 def test_reads_a_container_passed_to_the_call() -> None:
@@ -188,6 +193,13 @@ def test_records_one_downgrade_for_a_call_that_lost_inside() -> None:
     at = line_of("return v ^ 0")
     assert downgrades_of(result.stdout) == [
         downgrade("__xor__", 1, f"targets/why/stuck.py:{at}:11")
+    ]
+
+    # the same, inside a function outside the target's package, which the call is judged at
+    result = run_pyct("shop.flips::flips", '{"x": 3}', *SHORT, cwd=SCOPE)
+    assert result.returncode == 0, result.stderr
+    assert downgrades_of(result.stdout) == [
+        downgrade("__xor__", 1, "targets/scope/measure/flip.py:2:11")
     ]
 
 

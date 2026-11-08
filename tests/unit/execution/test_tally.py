@@ -219,6 +219,18 @@ def test_a_fork_counts_as_recorded() -> None:
     assert escapes.RECORDED[0] == before + 1
 
 
+def test_a_fork_past_the_bound_counts_as_recorded() -> None:
+    tally = Tally()
+    tally.past_bound = True
+    before = escapes.RECORDED[0]
+
+    tally.append(FORK)
+
+    # the fork is not kept, and the call still forked
+    assert tally.branches == []
+    assert escapes.RECORDED[0] == before + 1
+
+
 def test_a_loss_named_in_the_live_call_counts_as_a_recorded_downgrade() -> None:
     over = Tally()
     over.seal()

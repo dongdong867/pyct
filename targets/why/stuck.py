@@ -1,6 +1,7 @@
 """Conditions that record no fork, each reading a value pyct lost track of, and calls that
 lose a tracked value without a word, for the sort-stuck-lines-by-cause story."""
 
+_LETTERS = ["a", "b", "c"]
 _KEPT: list[int] = []
 
 
@@ -58,18 +59,24 @@ def judged(x: int) -> str:
     return "small"
 
 
+def letter(v: int) -> str:
+    return _LETTERS[v % 3]
+
+
+def lettered(x: int) -> str:
+    if letter(x) == "c":
+        return "c"
+    return "other"
+
+
 def packed(x: int) -> str:
     if bytes([x % 256, 1])[0] == 7:
         return "seven"
     return "other"
 
 
-def keep(v: int) -> None:
-    _KEPT.append(v)
-
-
 def typed(x: int) -> str:
-    keep(x)
+    _KEPT.append(x)
     if isinstance(x, int):
         return "int"
     return "other"
