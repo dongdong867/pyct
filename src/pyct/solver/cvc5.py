@@ -424,7 +424,7 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     (``replies.core_of``).
     """
     text = written.text + WHY
-    command = argv(timeout)
+    command, ran = argv(timeout, text), options(timeout, text)
     logger.debug("asking cvc5 %s about:\n%s", command, text)
     # its own clock, apart from the one the limit is read on
     started = perf_counter()
@@ -439,11 +439,11 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        took(Given(text, options(timeout), answered(None, Timeout()), perf_counter() - started))
+        took(Given(text, ran, answered(None, Timeout()), perf_counter() - started))
         return Timeout(), frozenset()
     answer = _read(finished.stdout, finished.stderr, written)
     heard = answered(finished.stdout, answer)
-    took(Given(text, options(timeout), heard, perf_counter() - started))
+    took(Given(text, ran, heard, perf_counter() - started))
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:

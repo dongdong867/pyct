@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import math
+import re
 from collections.abc import Generator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +31,23 @@ ARGUMENTS = (
     "--quiet",
     f"--strings-model-max-len={MOST_ITEMS}",
 )
+
+# cvc5 1.4.0 changed how it refines a real rounded to a double, and on 1.4.2 a program that
+# converts between a double and a real can run to its limit where these options answer it
+# (decision cvc5-1-4-options-for-float-conversions): the first for a program that holds a
+# string, the second for one that does not. Each is a flag and the SMT-LIB command that sets it
+_STRINGS_ADDED = (("--no-strings-lazy-pp", "(set-option :strings-lazy-pp false)"),)
+_OTHERS_ADDED = (
+    ("--decision=internal", "(set-option :decision internal)"),
+    ("--nl-cov", "(set-option :nl-cov true)"),
+)
+
+# a conversion between a double and a real as pyct writes one: a double read as a real, or a
+# term rounded to a double with to_fp, which pyct gives only a real
+_CONVERSION = re.compile(r"\(fp\.to_real |\(_ to_fp ")
+
+# a string in a program: the String sort, or a string operation
+_STRING = re.compile(r"[\s(]String[\s)]|\(str\.")
 
 # the programs of each ask a caller is taking now, the innermost last
 _TAKING: list[list[Given]] = []
@@ -72,25 +90,39 @@ def write(folder: Path, number: int, about: str, programs: Sequence[Given]) -> N
         (folder / name).write_text("\n".join(lines) + "\n" + program.text, encoding="utf-8")
 
 
-def argv(timeout: float) -> list[str]:
-    """The command. cvc5 counts its limit in milliseconds, and rounds up is the honest way.
+def argv(timeout: float, text: str) -> list[str]:
+    """The command for the program ``text``. cvc5 counts its limit in milliseconds, and rounds up
+    is the honest way.
 
     The limit is on the check, ``--tlimit-per``, where cvc5 answers
     ``unknown`` and exits. ``--tlimit`` would end the whole process with
     ``abort()``, which the system records as a crash. Rounding up also keeps
     any limit above zero at 1 or more, since cvc5 reads ``--tlimit-per=0``
     as no limit.
+
+    A program that converts between a double and a real gets the options ``_added`` names.
     """
-    return [str(locate()), *ARGUMENTS, f"--tlimit-per={_milliseconds(timeout)}"]
+    limit = f"--tlimit-per={_milliseconds(timeout)}"
+    return [str(locate()), *ARGUMENTS, limit, *(flag for flag, _ in _added(text))]
 
 
-def options(timeout: float) -> tuple[str, ...]:
-    """The options ``argv`` gives cvc5, as the SMT-LIB commands a file sets them with."""
+def options(timeout: float, text: str) -> tuple[str, ...]:
+    """The options ``argv`` gives cvc5 for ``text``, as the SMT-LIB commands a file sets them
+    with."""
     return (
         "(set-option :produce-models true)",
         f"(set-option :strings-model-max-len {MOST_ITEMS})",
         f"(set-option :tlimit-per {_milliseconds(timeout)})",
+        *(command for _, command in _added(text)),
     )
+
+
+def _added(text: str) -> tuple[tuple[str, str], ...]:
+    """The options a program gets beside ``ARGUMENTS`` and its limit: none unless it converts
+    between a double and a real, and then those for a program with a string or without one."""
+    if _CONVERSION.search(text) is None:
+        return ()
+    return _STRINGS_ADDED if _STRING.search(text) else _OTHERS_ADDED
 
 
 def answered(stdout: str | None, answer: Answer) -> str:
