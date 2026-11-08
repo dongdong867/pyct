@@ -15,7 +15,7 @@ module that exposes it: the module of its function's code when that module
 does, and otherwise the first exposing module in name order. A class is an
 entry when its constructor is Python code, since ``pyct run MODULE::Class``
 calls it. Each method a class's own body defines under a public name is
-listed too, and skipped until ``pyct run`` can call one.
+listed too, and skipped, since sweep gives no seed for a method yet.
 """
 
 import contextlib

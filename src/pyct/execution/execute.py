@@ -32,7 +32,7 @@ class SelfBuild:
     ``cls`` is the class the target's spec names before the method, and
     ``name`` the method's first parameter, the seed's key for the
     constructor's arguments. ``positional`` is the constructor's parameters
-    the build passes by position, read once at load.
+    each construction passes by position, read once at load.
     """
 
     cls: type
