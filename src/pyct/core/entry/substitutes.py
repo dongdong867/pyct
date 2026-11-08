@@ -53,7 +53,7 @@ from pyct.core.entry.handed import PASSING as HANDED_PASSING
 from pyct.core.entry.handed import handed as handed  # substituted modules import it from here
 from pyct.core.entry.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.entry.watch import answer as answer  # substituted modules import these
-from pyct.core.entry.watch import first as first
+from pyct.core.entry.watch import called as called
 from pyct.core.entry.watch import given as given
 from pyct.core.foundation.values import tested_against
 from pyct.core.lists import list_reads, ranges

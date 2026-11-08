@@ -321,8 +321,7 @@ def test_writes_a_readable_trace_to_stderr() -> None:
         f"covered 3 of 7 lines in {CALLS_HELPER_FILE}",
         f"first covered 5, 7, 8 in {CALLS_HELPER_FILE}",
         "ended returned",
-        # the helper takes the tracked x and answers a plain bool (sort-stuck-lines-by-cause)
-        f"downgrades helper_check.is_small at {CALLS_HELPER_FILE}:5:7",
+        "downgrades none",
     ]
     # the seed's block is followed by the solver's inputs, on both streams: the helper's
     # fork and the target's own, each taken the other way

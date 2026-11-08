@@ -1,12 +1,12 @@
 """The calls pyct watches where the target writes them, for an answer that lost a tracked value.
 
-A call ``f(a, b)`` becomes ``__pyct_answer__(f(__pyct_first__(a),
-__pyct_given__(b)), "f")`` (`pyct.core.entry.watch`): the callee and each
-argument are the call's own nodes, kept in place, so each is evaluated once
-and in Python's order, and the callee is called from the target's frame. The
-text is the callee as the call writes it, which names the downgrade a loss
-records (`pyct.results.sources.written_name`, which a no-fork condition's
-sources read it back by). A constant after the first argument passes as
+A call ``f(a, b)`` becomes ``__pyct_answer__(__pyct_called__(f)(
+__pyct_given__(a), __pyct_given__(b)), "f")`` (`pyct.core.entry.watch`): the
+callee and each argument are the call's own nodes, kept in place, so each is
+evaluated once and in Python's order, and the callee is called from the
+target's frame. The text is the callee as the call writes it, which names
+the downgrade a loss records (`pyct.results.sources.written_name`, which a
+no-fork condition's sources read it back by). A constant argument passes as
 written.
 
 A call is watched when its arguments are written out (`calls.written_out`),
@@ -16,8 +16,9 @@ losses, its callee is none of pyct's names nor a bare name pyct binds in
 the module's builtins (`pyct.core.entry.bound.BOUND`), and it is not written
 ``isinstance(...)``, ``callable(...)`` or ``hasattr(...)``, bare or after a
 dot, whose answer is read off a value's type. A call whose arguments hold an
-``await``, a ``yield`` or an ``async for`` stays as written too: its frame can stop between
-the call's first argument and its answer while another frame's calls run.
+``await``, a ``yield`` or an ``async for`` stays as written too: its frame
+can stop between the call's start and its answer while another frame's
+calls run.
 """
 
 from __future__ import annotations
@@ -30,7 +31,7 @@ from pyct.intercept.positions import Parts, after_the_value
 from pyct.results.sources import written_name
 
 BOUND: dict[str, str] = {
-    "__pyct_first__": "first",
+    "__pyct_called__": "called",
     "__pyct_given__": "given",
     "__pyct_answer__": "answer",
 }
@@ -48,17 +49,23 @@ def watched(call: ast.Call, parts: Parts, reserved: frozenset[str]) -> ast.Call:
         return call
     count = len(call.args)
     arguments = _arguments(call)
-    # what CPython runs after each argument: the next one's first instruction, or the call
-    after = [parts.first(each) for each in arguments[1:]] + [call]
+    text = ast.copy_location(ast.Constant(value=written_name(call.func)), call)
+    # placed by the call as written, before its callee passes through the watch
+    answer = parts.named("__pyct_answer__", call)
+    # what CPython runs after the callee and each argument: the next one's first instruction, or
+    # the call
+    after = [parts.first(each) for each in arguments] + [call]
+    call.func = _passed(call.func, "__pyct_called__", parts, after[0])
     passed = [
-        _passed(argument, parts, first=index == 0, then=after[index])
+        argument
+        if isinstance(argument, ast.Constant)
+        else _passed(argument, "__pyct_given__", parts, after[index + 1])
         for index, argument in enumerate(arguments)
     ]
     for keyword, value in zip(call.keywords, passed[count:], strict=True):
         keyword.value = value
     call.args = passed[:count]
-    text = ast.copy_location(ast.Constant(value=written_name(call.func)), call)
-    outer = ast.Call(func=parts.named("__pyct_answer__", call), args=[call, text], keywords=[])
+    outer = ast.Call(func=answer, args=[call, text], keywords=[])
     return ast.copy_location(outer, call)
 
 
@@ -101,18 +108,14 @@ def _pyct_s(callee: ast.expr, reserved: frozenset[str]) -> bool:
     return isinstance(callee, ast.Name) and (callee.id in reserved or callee.id in BOUND_BUILTINS)
 
 
-def _passed(argument: ast.expr, parts: Parts, *, first: bool, then: ast.expr) -> ast.expr:
-    """The argument as the watch takes it: the first through ``__pyct_first__``, a later one
-    through ``__pyct_given__``, and a later constant as written.
+def _passed(argument: ast.expr, name: str, parts: Parts, then: ast.expr) -> ast.expr:
+    """The callee or an argument as the watch takes it: through ``name``.
 
-    The call sits where the argument's last instruction is, so it adds no
-    line step after it, or, after an argument whose jumps land past its last
+    The call sits where the part's last instruction is, so it adds no line
+    step after it, or, after a part whose jumps land past its last
     instruction, where what comes next, ``then``, starts: the jumps land on
     the call, as they landed there.
     """
-    if isinstance(argument, ast.Constant) and not first:
-        return argument
-    name = "__pyct_first__" if first else "__pyct_given__"
     call = ast.Call(func=parts.named(name, argument), args=[argument], keywords=[])
     if _jumps_past(argument):
         return ast.copy_location(call, then)
@@ -120,7 +123,7 @@ def _passed(argument: ast.expr, parts: Parts, *, first: bool, then: ast.expr) ->
 
 
 def _jumps_past(argument: ast.expr) -> bool:
-    """Whether an argument's own jumps land past its last instruction: an `and` or `or`, a
+    """Whether a part's own jumps land past its last instruction: an `and` or `or`, a
     conditional expression, and a chained compare."""
     if isinstance(argument, ast.NamedExpr):
         return False

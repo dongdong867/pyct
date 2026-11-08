@@ -18,19 +18,29 @@ def watched(source: str) -> str:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("bin(x)", "__pyct_answer__(bin(__pyct_first__(x)), 'bin')"),
-        ("f(a, b)", "__pyct_answer__(f(__pyct_first__(a), __pyct_given__(b)), 'f')"),
-        ("f(a, 1)", "__pyct_answer__(f(__pyct_first__(a), 1), 'f')"),
-        ("f(1, a)", "__pyct_answer__(f(__pyct_first__(1), __pyct_given__(a)), 'f')"),
-        ("f(a, k=b)", "__pyct_answer__(f(__pyct_first__(a), k=__pyct_given__(b)), 'f')"),
+        ("bin(x)", "__pyct_answer__(__pyct_called__(bin)(__pyct_given__(x)), 'bin')"),
+        (
+            "f(a, b)",
+            "__pyct_answer__(__pyct_called__(f)(__pyct_given__(a), __pyct_given__(b)), 'f')",
+        ),
+        ("f(a, 1)", "__pyct_answer__(__pyct_called__(f)(__pyct_given__(a), 1), 'f')"),
+        ("f(1, a)", "__pyct_answer__(__pyct_called__(f)(1, __pyct_given__(a)), 'f')"),
+        (
+            "f(a, k=b)",
+            "__pyct_answer__(__pyct_called__(f)(__pyct_given__(a), k=__pyct_given__(b)), 'f')",
+        ),
         (
             "math.factorial(n)",
-            "__pyct_answer__(math.factorial(__pyct_first__(n)), 'math.factorial')",
+            "__pyct_answer__(__pyct_called__(math.factorial)(__pyct_given__(n)), 'math.factorial')",
         ),
-        ("self.parse(s)", "__pyct_answer__(self.parse(__pyct_first__(s)), 'self.parse')"),
+        (
+            "self.parse(s)",
+            "__pyct_answer__(__pyct_called__(self.parse)(__pyct_given__(s)), 'self.parse')",
+        ),
         (
             "f(g(x))",
-            "__pyct_answer__(f(__pyct_first__(__pyct_answer__(g(__pyct_first__(x)), 'g'))), 'f')",
+            "__pyct_answer__(__pyct_called__(f)(__pyct_given__("
+            "__pyct_answer__(__pyct_called__(g)(__pyct_given__(x)), 'g'))), 'f')",
         ),
     ],
 )
@@ -89,7 +99,8 @@ def test_the_call_stays_the_call_written_with_its_own_nodes() -> None:
 
     outer = tree.body[-1].value  # pyrefly: ignore[missing-attribute]
     assert outer.args[0] is call
-    assert call.func is callee
+    # the callee passes through the watch, which hands it back
+    assert call.func.args[0] is callee  # pyrefly: ignore[missing-attribute]
 
 
 @pytest.mark.parametrize(
@@ -104,6 +115,8 @@ def test_the_call_stays_the_call_written_with_its_own_nodes() -> None:
         "g(h(\n a=1,\n b=k and 2))",
         "f('''a\n'''.format(x),\n 2)",
         "f(a,\n [g(m or 1,\n 2) for m in y])",
+        "(a or\n b)(c)",
+        "(f if t else\n g)(\n x)",
     ],
 )
 def test_a_watched_call_spread_over_lines_lines_up(source: str) -> None:
@@ -123,5 +136,6 @@ def test_a_long_method_chain_is_watched_without_a_deep_stack() -> None:
 
 def test_a_short_callee_is_named_as_written() -> None:
     assert watched("self.items[0].count(x)") == (
-        "__pyct_answer__(self.items[0].count(__pyct_first__(x)), 'self.items[0].count')"
+        "__pyct_answer__(__pyct_called__(self.items[0].count)(__pyct_given__(x)), "
+        "'self.items[0].count')"
     )

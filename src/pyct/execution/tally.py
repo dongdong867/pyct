@@ -115,22 +115,30 @@ class Tally:
                 live.append(Downgrade(name=name, site=item.site))
                 escapes.RECORDED[0] += 1
             return
-        if self.past_bound and not isinstance(item, Downgrade):
-            return
         if isinstance(item, Branch):
-            if len(self.branches) == MOST_FORKS:
-                self.past_bound = True
-                if self.watch is not None:
-                    self.watch.bound(too_long().detail)
-                return
-            self.branches.append(item)
-            if self.watch is not None:
-                self.watch.fork(item)
+            self._fork(item)
             return
         if isinstance(item, Fact):
-            self._fact(item)
+            if not self.past_bound:
+                self._fact(item)
             return
         self._downgrade(item.name, item.site)
+
+    def _fork(self, fork: Branch) -> None:
+        """Keep a fork, up to `MOST_FORKS`, and tell the watch. Past the bound, the fork is
+        counted alone."""
+        # a watched call around the one that forked saw inside it (`pyct.core.entry.watch`)
+        escapes.RECORDED[0] += 1
+        if self.past_bound:
+            return
+        if len(self.branches) == MOST_FORKS:
+            self.past_bound = True
+            if self.watch is not None:
+                self.watch.bound(too_long().detail)
+            return
+        self.branches.append(fork)
+        if self.watch is not None:
+            self.watch.fork(fork)
 
     def _fact(self, fact: Fact) -> None:
         """Keep a fact, placed after the forks recorded so far, and tell the watch."""

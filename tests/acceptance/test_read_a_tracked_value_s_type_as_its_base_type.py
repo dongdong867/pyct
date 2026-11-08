@@ -46,16 +46,15 @@ def line_of(file: Path, text: str, function: str | None = None) -> int:
     return next(number for number, line in enumerate(lines, 1) if number > start and text in line)
 
 
-# the calls of the target's that take a tracked argument and answer a plain value by its type,
-# each a quiet loss (sort-stuck-lines-by-cause), by the target that makes them
+# the calls outside the target's package that take a tracked argument and answer a plain value
+# by its type, each a quiet loss (sort-stuck-lines-by-cause), by the target that makes them:
+# `measure` sits beside the target's package `shop`, and `kind` is a `functools.singledispatch`
+# function, which runs functools' own code first
 LOSSES: dict[str, frozenset[str]] = {
     "shop.typed::checks": frozenset({"classes.is_flag"}),
     "shop.typed::ranged": frozenset({"classes.is_range"}),
     "shop.typed::rebuilt": frozenset({"classes.rebuild"}),
     "targets.types.dispatched::f": frozenset({"kind"}),
-    "targets.types.matched::f": frozenset({"kind"}),
-    "targets.types.views::copied": frozenset({"compared"}),
-    "targets.types.views::pickled": frozenset({"compared"}),
 }
 
 

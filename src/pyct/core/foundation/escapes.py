@@ -29,8 +29,8 @@ _HANDED: dict[int, tuple[BranchSink, list[object]]] = {}
 # call that starts empties it (``forget``)
 _PINNED: dict[int, BranchSink] = {}
 
-# how many downgrades the process has recorded, which a call's watch reads before and after it
-# (`pyct.core.entry.watch`)
+# how many forks and downgrades the process has recorded, which a call's watch reads before and
+# after it (`pyct.core.entry.watch`); `lost` counts each downgrade, and the tally each fork
 RECORDED: list[int] = [0]
 
 

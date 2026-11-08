@@ -271,6 +271,13 @@ BOUND: Mapping[str, tuple[Callable[..., object], Callable[..., object]]] = {
 for _python, _bound in (*BOUND.values(), (_INDEX, index)):
     _dressed(_bound, _python)
 
+
+def binds(builtins: Mapping[str, object]) -> bool:
+    """Whether a module's builtins are the ones pyct binds, as each module of the target's
+    package runs with: they find pyct's `len`."""
+    return getattr(builtins.get("len"), "__module__", None) == __name__
+
+
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
 # `chr`, a conversion, `range`, a `math` function or a range or dict view method, or from the
 # target's own `__len__`, `__int__` or `__index__`, is the target's

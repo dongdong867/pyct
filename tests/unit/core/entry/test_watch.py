@@ -4,15 +4,18 @@ import contextlib
 import math
 import sys
 import threading
+from collections.abc import Callable
 from typing import Any
 
 import pytest
 
 from pyct.core.entry import watch
-from pyct.core.entry.watch import answer, first, given
+from pyct.core.entry.watch import answer, called, given
+from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import Downgrade, SinkItem
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
+from pyct.intercept.wrap import bound_builtins
 
 
 @pytest.fixture(autouse=True)
@@ -39,7 +42,7 @@ def test_a_tracked_argument_and_a_plain_answer_record_the_call_s_name_at_its_sit
     x = tracked(3, sink)
 
     line = here() + 1
-    written = answer(bin(first(x)), "bin")
+    written = answer(called(bin)(given(x)), "bin")
 
     assert written == "0b11"
     assert lost(sink) == [("bin", line)]
@@ -57,7 +60,7 @@ def test_a_tracked_argument_and_a_plain_answer_record_the_call_s_name_at_its_sit
 def test_a_container_of_only_plain_values_is_a_plain_answer(result: Any) -> None:
     sink: list[SinkItem] = []
 
-    answer(first(tracked(3, sink)) and result, "f")
+    answer(called(lambda _v: result)(given(tracked(3, sink))), "f")
 
     assert [name for name, _ in lost(sink)] == ["f"]
 
@@ -73,7 +76,7 @@ def test_a_container_of_only_plain_values_is_a_plain_answer(result: Any) -> None
 def test_an_answer_that_holds_no_plain_value_alone_records_nothing(result: Any) -> None:
     sink: list[SinkItem] = []
 
-    answer(first(tracked(3, sink)) and result, "f")
+    answer(called(lambda _v: result)(given(tracked(3, sink))), "f")
 
     assert lost(sink) == []
 
@@ -82,7 +85,7 @@ def test_a_tracked_answer_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer((lambda v: v)(first(x)), "itself")
+    answer(called(lambda v: v)(given(x)), "itself")
 
     assert lost(sink) == []
 
@@ -90,7 +93,7 @@ def test_a_tracked_answer_records_nothing() -> None:
 def test_a_call_of_plain_arguments_records_nothing() -> None:
     sink: list[SinkItem] = []
 
-    assert answer(max(first(1), given(2)), "max") == 2
+    assert answer(called(max)(given(1), given(2)), "max") == 2
     assert lost(sink) == []
 
 
@@ -99,7 +102,7 @@ def test_a_later_tracked_argument_counts_and_the_first_one_s_sink_takes_the_loss
     s = ConcolicStr.made("ab", expression="s", sink=[])
     x = tracked(4, sink)
 
-    answer(math.gcd(first(6), given(x), 2 if given(s) else 0), "math.gcd")
+    answer(called(math.gcd)(given(6), given(x), 2 if given(s) else 0), "math.gcd")
 
     assert [name for name, _ in lost(sink)] == ["math.gcd"]
 
@@ -108,7 +111,7 @@ def test_a_downgrade_inside_the_call_takes_the_place_of_the_call_s_own() -> None
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer((lambda v: v ^ 0)(first(x)), "flip")
+    answer(called(lambda v: v ^ 0)(given(x)), "flip")
 
     assert [name for name, _ in lost(sink)] == ["__xor__"]
 
@@ -117,7 +120,7 @@ def test_a_downgrade_in_an_argument_before_the_last_leaves_the_call_s_own() -> N
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer(math.gcd(first(x), given(x ^ 0)), "math.gcd")
+    answer(called(math.gcd)(given(x), given(x ^ 0)), "math.gcd")
 
     assert [name for name, _ in lost(sink)] == ["__xor__", "math.gcd"]
 
@@ -126,7 +129,7 @@ def test_a_call_inside_an_argument_answers_for_itself() -> None:
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer(str(first(answer(bin(first(x)), "bin"))), "str")
+    answer(called(str)(given(answer(called(bin)(given(x)), "bin"))), "str")
 
     # bin lost x; str was handed bin's plain answer
     assert [name for name, _ in lost(sink)] == ["bin"]
@@ -137,8 +140,8 @@ def test_a_call_that_raised_leaves_the_next_call_its_own() -> None:
     x = tracked(3, sink)
 
     with pytest.raises(ZeroDivisionError):
-        answer(divmod(first(x), given(0)), "divmod")
-    answer(abs(first(-4)), "abs")
+        answer(called(divmod)(given(x), given(0)), "divmod")
+    answer(called(abs)(given(-4)), "abs")
 
     assert lost(sink) == []
 
@@ -146,7 +149,7 @@ def test_a_call_that_raised_leaves_the_next_call_its_own() -> None:
 def _catching(value: Any) -> int:
     """A callee whose own watched call raises, and which catches it and answers plainly."""
     with contextlib.suppress(ZeroDivisionError):
-        answer(divmod(first(value), given(0)), "divmod")
+        answer(called(divmod)(given(value), given(0)), "divmod")
     return 1
 
 
@@ -154,17 +157,17 @@ def test_a_call_whose_callee_caught_a_raise_is_judged_by_its_own_argument() -> N
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    # a plain list goes in, and the callee's divmod, left open, took the tracked x inside it
-    answer(first_of(first([x])), "first_of")
+    # a function that gives x goes in, and the callee's divmod, left open, took x inside it
+    answer(called(read)(given(lambda: x)), "read")
     assert lost(sink) == []
 
     # x goes in tracked, and the callee's divmod, left open, took a plain 7
-    answer(two(first(x)), "two")
+    answer(called(two)(given(x)), "two")
     assert [name for name, _ in lost(sink)] == ["two"]
 
 
-def first_of(items: list[object]) -> int:
-    return _catching(items[0])
+def read(give: Callable[[], object]) -> int:
+    return _catching(give())
 
 
 def two(_value: object) -> int:
@@ -181,7 +184,7 @@ def test_each_thread_keeps_its_own_open_calls() -> None:
         # a plain call opens in another thread while this thread's call is open, and answers
         # after it
         opened.wait(5)
-        first(5)
+        called(abs)
         pushed.set()
         done.wait(5)
         answer(2, "other")
@@ -193,7 +196,7 @@ def test_each_thread_keeps_its_own_open_calls() -> None:
 
     thread = threading.Thread(target=other)
     thread.start()
-    answer(waits(first(x)), "waits")
+    answer(called(waits)(given(x)), "waits")
     done.set()
     thread.join(5)
 
@@ -205,7 +208,7 @@ def test_an_answer_that_holds_itself_is_read_once() -> None:
     held: Any = [1]
     held.append(held)
 
-    assert answer(first(tracked(3, sink)) and held, "f") is held
+    assert answer(called(lambda _v: held)(given(tracked(3, sink))), "f") is held
     assert [name for name, _ in lost(sink)] == ["f"]
 
 
@@ -215,17 +218,17 @@ def test_a_call_left_open_at_a_site_is_dropped_when_the_site_runs_again() -> Non
 
     for _ in range(10_000):
         with contextlib.suppress(ZeroDivisionError):
-            answer(divmod(first(1), given(0)), "divmod")
+            answer(called(divmod)(given(1), given(0)), "divmod")
 
     assert len(watch._calls()) == 1
     # the frame's next call answers for itself, not for a call left open with a plain argument
-    answer(bin(first(x)), "bin")
+    answer(called(bin)(given(x)), "bin")
     assert [name for name, _ in lost(sink)] == ["bin"]
 
 
 def _leaves_one_open() -> None:
     with contextlib.suppress(ZeroDivisionError):
-        answer(divmod(first(1), given(0)), "divmod")
+        answer(called(divmod)(given(1), given(0)), "divmod")
 
 
 def test_calls_left_open_by_frames_that_returned_are_kept_to_a_bound() -> None:
@@ -236,7 +239,7 @@ def test_calls_left_open_by_frames_that_returned_are_kept_to_a_bound() -> None:
         _leaves_one_open()
 
     assert len(watch._calls()) == watch.MOST_OPEN
-    answer(bin(first(x)), "bin")
+    answer(called(bin)(given(x)), "bin")
     assert [name for name, _ in lost(sink)] == ["bin"]
 
 
@@ -246,7 +249,8 @@ def test_forget_drops_the_calls_every_thread_left_open() -> None:
     seen: list[object] = []
 
     def other() -> None:
-        first(tracked(3, sink))
+        called(abs)
+        given(tracked(3, sink))
         opened.set()
         forgotten.wait(5)
         # the call opened before the forget is gone, so its answer records nothing
@@ -262,3 +266,104 @@ def test_forget_drops_the_calls_every_thread_left_open() -> None:
 
     assert seen == [2, 0]
     assert lost(sink) == []
+
+
+def _in_the_package(source: str, name: str) -> Any:
+    """What ``source`` defines under ``name``, run as a module of the target's package runs:
+    with the builtins pyct binds."""
+    space: dict[str, Any] = {"__builtins__": bound_builtins(), "__name__": "shop.helper"}
+    exec(compile(source, "shop/helper.py", "exec"), space)
+    return space[name]
+
+
+# a callee that loses its argument: bin, run inside it unwatched, gives back a plain str
+IS_BIG = "def is_big(v):\n    return bin(v).count('1') > 1\n"
+HELPER = """
+import functools
+
+def is_big(v):
+    return bin(v).count('1') > 1
+
+class Sizes:
+    def is_big(self, v):
+        return bin(v).count('1') > 1
+
+    def __call__(self, v):
+        return bin(v).count('1') > 1
+
+partial = functools.partial(is_big)
+"""
+
+
+@pytest.mark.parametrize(
+    "callee",
+    [
+        pytest.param(lambda: _in_the_package(HELPER, "is_big"), id="a function"),
+        pytest.param(lambda: _in_the_package(HELPER, "Sizes")().is_big, id="a bound method"),
+        pytest.param(lambda: _in_the_package(HELPER, "partial"), id="a partial"),
+        pytest.param(lambda: _in_the_package(HELPER, "Sizes")(), id="an object's __call__"),
+    ],
+)
+def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any]) -> None:
+    sink: list[SinkItem] = []
+    function = callee()
+
+    answer(called(function)(given(tracked(3, sink))), "is_big")
+
+    assert lost(sink) == []
+
+
+def test_a_call_outside_the_target_s_package_is_judged() -> None:
+    sink: list[SinkItem] = []
+    # the same function, run with Python's own builtins, as a library's module runs
+    space: dict[str, Any] = {}
+    exec(compile(IS_BIG, "lib/helper.py", "exec"), space)
+
+    answer(called(space["is_big"])(given(tracked(3, sink))), "is_big")
+
+    assert [name for name, _ in lost(sink)] == ["is_big"]
+
+
+def test_a_callee_that_forked_inside_adds_no_downgrade() -> None:
+    sink: list[SinkItem] = []
+
+    def forks(_value: object) -> int:
+        # a fork the call made, as the tally counts it
+        escapes.RECORDED[0] += 1
+        return 1
+
+    answer(called(forks)(given(tracked(3, sink))), "forks")
+
+    assert lost(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("argument", "counts"),
+    [
+        pytest.param(lambda x: [x, 1], True, id="a list"),
+        pytest.param(lambda x: (1, x), True, id="a tuple"),
+        pytest.param(lambda x: {x: 1}, True, id="a dict's key"),
+        pytest.param(lambda x: {"k": x}, True, id="a dict's value"),
+        pytest.param(lambda x: [[x]], False, id="nested two levels"),
+        pytest.param(lambda x: {x}, False, id="a set"),
+        pytest.param(lambda x: [0] * (watch.MOST_ITEMS - 1) + [x], True, id="the last item read"),
+        pytest.param(lambda x: [0] * watch.MOST_ITEMS + [x], False, id="past the items read"),
+    ],
+)
+def test_a_list_tuple_or_dict_passed_to_the_call_counts_one_level_deep(
+    argument: Callable[[ConcolicInt], Any], counts: bool
+) -> None:
+    sink: list[SinkItem] = []
+
+    answer(called(str)(given(argument(tracked(3, sink)))), "str")
+
+    assert [name for name, _ in lost(sink)] == (["str"] if counts else [])
+
+
+def test_a_bytes_answer_is_plain() -> None:
+    sink: list[SinkItem] = []
+    x = tracked(3, sink)
+
+    answer(called(bytes)(given([x, 1])), "bytes")
+
+    assert [name for name, _ in lost(sink)] == ["bytes"]

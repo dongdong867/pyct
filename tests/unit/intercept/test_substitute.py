@@ -24,7 +24,7 @@ def substituted(source: str) -> str:
 
 
 # the names the watch on a call calls, each around one node of the call as written
-WATCH_NAMES = frozenset({"__pyct_answer__", "__pyct_first__", "__pyct_given__"})
+WATCH_NAMES = frozenset({"__pyct_answer__", "__pyct_called__", "__pyct_given__"})
 
 
 class _Unwatched(ast.NodeTransformer):
@@ -330,7 +330,7 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_truth__": "truth",
         "__pyct_unpack__": "unpack",
         "__pyct_unpack_starred__": "unpack_starred",
-        "__pyct_first__": "first",
+        "__pyct_called__": "called",
         "__pyct_given__": "given",
         "__pyct_answer__": "answer",
     }

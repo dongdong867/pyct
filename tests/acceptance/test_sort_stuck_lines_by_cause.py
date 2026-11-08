@@ -11,6 +11,8 @@ from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, run_pyct,
 
 FILE = str(REPO_ROOT / "targets" / "why" / "stuck.py")
 SHORT = ("--plateau", "3")
+SCOPE = REPO_ROOT / "targets" / "scope"
+PARSED = "targets/scope/shop/parsed.py"
 
 
 def target(function: str) -> str:
@@ -141,11 +143,33 @@ def test_records_a_quiet_loss() -> None:
 
 # run-quiet-loss-downgrade-names-a-call-as-written
 def test_names_a_call_as_written() -> None:
-    result = run_pyct(target("named"), '{"x": 3}', *SHORT)
+    # `parse` is the library's, beside the target's package
+    result = run_pyct("shop.parsed::parsed", '{"x": 3}', *SHORT, cwd=SCOPE)
 
     assert result.returncode == 0, result.stderr
-    at = line_of('if letter(x) == "c":')
-    assert downgrades_of(result.stdout) == [downgrade("letter", 1, f"targets/why/stuck.py:{at}:7")]
+    assert downgrades_of(result.stdout) == [downgrade("parse", 1, f"{PARSED}:5:7")]
+
+
+# run-quiet-loss-downgrade-judges-no-call-into-the-target-s-package
+def test_judges_no_call_into_the_target_s_package() -> None:
+    result = run_pyct(target("judged"), '{"x": 3}', *SHORT)
+
+    assert result.returncode == 0, result.stderr
+    line = first_line(result.stdout)
+    at = line_of("if v > 100:")
+    forks = line["forks"]
+    assert isinstance(forks, list), line
+    assert [(fork["file"], fork["line"], fork["col"]) for fork in forks] == [(FILE, at, 7)]
+    assert downgrades_of(result.stdout) == []
+
+
+# run-quiet-loss-downgrade-reads-a-container-passed-to-the-call
+def test_reads_a_container_passed_to_the_call() -> None:
+    result = run_pyct(target("packed"), '{"x": 3}', *SHORT)
+
+    assert result.returncode == 0, result.stderr
+    at = line_of("if bytes([x % 256, 1])[0] == 7:")
+    assert downgrades_of(result.stdout) == [downgrade("bytes", 1, f"targets/why/stuck.py:{at}:7")]
 
 
 # run-quiet-loss-downgrade-records-no-loss-for-type-or-none
