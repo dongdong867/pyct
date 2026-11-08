@@ -8,8 +8,9 @@ from __future__ import annotations
 import inspect
 import json
 from collections.abc import Mapping
+from dataclasses import dataclass
 
-from pyct.binding.annotations import contradictions
+from pyct.binding.annotations import Check, contradictions
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import UsageError
 from pyct.run.object_checks import ObjectCheck, fit_failure
@@ -86,24 +87,49 @@ def check_seed(target: Target, seed: Mapping[str, object]) -> None:
 
 
 def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
-    """Every reason to refuse a parsed seed: its names, then its types.
+    """Every reason to refuse a parsed seed: its names, then its types (``SeedCheck``)."""
+    return SeedCheck.of(target).refusals(seed)
 
-    When the seed's keys do not fit the parameters, that line is the only
-    one. Otherwise, for a method whose instance each input builds from the
-    seed's value under its first parameter, the lines for that object come
-    first, checked against the constructor (``ObjectCheck``), then each other
-    value that contradicts its annotation, in signature order.
-    """
-    fit = _fit_line(target.signature, seed)
-    if fit is not None:
-        return [fit]
-    checks = checked_annotations(target.signature, target.fn)
-    name = target.self_name
-    if target.self_class is None or name is None or name not in seed:
-        return contradictions(checks, seed)
-    lines = ObjectCheck.of(target.self_class, target.constructor).lines(name, seed[name])
-    others = {key: check for key, check in checks.items() if key != name}
-    return lines + contradictions(others, seed)
+
+@dataclass(frozen=True)
+class SeedCheck:
+    """A target's seed checks, read once for every seed it is given: its signature, what its
+    parameters' annotations ask, and, for a method whose instance each input builds, the
+    parameter that holds the constructor's arguments and the check on that object."""
+
+    signature: inspect.Signature
+    checks: Mapping[str, Check]
+    self_name: str | None = None
+    under_self: ObjectCheck | None = None
+
+    @classmethod
+    def of(cls, target: Target) -> SeedCheck:
+        """The checks for ``target``. The object under ``self`` is checked against the
+        constructor, and the annotation on ``self`` itself is not read."""
+        checks = checked_annotations(target.signature, target.fn)
+        name = target.self_name
+        if target.self_class is None or name is None:
+            return cls(target.signature, checks)
+        others = {key: check for key, check in checks.items() if key != name}
+        under_self = ObjectCheck.of(target.self_class, target.constructor)
+        return cls(target.signature, others, name, under_self)
+
+    def refusals(self, seed: Mapping[str, object]) -> list[str]:
+        """Every reason to refuse ``seed``.
+
+        When its keys do not fit the parameters, that line is the only one.
+        Otherwise the lines for the object under ``self`` come first, when the
+        seed gives one, then each other value that contradicts its
+        annotation, in signature order.
+        """
+        fit = _fit_line(self.signature, seed)
+        if fit is not None:
+            return [fit]
+        name = self.self_name
+        lines: list[str] = []
+        if self.under_self is not None and name is not None and name in seed:
+            lines = self.under_self.lines(name, seed[name])
+        return lines + contradictions(self.checks, seed)
 
 
 def _fit_line(signature: inspect.Signature, seed: Mapping[str, object]) -> str | None:

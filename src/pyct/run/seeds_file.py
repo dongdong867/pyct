@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.config.command_line import UsageError
-from pyct.run.seed_checks import parse_seed, seed_refusals
+from pyct.run.seed_checks import SeedCheck, parse_seed
 from pyct.run.target import Target
 
 # what JSON reads as space between values within a line: a line of only these is blank
@@ -70,10 +70,11 @@ def checked_seeds(target: Target, file: SeedsFile) -> tuple[FileSeed, ...]:
     ``FILE:N: `` of its own; a reason that holds a line break, as a key may,
     keeps it.
     """
+    check = SeedCheck.of(target)
     seeds: list[FileSeed] = []
     refusals: list[str] = []
     for number, text in file.lines:
-        seed, reasons = _checked(target, text)
+        seed, reasons = _checked(check, text)
         refusals += [f"{file.name}:{number}: {reason}" for reason in reasons]
         if seed is not None:
             seeds.append(FileSeed(seed, file.name, number))
@@ -82,13 +83,13 @@ def checked_seeds(target: Target, file: SeedsFile) -> tuple[FileSeed, ...]:
     return tuple(seeds)
 
 
-def _checked(target: Target, text: str) -> tuple[Mapping[str, object] | None, list[str]]:
+def _checked(check: SeedCheck, text: str) -> tuple[Mapping[str, object] | None, list[str]]:
     """The line's seed and no reason, or no seed and each reason the line is refused."""
     try:
         seed = parse_seed(text)
     except UsageError as error:
         return None, [str(error)]
-    reasons = seed_refusals(target, seed)
+    reasons = check.refusals(seed)
     return (None, reasons) if reasons else (seed, [])
 
 

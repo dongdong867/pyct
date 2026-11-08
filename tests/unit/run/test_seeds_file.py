@@ -1,9 +1,12 @@
 import inspect
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from pyct.binding.annotations import Check
 from pyct.config.command_line import UsageError
+from pyct.run import seed_checks
 from pyct.run.seeds_file import FileSeed, SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target
 
@@ -130,3 +133,21 @@ def test_checked_gives_a_reason_with_a_line_break_one_prefix() -> None:
     reason = str(raised.value)
     assert reason.startswith("s.jsonl:1: args (a\nb) do not fit (x): ")
     assert reason.count("s.jsonl:1: ") == 1
+
+
+def test_checked_reads_the_target_s_annotations_once_for_every_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    real = seed_checks.checked_annotations
+
+    def counted(signature: inspect.Signature, fn: Callable[..., object]) -> dict[str, Check]:
+        calls.append(fn)
+        return real(signature, fn)
+
+    monkeypatch.setattr(seed_checks, "checked_annotations", counted)
+    file = SeedsFile("s.jsonl", ((1, '{"name": "a", "age": 1}'), (2, '{"name": "b", "age": 2}')))
+
+    checked_seeds(target_for(name_and_age), file)
+
+    assert calls == [name_and_age]
