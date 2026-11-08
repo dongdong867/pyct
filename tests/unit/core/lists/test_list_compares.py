@@ -187,6 +187,12 @@ def test_a_form_reads_an_argument_when_it_names_one_as_it_came() -> None:
     assert not is_read("'items'")
 
 
+def test_a_form_reads_an_argument_through_an_attribute_as_through_a_key() -> None:
+    assert is_read(["getattr", "rule", "'items'"])
+    assert is_read(["[]", ["getattr", ["[]", "rules", 0], "'items'"], 1])
+    assert not is_read(["getattr", ["+", "items", ["[,]", 1]], "'x'"])
+
+
 def test_a_display_writes_what_an_expression_holds_and_nothing_else() -> None:
     sink: list[object] = []
     x = ConcolicInt.made(1, expression="x", sink=sink)  # pyrefly: ignore[bad-argument-type]

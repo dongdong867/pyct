@@ -335,6 +335,13 @@ def test_access_name_reads_only_a_step_the_walk_takes() -> None:
     assert access_name([]) is None
 
 
+def test_access_name_reads_an_attribute_as_a_step() -> None:
+    limit: Expression = ["getattr", ["[]", "rules", 0], "'limit'"]
+
+    assert access_name(limit) == json.dumps(limit)
+    assert access_name(["getattr", ["+", "x", 1], "'limit'"]) is None
+
+
 def test_access_name_reads_a_chain_of_steps_down_to_a_name_only() -> None:
     deep: Expression = "s"
     for _ in range(5000):

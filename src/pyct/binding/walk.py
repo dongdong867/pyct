@@ -1,4 +1,5 @@
-"""One walk of a seed: every dict and list rebuilt, every value bind tracks handed to a visitor.
+"""One walk of a seed: every dict and list rebuilt, every object's attributes followed, and every
+value bind tracks handed to a visitor.
 
 bind, the seed's leaves and the model all read this one walk, so they cannot disagree about
 which values are tracked, what each is named, or which lists and dicts are tracked whole.
@@ -7,22 +8,25 @@ which values are tracked, what each is named, or which lists and dicts are track
 from __future__ import annotations
 
 import copy
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, TypeGuard
 
+from pyct.binding import objects
 from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
+from pyct.binding.objects import Attribute
 from pyct.core.foundation.branch import Expression
 
 
 @dataclass(frozen=True)
 class Place:
     """Where the walk puts a value: its access, the copy it goes in and its slot there, what
-    its annotation asks of it, and whether that copy is a tracked list."""
+    its annotation asks of it, and whether that copy is a tracked list. The copy is a dict, a
+    list, or an object whose slot is an ``Attribute``."""
 
     access: Expression
-    into: dict[Any, object] | list[object]
+    into: Any
     slot: Any
     check: Check | None
     in_list: bool
@@ -63,10 +67,9 @@ def binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
 _ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
 
 # one value still to place: the value, and where it goes. The access is None under a key no
-# access can name. The slot is an index for a list, and for a dict the copy's own key
-type _Pending = tuple[
-    object, Expression | None, dict[Any, object] | list[object], Any, Check | None
-]
+# access can name. The slot is an index for a list, for a dict the copy's own key, and for an
+# object an ``Attribute``
+type _Pending = tuple[object, Expression | None, Any, Any, Check | None]
 
 
 class Walk:
@@ -83,7 +86,10 @@ class Walk:
 
     A list first reached under a name is tracked whole: the visitor makes its
     copy and says which items it takes, and every value placed in it is a
-    value inside a tracked list. Any other value is copied by ``copy.deepcopy``
+    value inside a tracked list. An object is copied by ``copy.deepcopy``, and
+    its attributes are then followed into that copy as a dict's values are
+    (see ``objects``), so the objects inside it are its copies from that one
+    deepcopy, joined to the walk's own. Any other value is copied by deepcopy
     with a memo that reads the walk's copies, so a list reached through a
     tuple, say, is the walk's copy of it there too. A value deepcopy cannot
     copy stays as it came.
@@ -112,10 +118,7 @@ class Walk:
             value, access, into, slot, check = self._pending.pop()
             in_list = id(into) in self._tracked
             placed = self._placed(value, access, Place(access, into, slot, check, in_list))
-            if isinstance(into, list):
-                list.__setitem__(into, slot, placed)
-            else:
-                dict.__setitem__(into, slot, placed)
+            _put(into, slot, placed, value)
         return rebuilt
 
     def _later(self, values: Iterable[_Pending]) -> None:
@@ -126,31 +129,35 @@ class Walk:
         """What goes where ``value`` was: its tracked form, its copy, or the value itself.
 
         A dict and a list, and not their subclasses, are copied, and their
-        values queued. A value with no access is never tracked, and neither is
-        anything under it.
+        values queued, and so are an object's attributes. A value with no
+        access is never tracked, and neither is anything under it.
         """
         if access is not None and binds(value, access):
             return self._visitor.scalar(value, place)
         if type(value) in _ATOMIC:
             return value
-        if type(value) is not list and type(value) is not dict:
+        if type(value) is not list and type(value) is not dict and not objects.followed(value):
             return self._deep_copy(value)
         made = self._copies.get(id(value))
         if made is None:
             made, items = self._made(value, access, place)
+            if made is value:
+                # an object that copies as itself, or cannot be copied
+                return value
         elif access is None or id(value) in self._named:
             return made
         else:
-            items = list(value) if isinstance(value, list) else keyed(value, place.check)
+            items = _again(value, place.check)
         if access is not None:
             self._named.add(id(value))
-        self._later(_items(value, items, access, made, place.check))
+        self._later(_insides(value, items, access, made, place.check))
         return made
 
-    def _made(
-        self, value: list[object] | dict[object, object], access: Expression | None, place: Place
-    ) -> tuple[Any, Any]:
-        """A container's copy, made the first time the walk reaches it, and what it takes."""
+    def _made(self, value: object, access: Expression | None, place: Place) -> tuple[Any, Any]:
+        """A container's or an object's copy, made the first time the walk reaches it, and what
+        it takes: an object's are its attributes, read once it is queued."""
+        if not isinstance(value, list | dict):
+            return self._deep_copy(value, _not_rebuilt), None
         if isinstance(value, list) and access is not None:
             made, items = self._visitor.listed(value, place)
             self._tracked.add(id(made))
@@ -166,14 +173,15 @@ class Walk:
         self._kept.append(value)
         return made, items
 
-    def _deep_copy(self, value: object) -> object:
+    def _deep_copy(self, value: object, joins: Callable[[object], bool] = lambda _: True) -> object:
         """A copy of a value the walk does not rebuild, or the value itself when it has none.
 
         deepcopy runs any ``__deepcopy__`` or pickling hook a value brings,
         and one may refuse, a lock say: that value reaches the target as it
         came. deepcopy records a copy before it fills it, so it copies into a
         scratch memo over the walk's own, and only a copy that finishes joins
-        the walk's: a refused one leaves no half-made copy behind.
+        the walk's: a refused one leaves no half-made copy behind. Of those,
+        only the copies ``joins`` takes join.
         """
         scratch = _Scratch(self._copies)
         try:
@@ -183,7 +191,7 @@ class Walk:
         # deepcopy keeps what it copied alive in a list under the memo's own identity, which the
         # scratch memo gives up when it goes, so the walk keeps them instead
         self._kept.extend(scratch.pop(id(scratch), []))
-        self._copies.update(scratch)
+        self._copies.update((key, made) for key, made in scratch.items() if joins(made))
         return copied
 
 
@@ -204,6 +212,43 @@ class _Scratch(dict[int, Any]):
 
     def __missing__(self, key: int) -> Any:
         return self._under[key]
+
+
+def _not_rebuilt(made: object) -> bool:
+    """Whether a copy an object's deepcopy made joins the walk's: any but a dict's and a list's,
+    which the walk makes its own of when it reaches them, so they are tracked there."""
+    return type(made) is not list and type(made) is not dict
+
+
+def _put(into: Any, slot: Any, placed: object, value: object) -> None:
+    """Put a placed value in its copy. An attribute the walk hands on as it came keeps what
+    deepcopy made of it, which a class's own copy hook may have made apart from the original."""
+    if isinstance(slot, Attribute):
+        if placed is not value:
+            slot.write(into, placed)
+    elif isinstance(into, list):
+        list.__setitem__(into, slot, placed)
+    else:
+        dict.__setitem__(into, slot, placed)
+
+
+def _again(value: object, check: Check | None) -> Any:
+    """What a container the walk copied takes when a path that names it reaches it again: a
+    list's items and a dict's; an object's attributes are read as they are queued."""
+    if isinstance(value, list):
+        return list(value)
+    return keyed(value, check) if isinstance(value, dict) else None
+
+
+def _insides(
+    value: object, items: Any, access: Expression | None, into: Any, check: Check | None
+) -> Iterable[_Pending]:
+    """The values inside a container or an object to place into its copy, in order: a list's
+    and a dict's items (see ``_items``), or an object's attributes, which take no check."""
+    if isinstance(value, list | dict):
+        return _items(value, items, access, into, check)
+    pairs = objects.attributes(value, into)
+    return ((item, objects.step(access, each), into, each, None) for each, item in pairs)
 
 
 def _items(

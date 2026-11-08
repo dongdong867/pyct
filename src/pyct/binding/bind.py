@@ -9,7 +9,7 @@ from pyct.binding.annotations import Check, Items, int_keys
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.dicts.dicts import ConcolicDict
-from pyct.core.foundation.branch import BranchSink, Expression
+from pyct.core.foundation.branch import ACCESS_STEPS, BranchSink, Expression
 from pyct.core.lists.list_state import kinds_of
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
@@ -187,10 +187,6 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     return noted.named
 
 
-# the head of each step an access takes to a value inside an argument: `["[]", container, key]`
-_STEPS = frozenset({"[]"})
-
-
 def access_name(
     part: Expression, known: MutableMapping[int, str | None] | None = None
 ) -> str | None:
@@ -223,12 +219,13 @@ def access_name(
 
 
 def _is_step(part: Expression) -> TypeGuard[list[Expression]]:
-    """Whether a part is one step of an access, ``["[]", <container>, <key>]``, its key no list."""
+    """Whether a part is one step of an access, ``["[]", <container>, <key>]`` or
+    ``["getattr", <object>, "'<name>'"]``, its key no list."""
     return (
         isinstance(part, list)
         and len(part) == 3
         and isinstance(part[0], str)
-        and part[0] in _STEPS
+        and part[0] in ACCESS_STEPS
         and not isinstance(part[2], list)
     )
 

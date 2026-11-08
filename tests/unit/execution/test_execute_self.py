@@ -165,9 +165,12 @@ def test_positional_only_parameters_go_by_position_on_both_calls() -> None:
 def test_a_value_that_is_not_a_dict_is_passed_as_self_as_given() -> None:
     result = built(Cart, Cart.total, {"self": Cart("ann"), "discount": 5})
 
-    # the instance's owner is a plain str, so only the discount is followed
+    # the instance's owner is followed by its attribute, as the walk names it
     assert result.failure is None
-    assert [branch.expression for branch in result.branches] == [["<", "discount", 0]]
+    assert [branch.expression for branch in result.branches] == [
+        ["==", ["getattr", "self", "'owner'"], "'admin'"],
+        ["<", "discount", 0],
+    ]
 
 
 @DEADLINE_FIRES

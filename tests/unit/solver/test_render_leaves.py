@@ -5,7 +5,6 @@ import json
 
 import pytest
 
-from pyct.binding import bind
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.foundation.branch import Expression
@@ -92,9 +91,7 @@ def test_every_constant_is_quoted_under_pycts_own_prefix(name: str, constant: st
     assert f"(assert (> {constant} 3))" in text.splitlines()
 
 
-def test_an_access_is_a_leaf_by_the_steps_binding_takes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # an attribute is a step binding may take next; the solver follows with no change of its own
-    monkeypatch.setattr(bind, "_STEPS", frozenset({"[]", "getattr"}))
+def test_an_attribute_is_a_step_of_a_leaf_s_access() -> None:
     limit: Expression = ["getattr", "rule", "'limit'"]
 
     text = render((fork([">", limit, 100], taken=True),), {json.dumps(limit): int})
