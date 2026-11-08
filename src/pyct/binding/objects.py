@@ -1,10 +1,11 @@
 """An object in the walk: whether its attributes are followed, which they are, and how its
 copy takes a new value for one.
 
-An object is followed once ``copy.deepcopy`` makes a new object of it of the same type, which
-is also the test that it can be copied: a class, a function and an enum member copy as
-themselves, and a module or an object holding a lock is refused, so each reaches the target as
-it came. A bound method is copied and never followed.
+An object is followed when its class copies by Python's default route and it holds an
+attribute, or is a subclass of dict or list, and then once ``copy.deepcopy`` makes a new object
+of it of the same type, which is also the test that it can be copied: a module or an object
+holding a lock is refused, and reaches the target as it came. A class, a function, an enum
+member and a bound method are never followed.
 """
 
 from __future__ import annotations
@@ -15,6 +16,17 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 
 from pyct.core.foundation.branch import Expression
+
+# the methods a class may copy itself by, in place of Python's default route
+_HOOKS = ("__deepcopy__", "__copy__", "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__")
+
+# what a hook built into Python is: object's own, or a builtin or extension type's
+_BUILT_IN = (
+    types.BuiltinFunctionType,
+    types.MethodDescriptorType,
+    types.WrapperDescriptorType,
+    types.ClassMethodDescriptorType,
+)
 
 
 @dataclass(frozen=True, eq=False)
@@ -53,9 +65,25 @@ class Attribute:
 
 
 def followed(value: object) -> bool:
-    """Whether the walk follows what a value that is no tuple holds, given a copy: a list's or
-    a dict's items, any other object's attributes, and nothing of a bound method's."""
-    return not isinstance(value, types.MethodType)
+    """Whether the walk follows what a value that is no tuple, and no plain dict or list, holds:
+    a subclass of dict's or list's items, or an object's attributes, when its class copies by
+    Python's default route. A bound method holds nothing the walk follows."""
+    if isinstance(value, types.MethodType) or not copies_by_default(type(value)):
+        return False
+    return isinstance(value, list | dict) or any(True for _ in _pairs(value, value))
+
+
+def copies_by_default(cls: type) -> bool:
+    """Whether deepcopy copies an instance of a class by Python's default route: no class on
+    its MRO defines a copy or pickling hook in Python code. A hook built into Python, object's
+    own or a builtin or extension type's, is that route; one written in Python may give back a
+    copy of any shape, or another object altogether, so what it makes is handed on as made."""
+    for each in cls.__mro__:
+        for name in _HOOKS:
+            hook = each.__dict__.get(name)
+            if hook is not None and not isinstance(hook, _BUILT_IN):
+                return False
+    return True
 
 
 def attributes(value: object, made: object) -> Attributes:
@@ -66,7 +94,7 @@ def attributes(value: object, made: object) -> Attributes:
 def _pairs(value: object, made: object) -> Iterator[tuple[Attribute, object]]:
     """Each attribute both an object and its copy hold, with the object's value, in order: its
     ``__dict__``'s entries, then each slot its class and bases declare that is set."""
-    fields, copied = _fields(value), _fields(made)
+    fields, copied = own_fields(value), own_fields(made)
     if fields is not None and copied is not None:
         for key, item in dict.items(fields):
             if dict.__contains__(copied, key):
@@ -77,7 +105,7 @@ def _pairs(value: object, made: object) -> Iterator[tuple[Attribute, object]]:
         try:
             item = slot.__get__(value, type(value))
             slot.__get__(made, type(made))
-        except (AttributeError, TypeError):
+        except AttributeError:
             continue
         yield Attribute(name, slot), item
 
@@ -96,7 +124,7 @@ def step(holder: Expression | None, attribute: Attribute) -> Expression | None:
     return ["getattr", holder, str.__repr__(key)]
 
 
-def _fields(value: object) -> dict[object, object] | None:
+def own_fields(value: object) -> dict[object, object] | None:
     """An object's own ``__dict__``, read past any ``__getattribute__`` of its class; None for
     an object with none."""
     try:

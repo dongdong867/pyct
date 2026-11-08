@@ -3,7 +3,7 @@
 import json
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Check, Items, int_keys
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
@@ -95,13 +95,13 @@ class Seed:
     """An input's arguments as the walk copied them, and what the solver may answer about.
 
     ``leaves`` names each value the solver declares on its own: a parameter, or a value inside
-    a dict. ``lists`` names each tracked list the solver declares as a length and its items,
-    with its shape; a value inside one is an item of it, not a leaf. ``dicts``
-    names each tracked dict, a dict inside a list among them, with its keys, whose presence
-    and count the solver declares. ``checks``
+    a dict, a tuple or an object, or inside a list that is not tracked whole. ``lists`` names
+    each tracked list the solver declares as a length and its items, with its shape; a value
+    inside one is an item of it, not a leaf. ``dicts`` names each tracked dict, a dict inside
+    a list among them, with its keys, whose presence and count the solver declares. ``checks``
     is what each parameter's annotation asks of it, which says the kind of an item the solver
     adds to a list with none to go by, for this input and each answer made from it. The target
-    is never called with the dicts and lists here: ``bind`` rebuilds them for each call. So
+    is never called with the arguments here: ``bind`` copies them again for each call. So
     they stay as the walk made them, and every solve and every answer on the input's path reads
     them rather than walking the input again.
     """
@@ -154,7 +154,9 @@ class Noted:
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         made: list[object] = [None] * len(value)
-        where = (id(place.into), place.slot) if place.in_list else leaf_name(place.access)
+        # a list inside a tracked list sits at an index
+        row = (id(place.into), cast(int, place.slot))
+        where = row if place.in_list else leaf_name(place.access)
         check = place.check
         each = check.each if isinstance(check, Items) and check.kind is list else None
         self.made.append((made, where, each))

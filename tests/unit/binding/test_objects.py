@@ -91,12 +91,20 @@ class FrozenSlots:
 
 
 def test_a_frozen_dataclass_takes_its_value_as_its_init_stores_it() -> None:
-    f, g = Frozen(0), FrozenSlots(0)
+    f = Frozen(0)
 
-    args: dict[str, Any] = bind({"f": f, "g": g}, [])
+    args: dict[str, Any] = bind({"f": f}, [])
 
-    assert isinstance(args["f"].n, ConcolicInt) and isinstance(args["g"].n, ConcolicInt)
-    assert type(f.n) is int and type(g.n) is int
+    assert isinstance(args["f"].n, ConcolicInt) and type(f.n) is int
+
+
+def test_a_frozen_dataclass_with_slots_copies_by_its_own_hooks_and_stays_plain() -> None:
+    # dataclasses gives a frozen class with slots a __getstate__ and __setstate__ of its own
+    g = FrozenSlots(0)
+
+    args: dict[str, Any] = bind({"g": g}, [])
+
+    assert type(args["g"]) is FrozenSlots and args["g"] is not g and type(args["g"].n) is int
 
 
 def test_the_model_writes_into_a_copy_of_the_object_and_never_the_seed_s() -> None:
@@ -155,7 +163,7 @@ def test_a_bound_method_is_copied_and_never_followed() -> None:
 
 
 class Hooked:
-    """An object whose own copy hook gives the copy a lock of its own."""
+    """An object whose own copy hook gives the copy a lock of its own, and copies its int."""
 
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -167,14 +175,38 @@ class Hooked:
         return made
 
 
-def test_an_attribute_the_walk_cannot_copy_keeps_what_the_copy_hook_made() -> None:
-    hooked = Hooked()
+class Reordered(dict[str, object]):
+    """A dict whose own copy hook gives back its keys in another order."""
 
-    args = bind({"h": hooked}, [])
+    def __deepcopy__(self, memo: dict[int, object]) -> "Reordered":
+        return Reordered(b="x", a=0)
 
-    made = args["h"]
-    assert isinstance(made, Hooked) and made.lock is not hooked.lock
-    assert isinstance(made.n, ConcolicInt)
+
+DEFAULT: list[object] = []
+
+
+class Shared:
+    """An object whose own copy hook gives back another object the caller holds."""
+
+    def __init__(self) -> None:
+        self.n = 0
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "Shared":
+        made = DEFAULT[0]
+        assert isinstance(made, Shared)
+        return made
+
+
+def test_a_class_with_a_copy_hook_of_its_own_is_handed_on_as_its_hook_made_it() -> None:
+    hooked, other = Hooked(), Shared()
+    DEFAULT[:] = [other]
+
+    args: dict[str, Any] = bind({"h": hooked, "r": Reordered(a=0, b="x"), "s": Shared()}, [])
+
+    assert isinstance(args["h"], Hooked) and args["h"].lock is not hooked.lock
+    assert type(args["h"].n) is int
+    assert dict(args["r"]) == {"b": "x", "a": 0} and type(dict.__getitem__(args["r"], "a")) is int
+    assert args["s"] is other and type(other.n) is int
 
 
 class Outer:
@@ -323,4 +355,8 @@ def test_an_attribute_named_by_a_keyword_is_copied_and_not_named() -> None:
     rule = Rule()
     setattr(rule, "class", 0)
 
+    args = bind({"rule": rule}, [])
+
+    made = args["rule"]
+    assert made is not rule and type(getattr(made, "class")) is int
     assert leaves({"rule": rule}) == {name("rule", "limit"): int, name("rule", "label"): str}
