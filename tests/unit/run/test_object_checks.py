@@ -84,7 +84,7 @@ def test_lines_refuse_keys_that_do_not_fit_the_constructor() -> None:
     ]
 
 
-def test_lines_say_nothing_for_an_empty_object_that_does_not_fit() -> None:
+def test_lines_write_nothing_for_the_keys_of_an_empty_object_that_does_not_fit() -> None:
     assert check_for(Cart).lines("self", {}) == [
         f"self (nothing) does not fit Cart(owner, discount): {reason(Cart)}"
     ]
@@ -128,6 +128,30 @@ def test_lines_bind_positional_items_first() -> None:
     )
 
     assert lines == []
+
+
+def test_lines_bind_the_positional_only_parameters_the_items_leave_by_position() -> None:
+    seed = {"__args__": [1], "y": 2}
+
+    assert check_for(Point).lines("p", seed, allowed={"__args__"}, positional=(1,)) == []
+
+
+def test_lines_refuse_a_key_for_a_positional_only_parameter_an_item_fills() -> None:
+    seed = {"__args__": [1], "x": 9}
+
+    lines = check_for(Point).lines("p", seed, allowed={"__args__"}, positional=(1,))
+
+    assert lines == [f"p (__args__, x) does not fit Point(x, y, name): {reason(Point, 1, x=9)}"]
+
+
+class Spread:
+    def __init__(self, *items: int, **named: object) -> None:
+        self.items, self.named = items, named
+
+
+def test_lines_check_no_key_against_the_annotation_of_star_args() -> None:
+    # a key named as *args reaches the constructor through **named, so *args' annotation is not its
+    assert check_for(Spread).lines("self", {"items": ["a"]}) == []
 
 
 def test_lines_list_the_positional_items_when_they_do_not_fit() -> None:

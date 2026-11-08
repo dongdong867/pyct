@@ -17,17 +17,26 @@ _ARGS = "__args__"
 @dataclass(frozen=True)
 class ObjectCheck:
     """A class, its constructor's signature as the caller read it or None, and what the
-    constructor's annotations ask of the values (``checked_annotations``)."""
+    constructor's annotations ask of the values under their keys (``checked_annotations``)."""
 
-    cls: type
+    built: type
     signature: inspect.Signature | None
     checks: Mapping[str, Check]
 
     @classmethod
     def of(cls, owner: type, signature: inspect.Signature | None) -> ObjectCheck:
-        """The check for ``owner`` built through ``signature``, which the caller read."""
-        checks = {} if signature is None else checked_annotations(signature, owner)
-        return cls(owner, signature, checks)
+        """The check for ``owner`` built through ``signature``, which the caller read.
+
+        A ``*args`` parameter's annotation checks no key: a key of that name
+        reaches the constructor through ``**kwargs``, or does not fit.
+        """
+        if signature is None:
+            return cls(owner, None, {})
+        starred = _star_args(signature)
+        checks = checked_annotations(signature, owner)
+        return cls(
+            owner, signature, {key: each for key, each in checks.items() if key not in starred}
+        )
 
     def lines(
         self,
@@ -65,7 +74,7 @@ class ObjectCheck:
 
     @property
     def _name(self) -> str:
-        return self.cls.__qualname__
+        return self.built.__qualname__
 
 
 def fit_failure(
@@ -74,16 +83,22 @@ def fit_failure(
     """Why the seed's keys do not bind to ``signature``, as Python's own binding says, or None
     when they bind.
 
-    The ``positional`` items go first by position, then each positional-only
-    parameter the seed names, by position, as the call passes it, then the
-    other keys by name.
+    The ``positional`` items go first by position and fill the first
+    parameters. Then each positional-only parameter after those that the seed
+    names goes by position, as the call passes it, and the other keys by name.
     """
-    values, keywords = call_arguments(positional_only(signature), seed)
+    values, keywords = call_arguments(positional_only(signature)[len(positional) :], seed)
     try:
         signature.bind(*positional, *values, **keywords)
     except TypeError as error:
         return str(error)
     return None
+
+
+def _star_args(signature: inspect.Signature) -> set[str]:
+    """The ``*args`` parameter's name, or no name for a signature without one."""
+    var = inspect.Parameter.VAR_POSITIONAL
+    return {name for name, parameter in signature.parameters.items() if parameter.kind is var}
 
 
 def _bound_keys(value: Mapping[str, object], positional: Sequence[object]) -> str:
