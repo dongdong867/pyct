@@ -16,7 +16,7 @@ losses, its callee is none of pyct's names nor a bare name pyct binds in
 the module's builtins (`pyct.core.entry.bound.BOUND`), and it is not written
 ``isinstance(...)``, ``callable(...)`` or ``hasattr(...)``, bare or after a
 dot, whose answer is read off a value's type. A call whose arguments hold an
-``await`` or a ``yield`` stays as written too: its frame can stop between
+``await``, a ``yield`` or an ``async for`` stays as written too: its frame can stop between
 the call's first argument and its answer while another frame's calls run.
 """
 
@@ -84,7 +84,13 @@ def _watchable(call: ast.Call, reserved: frozenset[str]) -> bool:
     arguments = _arguments(call)
     if not written_out(call) or all(isinstance(each, ast.Constant) for each in arguments):
         return False
-    return not any(isinstance(node, _STOPS) for each in arguments for node in ast.walk(each))
+    return not any(_stops(node) for each in arguments for node in ast.walk(each))
+
+
+def _stops(node: ast.AST) -> bool:
+    """Whether a node can stop the frame it runs in: an `await`, a `yield`, and an `async for`
+    of a comprehension, which runs in the frame around it."""
+    return isinstance(node, _STOPS) or (isinstance(node, ast.comprehension) and node.is_async == 1)
 
 
 def _pyct_s(callee: ast.expr, reserved: frozenset[str]) -> bool:

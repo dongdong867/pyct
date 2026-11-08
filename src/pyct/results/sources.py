@@ -49,8 +49,7 @@ class _Binding:
 @dataclass(frozen=True)
 class _Function:
     """What a function's reading needs, read once for all its conditions: each name it binds
-    with every place it binds it, each node's parent, and the names whose value can come from
-    a parameter."""
+    with every place it binds it, each node's parent, and the names a parameter carries to."""
 
     bound: dict[str, list[_Binding]]
     parents: dict[int, ast.AST]
@@ -84,9 +83,10 @@ class Origins:
         known = self._known.get(id(function))
         if known is None:
             known = self._known[id(function)] = _read_function(function, self.step)
-        # a comprehension's own names, around the test, are the comprehension's
-        bound = {**known.bound, **_comprehension_names(test, known.parents)}
-        return _Reading(self, bound, known.carried).sources(test)
+        # the names the test reads that a comprehension around it binds are the comprehension's
+        inner = _comprehension_names(test, known.parents)
+        carried = _with_inner(known.carried, inner, self.step)
+        return _Reading(self, known.bound, inner, carried).sources(test)
 
     def _function(self, code: types.CodeType) -> ast.AST | None:
         if not self._read:
@@ -170,7 +170,7 @@ def _own_nodes(scope: ast.AST, step: Callable[[], None]) -> Iterator[ast.AST]:
 
 def _read_function(function: ast.AST, step: Callable[[], None]) -> _Function:
     """Each name the function binds, with every place it binds it, a parameter none, each
-    node's parent, and the names a parameter's value can reach."""
+    node's parent, and the names a parameter carries to."""
     bound: dict[str, list[_Binding]] = {}
     parents: dict[int, ast.AST] = {}
     for node, loop in _with_loops(function, step, parents):
@@ -206,28 +206,58 @@ def _with_loops(
 def _carried(
     function: ast.AST, bound: dict[str, list[_Binding]], step: Callable[[], None]
 ) -> frozenset[str]:
-    """The names whose value can come from a parameter: the parameters, and each name a binding
-    of which reads one of them, until no more are found."""
+    """The parameters, and each name a binding of which is made from one of them, spread from
+    the parameters a name at a time."""
     arguments = function.args  # pyrefly: ignore[missing-attribute]
     every = [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]
     every += [each for each in (arguments.vararg, arguments.kwarg) if each is not None]
-    carried = {each.arg for each in every}
-    reads = {name: [_names_read(each.value, step) for each in held] for name, held in bound.items()}
-    grown = True
-    while grown:
+    parameters = [each.arg for each in every]
+    # the names each name goes into
+    into: dict[str, set[str]] = {}
+    for name, held in bound.items():
+        for binding in held:
+            for read in _names_read(binding.value, step):
+                into.setdefault(read, set()).add(name)
+    carried = set(parameters)
+    pending = list(parameters)
+    while pending:
         step()
-        found = {name for name, each in reads.items() if any(read & carried for read in each)}
-        grown = not found <= carried
-        carried |= found
+        for name in into.get(pending.pop(), ()):
+            if name not in carried:
+                carried.add(name)
+                pending.append(name)
     return frozenset(carried)
 
 
-def _names_read(value: ast.expr | None, step: Callable[[], None]) -> set[str]:
-    names: set[str] = set()
-    for node in ast.walk(value) if value is not None else ():
+def _with_inner(
+    carried: frozenset[str], inner: dict[str, list[_Binding]], step: Callable[[], None]
+) -> frozenset[str]:
+    """The names carried for a test inside comprehensions: also each name a comprehension
+    binds from a carried value."""
+    reads = {name: _names_read(binding.value, step) for name, (binding,) in inner.items()}
+    names = set(carried)
+    # an inner comprehension's names can be made from an outer one's, which come later
+    grown = True
+    while grown:
         step()
+        found = {name for name, read in reads.items() if read & names} - names
+        names |= found
+        grown = bool(found)
+    return frozenset(names)
+
+
+def _names_read(value: ast.expr | None, step: Callable[[], None]) -> set[str]:
+    """The names a value is made from: those it reads, but for a conditional expression's test,
+    which picks the value and is no part of it."""
+    names: set[str] = set()
+    pending: list[ast.AST] = [value] if value is not None else []
+    while pending:
+        step()
+        node = pending.pop()
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
             names.add(node.id)
+        parts = [node.body, node.orelse] if isinstance(node, ast.IfExp) else None
+        pending.extend(parts or ast.iter_child_nodes(node))
     return names
 
 
@@ -288,20 +318,23 @@ class _Reading:
 
     origins: Origins
     bound: dict[str, list[_Binding]]
+    inner: dict[str, list[_Binding]]
     carried: frozenset[str]
-    seen: set[str] = field(default_factory=set)
+    seen: set[tuple[str, bool]] = field(default_factory=set)
     found: dict[tuple[SourceKind, str, At], Source] = field(default_factory=dict)
 
     def sources(self, test: ast.expr) -> tuple[Source, ...]:
-        pending = list(self._read(test, None))
+        # a name the test reads is a comprehension's own when one around the test binds it;
+        # every name read after is the function's
+        pending = [(name, name in self.inner) for name in self._read(test, None)]
         while pending:
             self.origins.step()
-            name = pending.pop()
-            if name in self.seen:
+            name, inner = pending.pop()
+            if (name, inner) in self.seen:
                 continue
-            self.seen.add(name)
-            for binding in self.bound.get(name, []):
-                pending.extend(self._followed(name, binding))
+            self.seen.add((name, inner))
+            for binding in (self.inner if inner else self.bound).get(name, []):
+                pending.extend((each, False) for each in self._followed(name, binding))
         return tuple(
             sorted(self.found.values(), key=lambda source: (source.site.line, source.site.col))
         )
@@ -361,13 +394,11 @@ def _written(node: ast.AST) -> frozenset[str]:
 
 def written_name(callee: ast.expr) -> str:
     """The name a downgrade at a call gives its callee: the callee's text, or, for a callee of
-    more than `_LONGEST_TEXT` nodes, the last name it is written with, else ``"call"``. The
+    more than `_LONGEST_TEXT` nodes, the name after its last dot, else ``"call"``. The
     nodes are counted without going deeper into the stack, which writing a text does."""
     if sum(1 for _ in itertools.islice(ast.walk(callee), _LONGEST_TEXT + 1)) <= _LONGEST_TEXT:
         return ast.unparse(callee)
-    if isinstance(callee, ast.Attribute):
-        return callee.attr
-    return callee.id if isinstance(callee, ast.Name) else "call"
+    return callee.attr if isinstance(callee, ast.Attribute) else "call"
 
 
 def _dunder(name: str) -> bool:
@@ -375,17 +406,20 @@ def _dunder(name: str) -> bool:
 
 
 def _first_name(node: ast.AST, carried: frozenset[str]) -> str:
-    """The first name an expression reads as a value whose value can come from a parameter,
-    else the first name it reads, else its text: a comprehension's first iterable's, and within
-    a call its arguments' before its callee's (`_in_order`)."""
+    """The first name an expression reads as a value that a parameter carries to, else the
+    first name it reads, else its text: a comprehension's first iterable's, and within a call
+    its arguments' before its callee's (`_in_order`)."""
     part = node.generators[0].iter if isinstance(node, _COMPREHENSIONS) else node
     names = [
         each.id
         for each in _in_order(part)
         if isinstance(each, ast.Name) and isinstance(each.ctx, ast.Load)
     ]
-    first = next((name for name in names if name in carried), names[0] if names else None)
-    return first if first is not None else written_name(node)  # pyrefly: ignore[bad-argument-type]
+    for held in (carried, frozenset(names)):
+        first = next((name for name in names if name in held), None)
+        if first is not None:
+            return first
+    return written_name(node)  # pyrefly: ignore[bad-argument-type]
 
 
 def _in_order(node: ast.AST) -> Iterator[ast.AST]:

@@ -41,7 +41,8 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 
-from pyct.core.entry import bound, math_calls, type_calls
+from pyct.core.entry import bound, hashed, math_calls, type_calls
+from pyct.core.foundation import values
 from pyct.intercept import (
     bool_returns,
     calls,
@@ -54,6 +55,7 @@ from pyct.intercept import (
     unpacks,
     watch,
 )
+from pyct.results import sources
 
 logger = logging.getLogger(__name__)
 
@@ -127,11 +129,14 @@ def _entries(root: Path) -> str | None:
 def _version() -> str:
     """A digest of the code that decides what an entry holds: the transform and each of its
     rules, the `math`, `builtins` and `operator` names and the range and view method names it
-    takes, its compile, and this module's format."""
+    takes, each other module of pyct's a rule imports from, its compile, and this module's
+    format."""
     digest = hashlib.sha256()
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
     rules += (unpacks.__file__, percents.__file__, bool_returns.__file__, watch.__file__)
+    # what the rules take from outside the transform: names, sizes and the callee's text
+    rules += (hashed.__file__, values.__file__, sources.__file__)
     for file in (*rules, compiled.__file__, __file__):
         digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]

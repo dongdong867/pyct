@@ -1,12 +1,14 @@
 """Substituted code kept between runs: where, for which source, and what a failure costs."""
 
+import ast
+import importlib
 import os
 import types
 from pathlib import Path
 
 import pytest
 
-from pyct.intercept import cache, substitute
+from pyct.intercept import cache, compiled
 from pyct.intercept.cache import CACHE_VARIABLE, cache_folder, cached
 
 
@@ -252,10 +254,35 @@ def test_the_transform_s_version_reads_each_rule_the_transform_imports(
     monkeypatch.setattr(Path, "read_bytes", reads)
     cache._version.__wrapped__()
 
-    # a rule changed alone makes a new version, so no older rule's code is read again
-    rules = [
-        str(module.__file__)
-        for module in vars(substitute).values()
-        if isinstance(module, types.ModuleType) and module.__name__.startswith("pyct.intercept.")
-    ]
-    assert rules and set(rules) <= set(read)
+    # a rule changed alone makes a new version, so no older rule's code is read again: each module
+    # of the transform, and each module of pyct's one of them imports from
+    assert set(_transform_files()) <= set(read)
+
+
+def _transform_files() -> list[str]:
+    """The files of the transform's modules, and of each pyct module one of them imports from."""
+    files: list[str] = []
+    pending = [compiled.__name__]
+    while pending:
+        name = pending.pop()
+        file = str(importlib.import_module(name).__file__)
+        if file in files:
+            continue
+        files.append(file)
+        if name.startswith("pyct.intercept."):
+            pending.extend(_imported(file))
+    return files
+
+
+def _imported(file: str) -> list[str]:
+    """The pyct modules a module's ``from ... import`` statements name, each name a module or
+    the module it is taken from."""
+    found: list[str] = []
+    for node in ast.parse(Path(file).read_text()).body:
+        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pyct."):
+            module = str(node.module)
+            held = vars(importlib.import_module(module))
+            for alias in node.names:
+                taken = held.get(alias.name)
+                found.append(taken.__name__ if isinstance(taken, types.ModuleType) else module)
+    return found

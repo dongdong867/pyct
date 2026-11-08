@@ -207,3 +207,27 @@ def test_an_answer_that_holds_itself_is_read_once() -> None:
 
     assert answer(first(tracked(3, sink)) and held, "f") is held
     assert [name for name, _ in lost(sink)] == ["f"]
+
+
+def test_calls_left_open_in_one_frame_are_kept_to_a_bound() -> None:
+    sink: list[SinkItem] = []
+    x = tracked(3, sink)
+
+    for _ in range(watch.MOST_OPEN + 10):
+        with contextlib.suppress(ZeroDivisionError):
+            answer(divmod(first(x), given(0)), "divmod")
+
+    assert len(watch._OPEN[threading.get_ident()]) == watch.MOST_OPEN
+    # the frame's next call still answers for itself
+    answer(bin(first(x)), "bin")
+    assert [name for name, _ in lost(sink)] == ["bin"]
+
+
+def test_forget_drops_the_calls_every_thread_left_open() -> None:
+    left = threading.Thread(target=lambda: first(5))
+    left.start()
+    left.join(5)
+
+    watch.forget()
+
+    assert watch._OPEN == {}

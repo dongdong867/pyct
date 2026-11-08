@@ -2,6 +2,7 @@
 
 import sys
 import textwrap
+import time
 import types
 from collections.abc import Mapping
 from pathlib import Path
@@ -276,7 +277,7 @@ def test_each_walk_of_the_reading_takes_steps(tmp_path: Path) -> None:
 
     # the module's functions and each one's bindings are read once; the condition's test and its
     # names, for each condition
-    reading = {"_own_nodes", "sources", "_read"}
+    reading = {"_own_nodes", "_with_inner", "sources", "_read"}
     assert {"_function", "_with_loops", *reading} <= first
     assert set(walks) == reading
 
@@ -319,3 +320,54 @@ def test_a_comprehension_s_own_name_comes_from_the_comprehension(tmp_path: Path)
     file = module(tmp_path, COMPREHENSION_TEST)
 
     assert sources(file, "picks", (5, 11)) == (loop(file, "c", 2, 11),)
+
+
+PICKED = """\
+def picked(x, k):
+    n = 3 if x > 100 else 4
+    if n ^ x == 3:
+        return 1
+    base = 2.5 if k > 0 else 3.5
+    if pow(base, x) == 2:
+        return 2
+    return 0
+"""
+
+
+def test_a_value_a_test_picked_is_not_made_from_what_the_test_read(tmp_path: Path) -> None:
+    file = module(tmp_path, PICKED)
+    downgrades = {(3, 7): ("__rxor__",), (6, 7): ("pow",)}
+
+    assert sources(file, "picked", (3, 7), downgrades) == (lost(file, "x", "__rxor__", 3, 7),)
+    assert sources(file, "picked", (6, 7), downgrades) == (lost(file, "x", "pow", 6, 7),)
+
+
+SHADOWED = """\
+def shadowed(a, xs, n):
+    x = foo(a)
+    t = x + 1
+    kept = [x for x in range(3) if t > 0]
+    return [y for y in xs if foo(y, n) > 2], kept
+"""
+
+
+def test_a_comprehension_s_name_is_its_own_only_for_its_test(tmp_path: Path) -> None:
+    file = module(tmp_path, SHADOWED)
+    downgrades = {(2, 8): ("foo",), (5, 29): ("foo",)}
+
+    # t is the function's, made from the function's own x
+    assert sources(file, "shadowed", (4, 35), downgrades) == (lost(file, "a", "foo", 2, 8),)
+    # y comes from the parameter xs, so it is the value that went in
+    assert sources(file, "shadowed", (5, 29), downgrades) == (lost(file, "y", "foo", 5, 29),)
+
+
+def test_a_long_chain_of_names_is_read_in_time_as_long(tmp_path: Path) -> None:
+    # 6,000 names, each made from the one before: read a round at a time, the names that come
+    # from the parameter took tens of seconds
+    body = "".join(f"    v{k} = v{k - 1} + 1\n" for k in range(1, 6000))
+    file = module(tmp_path, f"def chain(v0):\n{body}    if v5999 > 3:\n        return 1\n")
+
+    started = time.perf_counter()
+    Origins(file, {}, step=lambda: None).of(code_named(file, "chain"), 6001, 7)
+
+    assert time.perf_counter() - started < 3.0

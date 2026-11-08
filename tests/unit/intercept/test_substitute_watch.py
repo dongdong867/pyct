@@ -71,6 +71,9 @@ def test_a_call_pyct_routes_or_that_cannot_take_a_tracked_value_is_not_watched(
         pytest.param("async def g():\n    return f(await h(x))", id="await"),
         pytest.param("def g():\n    return f((yield x))", id="yield"),
         pytest.param("def g():\n    return f((yield from xs))", id="yield from"),
+        pytest.param(
+            "async def g():\n    return f(x, [v async for v in ys])", id="an async comprehension"
+        ),
     ],
 )
 def test_a_call_whose_argument_can_stop_its_frame_is_not_watched(source: str) -> None:
