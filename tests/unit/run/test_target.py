@@ -19,9 +19,11 @@ from pyct.run.target import (
     load_target,
 )
 from pyct.run.target import _self_class as self_class_of
+from pyct.run.target import _self_name as self_name_of
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CART = "targets.classes.cart"
+SHOP = "targets.classes.shop"
 
 
 def test_load_target_imports_from_the_current_directory() -> None:
@@ -119,6 +121,50 @@ def test_load_target_keeps_the_class_a_method_needs_an_instance_of_as_self(
         if self_class is None
         else functools.reduce(getattr, self_class.split("."), sys.modules[CART])
     )
+
+
+@pytest.mark.parametrize(
+    ("spec", "self_name"),
+    [
+        pytest.param(f"{SHOP}::Cart.total", "self", id="a-method"),
+        pytest.param(f"{SHOP}::Till.total", "this", id="a-method-whose-first-parameter-is-this"),
+        pytest.param(f"{CART}::Cart.from_text", None, id="a-classmethod"),
+        pytest.param(f"{CART}::Cart", None, id="a-class"),
+    ],
+)
+def test_load_target_names_self_by_the_method_s_first_parameter(
+    spec: str, self_name: str | None
+) -> None:
+    assert load_target(spec).self_name == self_name
+
+
+def test_load_target_reads_the_constructor_of_the_class_self_is_built_from() -> None:
+    target = load_target(f"{SHOP}::Member.price")
+
+    assert target.constructor is not None
+    assert list(target.constructor.parameters) == ["name", "vip", "tags"]
+    assert load_target(f"{CART}::Cart.from_text").constructor is None
+
+
+def _keyword_first(*, owner: str) -> None: ...
+
+
+def _gathering_first(*args: object) -> None: ...
+
+
+def _no_parameter() -> None: ...
+
+
+@pytest.mark.parametrize(
+    "method",
+    [_keyword_first, _gathering_first, _no_parameter],
+    ids=["keyword-only", "gathering", "none"],
+)
+def test_a_method_whose_first_parameter_takes_no_position_names_no_self(
+    method: types.FunctionType,
+) -> None:
+    """Python passes the instance by position, so only such a parameter can take it (Q2)."""
+    assert self_name_of(inspect.signature(method)) is None
 
 
 class _Locked(type):
