@@ -1,7 +1,8 @@
 """The pyct command line.
 
-``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs] [--dump-formulas DIR]``
+``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]
+[--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]
+[--dump-formulas DIR]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS] [--goal coverage|bugs]``
@@ -12,17 +13,13 @@ from __future__ import annotations
 import argparse
 import functools
 import inspect
-import json
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
-from pyct.binding.annotations import contradictions
 from pyct.binding.bind import access_name, leaves
-from pyct.binding.call import call_arguments, positional_only
-from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import (
     UsageError,
     dump_folder,
@@ -38,12 +35,14 @@ from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
-from pyct.results.record import InputRecord, Miss, RunResult, StopKind
+from pyct.results.record import InputRecord, Miss, RunResult, Source, StopKind
 from pyct.results.trace import render_miss, render_start, render_stop, render_trace
 from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import run
+from pyct.run.seed_checks import check_seed_fits, check_seed_types, parse_seed
+from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
 from pyct.solver.given import write
@@ -54,13 +53,16 @@ from pyct.sweep.rows import Row, row_line, running, told
 from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
-    "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs] [--dump-formulas DIR]"
+    "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]"
+    " [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
+    " [--dump-formulas DIR]"
 )
 SWEEP_USAGE = (
     "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
     " [--total-budget SECONDS] [--goal coverage|bugs]"
 )
+# the refusal of seeds given more than one way
+ONE_WAY = "give the seeds one way: after the target, through --args, or through --seeds"
 # what pyct sweep --help says above the flags, kept as written
 SWEEP_WARNING = """\
 pyct sweep runs each public function and class of PACKAGE as its own pyct run.
@@ -71,15 +73,12 @@ in its process. Nothing undoes a file an input writes anywhere else or a
 request it sends.
 """
 
-# how many levels past the seed's own depth the check writes: room for the line, its forks, one
-# fork, its condition, and a few operations the target applies to the value
-LINE_NESTING = 8
-
 
 @dataclass(frozen=True)
 class RunCommand:
     """What the command line asked for: the target spec, the seed, the three limits, and where.
 
+    ``seeds_text`` names a file of seeds, given instead of ``seed_text``.
     ``in_process`` runs every input in pyct's own process rather than one of its own.
     ``goal_text`` is the goal as written, None for the default, and ``dump_text`` the folder
     each program pyct gives cvc5 goes to, None for none.
@@ -93,6 +92,17 @@ class RunCommand:
     in_process: bool = False
     goal_text: str | None = None
     dump_text: str | None = None
+    seeds_text: str | None = None
+
+
+@dataclass(frozen=True)
+class Seeds:
+    """The seeds a run starts from, in order; each one's ``FILE:N`` when a seeds file gave them;
+    and a ``skipped`` line for each line of the file that repeated an earlier seed."""
+
+    seeds: tuple[Mapping[str, object], ...]
+    labels: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -140,9 +150,12 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     The target's package is substituted from its import to the run's end,
     in this process and in every input's (``pyct.intercept``).
 
-    Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, goal, dump folder, import and signature, seed present,
-    seed fits, seed types, cvc5.
+    Checks run in this order: target form, seed shape or the seeds file's
+    read, budget, plateau, solver timeout, goal, dump folder, import and
+    signature, seed present, seed fits, seed types, cvc5. A seeds file's
+    lines take the shape, fit and type checks in one pass after the import,
+    so every bad line is named at once. A line that repeats an earlier seed is said once
+    the checks pass, before the first input.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
@@ -158,11 +171,13 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         if isinstance(command, SweepCommand):
             return _sweep(command)
         with interception(command.spec):
-            target, seed, limits, tell = _checked(command, watch)
+            target, seeds, limits, tell = _checked(command, watch)
             print(render_start(command.spec, target.fn), end="", file=sys.stderr, flush=True)
+            for skipped in seeds.skipped:
+                print(skipped, file=sys.stderr, flush=True)
             result = run(
                 target,
-                seed,
+                seeds.seeds,
                 limits=limits,
                 isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
                 tell=tell,
@@ -178,15 +193,14 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     return _exit_code(result)
 
 
-def _checked(
-    command: RunCommand, watch: ImportWatch | None
-) -> tuple[Target, Mapping[str, object], Limits, Tell]:
+def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Seeds, Limits, Tell]:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports.
 
     The Tell prints each input and miss, and writes each ask's programs to the dump folder when
     the command line names one."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
+    file = None if command.seeds_text is None else read_seeds_file(command.seeds_text)
     limits = Limits(
         budget=parse_budget(command.budget_text),
         plateau=parse_plateau(command.plateau_text),
@@ -196,12 +210,34 @@ def _checked(
     folder = dump_folder(command.dump_text)
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
+    seeds = _seeds(target, seed, file)
+    locate()
+    report = _Labeled(seeds.labels).report
+    return target, seeds, limits, Tell(report=report, missed=_missed, asked=asked)
+
+
+def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | None) -> Seeds:
+    """The seed checked, or every line of the seeds file checked and its repeats left out."""
+    if file is not None:
+        kept, skipped = distinct(checked_seeds(target, file))
+        return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed_fits(target.signature, seed)
     check_seed_types(target, seed)
-    locate()
-    return target, seed, limits, Tell(report=_report, missed=_missed, asked=asked)
+    return Seeds((seed,))
+
+
+class _Labeled:
+    """Hands each seed's ``FILE:N`` to its trace, in the order the seeds run."""
+
+    def __init__(self, labels: Sequence[str]) -> None:
+        self.waiting = iter(labels)
+
+    def report(self, record: InputRecord, coverage: Coverage) -> None:
+        # a seed given inline has no label
+        label = next(self.waiting, None) if record.source is Source.SEED else None
+        _report(record, coverage, label)
 
 
 class _Dump:
@@ -276,8 +312,9 @@ def _row(row: Row) -> None:
         print(said, file=sys.stderr, flush=True)
 
 
-def _report(record: InputRecord, coverage: Coverage) -> None:
-    """The trace a person reads first, then the one line tools read.
+def _report(record: InputRecord, coverage: Coverage, label: str | None = None) -> None:
+    """The trace a person reads first, then the one line tools read. ``label`` names where a
+    seed came from in its trace.
 
     Both print each fork's expression cut to the cap, and it is cut once for both.
     An access to one of the input's values is a name, written whole. A seed with
@@ -290,7 +327,7 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
         # each part's access, once: a path through a deep dict names every step of its chain
         known: dict[int, str | None] = {}
         printed = printed_forks(record.forks, lambda part: access_name(part, known) in names)
-    print(render_trace(record, coverage, printed), end="", file=sys.stderr, flush=True)
+    print(render_trace(record, coverage, printed, label), end="", file=sys.stderr, flush=True)
     _line(render(record, coverage, printed))
 
 
@@ -319,25 +356,40 @@ def _is_a_bug(failure: Failure | None) -> bool:
 
 
 def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
-    """Read the argv. The seed may follow the target, or come through ``--args``."""
+    """Read the argv. The seed may follow the target, or come through ``--args``, or a file of
+    seeds through ``--seeds``: one of the three."""
     parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
     _sweep_parser(commands)
+    _run_parser(commands)
+    namespace = parser.parse_args(argv)
+    if namespace.command == "sweep":
+        return _sweep_command(namespace)
+    return _run_command(namespace)
+
+
+def _run_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
+    """The ``run`` command."""
     run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
+    run_parser.add_argument("--seeds", dest="seeds_file", metavar="FILE")
     run_parser.add_argument("--budget", metavar="SECONDS")
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
     run_parser.add_argument("--goal", metavar="coverage|bugs")
     run_parser.add_argument("--dump-formulas", dest="dump", metavar="DIR")
-    namespace = parser.parse_args(argv)
-    if namespace.command == "sweep":
-        return _sweep_command(namespace)
+
+
+def _run_command(namespace: argparse.Namespace) -> RunCommand:
+    """The run the argv asked for, refused when it gives its seeds more than one way."""
+    inline = namespace.seed is not None or namespace.args_seed is not None
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
+    if namespace.seeds_file is not None and inline:
+        raise UsageError(f"{ONE_WAY}\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
     return RunCommand(
         spec=namespace.target,
@@ -348,6 +400,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         in_process=namespace.in_process,
         goal_text=namespace.goal,
         dump_text=namespace.dump,
+        seeds_text=namespace.seeds_file,
     )
 
 
@@ -404,83 +457,13 @@ def check_spec(spec: str) -> None:
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
 
 
-def parse_seed(seed_text: str) -> Mapping[str, object]:
-    """The seed is a JSON object, one key per parameter, nested no deeper than a line can hold."""
-    try:
-        seed = json.loads(seed_text)
-    except json.JSONDecodeError as error:
-        raise UsageError(f"args must be a JSON object: {error}") from error
-    except RecursionError as error:
-        raise UsageError("args nest too deep for Python to read") from error
-    if not isinstance(seed, dict):
-        raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
-    _check_writable(seed)
-    return seed
-
-
-def _check_writable(seed: Mapping[str, object]) -> None:
-    """Refuse a seed too deep for a line to hold a fork a few operations deep on its deepest value.
-
-    The line holds each fork on a value inside the seed a few levels below
-    the value, and Python's JSON writer stops at a depth of its own. So the
-    check writes a list nested ``LINE_NESTING`` levels past the seed before
-    any input runs, which allows for a few operations on the value.
-    """
-    depth = _depth(seed)
-    probe: list[object] = [0]
-    for _ in range(depth + LINE_NESTING - 1):
-        probe = [probe]
-    try:
-        json.dumps(probe)
-    except RecursionError as error:
-        raise UsageError(
-            f"args nest {depth} levels deep, too deep for pyct to write each input's line"
-        ) from error
-
-
-def _depth(value: object) -> int:
-    """How many objects and arrays deep a JSON value nests, read in a loop, not a call per level."""
-    deepest = 0
-    pending: list[tuple[object, int]] = [(value, 1)]
-    while pending:
-        item, level = pending.pop()
-        if isinstance(item, dict):
-            item = list(item.values())
-        if isinstance(item, list):
-            deepest = max(deepest, level)
-            pending.extend((child, level + 1) for child in item)
-    return deepest
-
-
-def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
-    """Refuse a seed whose keys do not fit the parameters. Names only, not types.
-
-    A positional-only parameter is named too, and bound by position, as the
-    call will pass it.
-    """
-    positional, keywords = call_arguments(positional_only(signature), seed)
-    try:
-        signature.bind(*positional, **keywords)
-    except TypeError as error:
-        # bind names a missing parameter before an unexpected key, so name the keys too
-        given = ", ".join(seed) or "nothing"
-        parameters = ", ".join(signature.parameters) or "no parameters"
-        raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
-
-
-def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
-    """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target.signature, target.fn), seed)
-    if lines:
-        raise UsageError("\n".join(lines))
-
-
 def missing_args_message(signature: inspect.Signature) -> str:
-    """Name the parameters the seed must give, and both ways to pass it."""
+    """Name the parameters the seed must give, and each way to pass it."""
     parameters = ", ".join(signature.parameters) or "no parameters"
     return (
         f"args are required: a JSON object for {parameters}\n"
-        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args"
+        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
+        f" or a file of them through --seeds"
     )
 
 

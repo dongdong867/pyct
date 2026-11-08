@@ -1,0 +1,76 @@
+import inspect
+
+import pytest
+
+from pyct.config.command_line import UsageError
+from pyct.run.seed_checks import check_seed_fits, parse_seed
+from tests.nesting import nested_text, seed_limits
+
+
+def classify(x: int) -> str:
+    return "positive" if x > 0 else "other"
+
+
+SIGNATURE = inspect.signature(classify)
+
+
+@pytest.mark.parametrize("text", ["[1]", "1", '"x"', "null", "not json", ""])
+def test_parse_seed_refuses_anything_but_an_object(text: str) -> None:
+    with pytest.raises(UsageError, match="JSON object"):
+        parse_seed(text)
+
+
+def test_parse_seed_returns_the_object() -> None:
+    assert parse_seed('{"x": 1, "s": "a"}') == {"x": 1, "s": "a"}
+
+
+def test_check_seed_fits_refuses_an_unexpected_key() -> None:
+    with pytest.raises(UsageError, match="y"):
+        check_seed_fits(SIGNATURE, {"y": 1})
+
+
+def test_check_seed_fits_refuses_a_missing_key() -> None:
+    with pytest.raises(UsageError, match="x"):
+        check_seed_fits(SIGNATURE, {})
+
+
+def check(value: str, /, strict: bool = False) -> str:
+    return value if strict else ""
+
+
+def test_check_seed_fits_takes_a_positional_only_parameter_by_name() -> None:
+    check_seed_fits(inspect.signature(check), {"value": "x", "strict": True})
+
+
+def test_check_seed_fits_refuses_a_missing_positional_only_parameter() -> None:
+    with pytest.raises(UsageError, match="value"):
+        check_seed_fits(inspect.signature(check), {"strict": True})
+
+
+def test_check_seed_fits_accepts_a_fitting_seed() -> None:
+    check_seed_fits(SIGNATURE, {"x": 1})
+
+
+def test_check_seed_fits_ignores_the_value_type() -> None:
+    # names only: a wrong-typed value is the target's business, not the command line's
+    check_seed_fits(SIGNATURE, {"x": "a"})
+
+
+def test_parse_seed_takes_a_seed_nested_thousands_deep() -> None:
+    assert parse_seed(nested_text(2000))
+
+
+def test_parse_seed_refuses_a_seed_too_deep_for_python_to_read() -> None:
+    _, read = seed_limits()
+
+    with pytest.raises(UsageError, match="too deep for Python to read"):
+        parse_seed(nested_text(read))
+
+
+def test_parse_seed_refuses_a_seed_too_deep_to_write() -> None:
+    write, read = seed_limits()
+    if write >= read:
+        pytest.skip("this Python refuses to read a seed before it is too deep to write")
+
+    with pytest.raises(UsageError, match="too deep for pyct to write"):
+        parse_seed(nested_text(write))
