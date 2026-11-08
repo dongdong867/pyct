@@ -12,17 +12,13 @@ from __future__ import annotations
 import argparse
 import functools
 import inspect
-import json
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
-from pyct.binding.annotations import contradictions
 from pyct.binding.bind import access_name, leaves
-from pyct.binding.call import call_arguments, positional_only
-from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import (
     UsageError,
     dump_folder,
@@ -44,6 +40,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import run
+from pyct.run.seed_checks import check_seed_fits, check_seed_types, parse_seed
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
 from pyct.solver.given import write
@@ -70,10 +67,6 @@ an input writes by a relative path, and isolation undoes what an input changes
 in its process. Nothing undoes a file an input writes anywhere else or a
 request it sends.
 """
-
-# how many levels past the seed's own depth the check writes: room for the line, its forks, one
-# fork, its condition, and a few operations the target applies to the value
-LINE_NESTING = 8
 
 
 @dataclass(frozen=True)
@@ -400,77 +393,6 @@ def check_spec(spec: str) -> None:
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
-
-
-def parse_seed(seed_text: str) -> Mapping[str, object]:
-    """The seed is a JSON object, one key per parameter, nested no deeper than a line can hold."""
-    try:
-        seed = json.loads(seed_text)
-    except json.JSONDecodeError as error:
-        raise UsageError(f"args must be a JSON object: {error}") from error
-    except RecursionError as error:
-        raise UsageError("args nest too deep for Python to read") from error
-    if not isinstance(seed, dict):
-        raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
-    _check_writable(seed)
-    return seed
-
-
-def _check_writable(seed: Mapping[str, object]) -> None:
-    """Refuse a seed too deep for a line to hold a fork a few operations deep on its deepest value.
-
-    The line holds each fork on a value inside the seed a few levels below
-    the value, and Python's JSON writer stops at a depth of its own. So the
-    check writes a list nested ``LINE_NESTING`` levels past the seed before
-    any input runs, which allows for a few operations on the value.
-    """
-    depth = _depth(seed)
-    probe: list[object] = [0]
-    for _ in range(depth + LINE_NESTING - 1):
-        probe = [probe]
-    try:
-        json.dumps(probe)
-    except RecursionError as error:
-        raise UsageError(
-            f"args nest {depth} levels deep, too deep for pyct to write each input's line"
-        ) from error
-
-
-def _depth(value: object) -> int:
-    """How many objects and arrays deep a JSON value nests, read in a loop, not a call per level."""
-    deepest = 0
-    pending: list[tuple[object, int]] = [(value, 1)]
-    while pending:
-        item, level = pending.pop()
-        if isinstance(item, dict):
-            item = list(item.values())
-        if isinstance(item, list):
-            deepest = max(deepest, level)
-            pending.extend((child, level + 1) for child in item)
-    return deepest
-
-
-def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
-    """Refuse a seed whose keys do not fit the parameters. Names only, not types.
-
-    A positional-only parameter is named too, and bound by position, as the
-    call will pass it.
-    """
-    positional, keywords = call_arguments(positional_only(signature), seed)
-    try:
-        signature.bind(*positional, **keywords)
-    except TypeError as error:
-        # bind names a missing parameter before an unexpected key, so name the keys too
-        given = ", ".join(seed) or "nothing"
-        parameters = ", ".join(signature.parameters) or "no parameters"
-        raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
-
-
-def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
-    """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target.signature, target.fn), seed)
-    if lines:
-        raise UsageError("\n".join(lines))
 
 
 def missing_args_message(signature: inspect.Signature) -> str:

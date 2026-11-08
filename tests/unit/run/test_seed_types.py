@@ -2,7 +2,8 @@ import inspect
 
 import pytest
 
-from pyct.cli import UsageError, check_seed_types
+from pyct.config.command_line import UsageError
+from pyct.run.seed_checks import check_seed_types
 from pyct.run.target import Target
 
 

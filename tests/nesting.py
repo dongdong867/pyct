@@ -8,7 +8,7 @@ releases and machines. A test reads it here, in its own process, instead of writ
 import json
 from collections.abc import Callable
 
-from pyct.cli import LINE_NESTING
+from pyct.run.seed_checks import LINE_NESTING
 
 
 def refuses(call: Callable[[int], object], depth: int) -> bool:
