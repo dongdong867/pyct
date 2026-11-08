@@ -136,21 +136,20 @@ def test_a_kept_program_s_option_lines_are_what_it_ran_with(
 @pytest.mark.parametrize(
     ("expression", "said"),
     [
-        (["<", ["floor", "x"], "n"], "internal\ntrue\ntrue\n"),
-        (["==", ["float", "s"], 100000.0], "internal\ntrue\nfalse\n"),
+        (["<", ["floor", "x"], "n"], "sat\ninternal\ntrue\ntrue\n"),
+        (["==", ["float", "s"], 100000.0], "sat\njustification\nfalse\nfalse\n"),
     ],
 )
 def test_the_option_lines_set_what_the_command_line_does(
     tmp_path: Path, expression: Expression, said: str
 ) -> None:
     text = _text(expression)
+    # cvc5 reports the values it runs with only once a check has set its defaults
     asked = ["(get-option :decision)", "(get-option :nl-cov)", "(get-option :strings-lazy-pp)"]
-    query = "\n".join(["(set-logic ALL)", *asked]) + "\n"
+    query = "\n".join(["(set-logic ALL)", "(assert true)", "(check-sat)", *asked]) + "\n"
     (tmp_path / "set.smt2").write_text("\n".join(options(10.0, text)) + "\n" + query)
 
     by_flags = subprocess.run(argv(10.0, text), input=query, capture_output=True, text=True)
     by_lines = subprocess.run(["cvc5", str(tmp_path / "set.smt2")], capture_output=True, text=True)
 
-    # cvc5 reports decision and nl-cov at their defaults, internal and true, unless set, whatever
-    # it then picks; an option it does not know is an error in its output
     assert by_lines.stdout == by_flags.stdout == said, (by_flags, by_lines)
