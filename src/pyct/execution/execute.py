@@ -179,7 +179,12 @@ def _call(
                 in_constructor = construction.cls
                 instance = construction.cls(*construction.positional, **construction.keywords)
                 in_constructor = None
-                ctx.fn(instance, *positional, **keywords)
+                try:
+                    ctx.fn(instance, *positional, **keywords)
+                finally:
+                    # dropped inside the block, as plain Python drops it once the method
+                    # returns, so its `__del__` runs under the deadline
+                    del instance
     except caught as error:
         return _Ending(error=error, called=called, in_constructor=in_constructor)
     return _Ending(error=None, called=called)

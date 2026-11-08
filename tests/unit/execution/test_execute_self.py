@@ -1,6 +1,7 @@
 """How execute builds the instance a method runs on, inside the call, and whose a raise there is."""
 
 import inspect
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from pyct.core.foundation.branch import Site
 from pyct.execution.blame import one_line
 from pyct.execution.execute import ExecutionContext, ExecutionResult, SelfBuild, execute
 from pyct.results.failure import Failure, FailureKind
+from tests.unit.deadline_fires import DEADLINE_FIRES
 
 FILE = str(Path(__file__).resolve())
 OWNER_IS_ADMIN = ["==", ["[]", "self", "'owner'"], "'admin'"]
@@ -52,7 +54,22 @@ class Pinned:
         return discount
 
 
-def built(cls: type, method: object, args: dict[str, object]) -> ExecutionResult:
+class Slow:
+    """An instance whose ``__del__`` outlasts any short deadline."""
+
+    def __init__(self, x: int) -> None:
+        self.x = x
+
+    def __del__(self) -> None:
+        time.sleep(2)
+
+    def m(self) -> int:
+        return self.x
+
+
+def built(
+    cls: type, method: object, args: dict[str, object], until: float | None = None
+) -> ExecutionResult:
     """One call of ``method`` on an instance of ``cls`` built from ``args['self']``."""
     signature = inspect.signature(method)  # pyrefly: ignore[bad-argument-type]
     constructor = positional_only(inspect.signature(cls))
@@ -63,7 +80,7 @@ def built(cls: type, method: object, args: dict[str, object]) -> ExecutionResult
         checks={"self": Fields({})},
         self_build=SelfBuild(cls, "self", constructor),
     )
-    return execute(ctx, args)
+    return execute(ctx, args, until)
 
 
 def test_the_method_runs_on_an_instance_built_from_the_seed() -> None:
@@ -146,3 +163,15 @@ def test_a_value_that_is_not_a_dict_is_passed_as_self_as_given() -> None:
     # the instance's owner is a plain str, so only the discount is followed
     assert result.failure is None
     assert [branch.expression for branch in result.branches] == [["<", "discount", 0]]
+
+
+@DEADLINE_FIRES
+# the alarm lands in `__del__`, where Python reports a raise as unraisable and goes on
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_the_instance_goes_inside_the_deadline_so_its_del_is_held_to_it() -> None:
+    # plain Python drops the instance as the method returns, inside the call
+    started = time.monotonic()
+
+    built(Slow, Slow.m, {"self": {"x": 1}}, started + 0.2)
+
+    assert time.monotonic() - started < 1.5
