@@ -18,7 +18,7 @@ def positional_only(signature: inspect.Signature) -> tuple[inspect.Parameter, ..
 
 
 def call_arguments(
-    positional: Sequence[inspect.Parameter], args: Mapping[str, object]
+    positional: Sequence[inspect.Parameter], args: Mapping[str, object], filled: int = 0
 ) -> tuple[tuple[object, ...], dict[str, object]]:
     """The arguments by position and by name: the ``positional`` parameters by position.
 
@@ -28,10 +28,16 @@ def call_arguments(
     default when a later one is given. One with no default ends the
     positions, and every later value stays a keyword, so Python's own binding
     says which parameter is missing.
+
+    ``filled`` is how many positions the items the call passes first
+    already fill. The positions start after that many parameters, and a key
+    naming one of those stays a keyword, which Python's binding then
+    refuses.
     """
     values: list[object] = []
     given = 0
-    for parameter in positional:
+    open_positions = positional[filled:]
+    for parameter in open_positions:
         if parameter.name in args:
             values.append(args[parameter.name])
             given = len(values)
@@ -39,6 +45,6 @@ def call_arguments(
             values.append(parameter.default)
         else:
             break
-    by_position = {parameter.name for parameter in positional[:given]}
+    by_position = {parameter.name for parameter in open_positions[:given]}
     keywords = {name: value for name, value in args.items() if name not in by_position}
     return tuple(values[:given]), keywords

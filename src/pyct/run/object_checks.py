@@ -17,7 +17,8 @@ _ARGS = "__args__"
 @dataclass(frozen=True)
 class ObjectCheck:
     """A class, its constructor's signature as the caller read it or None, and what the
-    constructor's annotations ask of the values under their keys (``checked_annotations``)."""
+    constructor's annotations ask of the values under their keys: ``checked_annotations``
+    less the ``*args`` parameter's."""
 
     built: type
     signature: inspect.Signature | None
@@ -34,9 +35,7 @@ class ObjectCheck:
             return cls(owner, None, {})
         starred = _star_args(signature)
         checks = checked_annotations(signature, owner)
-        return cls(
-            owner, signature, {key: each for key, each in checks.items() if key not in starred}
-        )
+        return cls(owner, signature, {key: each for key, each in checks.items() if key != starred})
 
     def lines(
         self,
@@ -85,9 +84,10 @@ def fit_failure(
 
     The ``positional`` items go first by position and fill the first
     parameters. Then each positional-only parameter after those that the seed
-    names goes by position, as the call passes it, and the other keys by name.
+    names goes by position, as the call passes it, and the other keys by name
+    (``call_arguments`` with ``filled``).
     """
-    values, keywords = call_arguments(positional_only(signature)[len(positional) :], seed)
+    values, keywords = call_arguments(positional_only(signature), seed, len(positional))
     try:
         signature.bind(*positional, *values, **keywords)
     except TypeError as error:
@@ -95,10 +95,10 @@ def fit_failure(
     return None
 
 
-def _star_args(signature: inspect.Signature) -> set[str]:
-    """The ``*args`` parameter's name, or no name for a signature without one."""
+def _star_args(signature: inspect.Signature) -> str | None:
+    """The ``*args`` parameter's name, or None for a signature without one."""
     var = inspect.Parameter.VAR_POSITIONAL
-    return {name for name, parameter in signature.parameters.items() if parameter.kind is var}
+    return next((name for name, each in signature.parameters.items() if each.kind is var), None)
 
 
 def _bound_keys(value: Mapping[str, object], positional: Sequence[object]) -> str:

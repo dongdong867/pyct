@@ -150,8 +150,22 @@ class Spread:
 
 
 def test_lines_check_no_key_against_the_annotation_of_star_args() -> None:
-    # a key named as *args reaches the constructor through **named, so *args' annotation is not its
+    # a key named as *args reaches the constructor through **named, so the annotation on *items
+    # does not apply to it
     assert check_for(Spread).lines("self", {"items": ["a"]}) == []
+
+
+class Items:
+    def __init__(self, *items: int) -> None:
+        self.items = items
+
+
+def test_lines_give_the_fit_alone_for_a_key_named_as_star_args_with_no_star_star() -> None:
+    fit = reason(Items, items="a")
+
+    assert check_for(Items).lines("self", {"items": "a"}) == [
+        f"self (items) does not fit Items(items): {fit}"
+    ]
 
 
 def test_lines_list_the_positional_items_when_they_do_not_fit() -> None:
