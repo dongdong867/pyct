@@ -48,8 +48,9 @@ def render_trace(
 
 
 def render_start(spec: str, fn: object) -> str:
-    """What stderr says once, before the seed's trace: for a class target, that each input
-    constructs it, under the name the spec gives; nothing for any other target."""
+    """What stderr says once, before any skipped seed and the first seed's trace: for a class
+    target, that each input constructs it, under the name the spec gives; nothing for any other
+    target."""
     if not isinstance(fn, type):
         return ""
     name = spec.partition("::")[2]

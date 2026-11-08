@@ -232,3 +232,20 @@ def test_refuses_seeds_beside_a_seed_after_the_target(tmp_path: Path) -> None:
     assert result.returncode == 2, result.stderr
     assert result.stdout == ""
     assert result.stderr.startswith(ONE_WAY), result.stderr
+
+
+# run-seeds-duplicate-skipped-same-seed, after a class target's notice
+def test_says_a_skipped_seed_after_the_class_notice(tmp_path: Path) -> None:
+    seeds = seeds_file(tmp_path, '{"owner": "ann"}', '{"owner": "bob"}', '{"owner":"ann"}')
+
+    result = run_pyct("targets.classes.cart::Cart", "--seeds", seeds)
+
+    assert result.returncode == 0, result.stderr
+    notice = (
+        "Cart is a class, so each input constructs it; name a method as Cart.<method> to run it"
+    )
+    assert result.stderr.splitlines()[:3] == [
+        notice,
+        f"skipped {seeds}:3, same seed as line 1",
+        f'seed {seeds}:1 {{"owner": "ann"}}',
+    ]
