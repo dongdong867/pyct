@@ -56,8 +56,8 @@ def run_pyct(
             f"pass --budget {NO_DEADLINE}: a run with no flag stops at {RUN_SECONDS:g} s,"
             " and coverage's tracer can hang on its alarm"
         )
-    seconds = budget not in (None, NO_DEADLINE)
-    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if seconds else ())}
+    seconds_given = budget not in (None, NO_DEADLINE)
+    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if seconds_given else ())}
     env = {k: v for k, v in os.environ.items() if k not in left_out}
     if path is not None:
         env["PATH"] = path

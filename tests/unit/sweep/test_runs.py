@@ -54,7 +54,9 @@ def test_a_run_with_no_budget_is_handed_budget_none() -> None:
     assert argv[argv.index("--budget") + 1] == "none"
 
 
-def test_a_run_with_no_budget_is_waited_on_with_no_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_run_is_waited_on_with_no_limit_or_its_budget_and_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     limits: list[float | None] = []
     real = runs.run_command
 

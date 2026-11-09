@@ -1,5 +1,5 @@
-"""The harness demands the summary line, measures a pyct child only when its deadline is off,
-and narrows a printed line's fields, failing on a field of the wrong type."""
+"""The harness demands the summary line, measures a pyct child unless it is given a budget of
+seconds, and narrows a printed line's fields, failing on a field of the wrong type."""
 
 import json
 import re
@@ -128,13 +128,16 @@ def test_a_run_with_no_budget_and_a_timeout_past_its_default_fails_before_it_sta
 
 
 @pytest.mark.parametrize(
-    "budget", [(), ("--budget", "none"), ("--budget", "60")], ids=["at-45", "none", "seconds"]
+    ("budget", "timeout", "measured"),
+    [((), 45, True), (("--budget", "none"), 120, True), (("--budget", "60"), 120, False)],
+    ids=["at-45", "none", "seconds"],
 )
 def test_a_long_timeout_runs_with_a_budget_or_none_or_at_most_45_seconds(
-    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...]
+    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...], timeout: float, measured: bool
 ) -> None:
-    timeout = 45 if not budget else 120
-    assert environment_for(monkeypatch, "m::f", "{}", *budget, timeout=timeout)
+    env = environment_for(monkeypatch, "m::f", "{}", *budget, timeout=timeout)
+
+    assert ("COVERAGE_PROCESS_START" in env) is measured, env
 
 
 def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> None:
