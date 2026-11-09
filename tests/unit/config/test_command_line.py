@@ -1,5 +1,6 @@
 """The command line's limits and goal, read from their text, and each one's refusal."""
 
+import functools
 from collections.abc import Callable
 from pathlib import Path
 
@@ -13,24 +14,46 @@ from pyct.config.command_line import (
     parse_goal,
     parse_plateau,
     parse_solver_timeout,
+    parse_total_budget,
 )
 from pyct.config.goal import Goal
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 
+# the budget as pyct run reads it, with its default
+RUN_BUDGET = functools.partial(parse_budget, default=45.0)
+
 
 def test_parse_budget_returns_the_seconds() -> None:
-    assert parse_budget("1.5") == Budget(seconds=1.5)
+    assert parse_budget("1.5", 45.0) == Budget(seconds=1.5)
 
 
-def test_parse_budget_without_the_flag_is_no_deadline() -> None:
-    assert parse_budget(None) == Budget()
+def test_parse_budget_without_the_flag_is_the_default_it_is_given() -> None:
+    assert parse_budget(None, 45.0) == Budget(seconds=45.0)
+    assert parse_budget(None, None) == Budget()
 
 
-@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400"])
-def test_parse_budget_refuses_anything_but_a_positive_number(text: str) -> None:
+def test_parse_budget_reads_none_as_no_deadline() -> None:
+    assert parse_budget("none", 45.0) == Budget()
+
+
+@pytest.mark.parametrize(
+    "text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400", "None", "NONE", " none"]
+)
+def test_parse_budget_refuses_anything_but_a_positive_number_or_none(text: str) -> None:
     with pytest.raises(UsageError, match="budget"):
-        parse_budget(text)
+        parse_budget(text, 45.0)
+
+
+def test_parse_total_budget_returns_the_seconds_and_none_without_the_flag() -> None:
+    assert parse_total_budget("4") == 4.0
+    assert parse_total_budget(None) is None
+
+
+@pytest.mark.parametrize("text", ["none", "0", "abc"])
+def test_parse_total_budget_refuses_anything_but_a_positive_number(text: str) -> None:
+    with pytest.raises(UsageError, match="total budget must be"):
+        parse_total_budget(text)
 
 
 def test_parse_plateau_returns_the_inputs() -> None:
@@ -80,8 +103,8 @@ def test_parse_solver_timeout_refuses_anything_but_a_positive_number(text: str) 
 @pytest.mark.parametrize(
     ("parse", "text", "refusal"),
     [
-        (parse_budget, "abc", "budget must be a number of seconds, got 'abc'"),
-        (parse_budget, "0", "budget must be a finite number of seconds above zero, got '0'"),
+        (RUN_BUDGET, "abc", "budget must be a number of seconds, got 'abc'"),
+        (RUN_BUDGET, "0", "budget must be a finite number of seconds above zero, got '0'"),
         (parse_solver_timeout, "abc", "solver timeout must be a number of seconds, got 'abc'"),
         (
             parse_solver_timeout,

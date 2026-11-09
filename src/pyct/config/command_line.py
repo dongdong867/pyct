@@ -10,19 +10,28 @@ from pyct.config.goal import Goal
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 
+# the budget that turns the deadline off
+NO_DEADLINE = "none"
+
 
 class UsageError(Exception):
     """The command line is wrong. Exit 2."""
 
 
-def parse_budget(budget_text: str | None, flag: str = "budget") -> Budget:
-    """The budget is a positive number of seconds. No flag is no deadline.
-
-    ``flag`` names it in a refusal, so a sweep's total budget is refused in the budget's words.
-    """
+def parse_budget(budget_text: str | None, default: float | None) -> Budget:
+    """The budget is a positive number of seconds, or ``none`` for no deadline. No flag is
+    ``default``: ``pyct run`` and ``pyct sweep`` each give their own."""
     if budget_text is None:
+        return Budget(seconds=default)
+    if budget_text == NO_DEADLINE:
         return Budget()
-    return Budget(seconds=_positive_seconds(budget_text, flag))
+    return Budget(seconds=_positive_seconds(budget_text, "budget"))
+
+
+def parse_total_budget(total_text: str | None) -> float | None:
+    """A sweep's total budget is a positive number of seconds, refused in the budget's words.
+    No flag is no bound."""
+    return None if total_text is None else _positive_seconds(total_text, "total budget")
 
 
 def parse_plateau(plateau_text: str | None) -> Plateau:
