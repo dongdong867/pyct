@@ -15,8 +15,10 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
+from pyct.binding.annotations import Builds, Check, NoOneClass
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
+from pyct.binding.hints import NOTHING, Inside, inside_of
 from pyct.binding.places import step_in
 
 # the key that names an object form's class, and the key of the items it passes by position
@@ -35,6 +37,40 @@ def object_form(value: object) -> TypeGuard[dict[str, object]]:
     where they look for one.
     """
     return type(value) is dict and CLASS_KEY in value
+
+
+def hinted(value: object, check: Check | None) -> TypeGuard[dict[str, object] | list[object]]:
+    """Whether a class hint builds ``value``: exactly a ``dict`` or a ``list``, under a hint that
+    names a class or names no one class. A dict holding ``"__class__"`` builds the class it
+    names, and every other value passes as it is."""
+    return isinstance(check, Builds | NoOneClass) and (type(value) is dict or type(value) is list)
+
+
+def form_class(form: object, check: Check | None, home: str) -> type:
+    """The class an object form builds: the one its ``"__class__"`` names, read in ``home``, or
+    else its hint's. A class that does not load, or a hint that names no one class, is a
+    ``ClassNameError`` with the reason."""
+    if object_form(form):
+        return load_class(form[CLASS_KEY], home)
+    if isinstance(check, NoOneClass):
+        raise ClassNameError(check.reason)
+    return cast(Builds, check).cls
+
+
+def inside(form: object, check: Check | None, home: str | None) -> Inside:
+    """What the values inside an object form ask: its class's constructor hints (``inside_of``).
+
+    The one rule the walk, the traversal, the defaults and the plan read.
+    A form whose class does not load asks nothing, and with no ``home`` a
+    form that names its class asks nothing either: its class is not looked
+    up.
+    """
+    if home is None and object_form(form):
+        return NOTHING
+    try:
+        return inside_of(form_class(form, check, home or ""))
+    except ClassNameError:
+        return NOTHING
 
 
 def holding_forms(args: Mapping[str, object]) -> set[int]:
