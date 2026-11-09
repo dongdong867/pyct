@@ -29,6 +29,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TypeGuard
 
+from pyct.config.command_line import NO_DEADLINE
 from pyct.intercept.cache import CACHE_VARIABLE, cache_folder
 from pyct.run.process import how
 from pyct.sweep.process import Finished, run_command
@@ -49,21 +50,24 @@ _BOOT = (
 PYCT: tuple[str, ...] = (sys.executable, "-P", "-c", _BOOT)
 
 
-def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, ...] = PYCT) -> Row:
-    """Run a listed entry with its seed, a budget of ``budget`` seconds, and ``limits``' plateau,
-    solver timeout and goal.
+def run_entry(
+    row: Row, limits: SweepLimits, *, budget: float | None, pyct: tuple[str, ...] = PYCT
+) -> Row:
+    """Run a listed entry with its seed, a budget of ``budget`` seconds or none, and ``limits``'
+    plateau, solver timeout and goal.
 
     The row is ``ran`` when its run exits 0 and prints its summary line, and
     ``failed`` otherwise, keeping the summary line when there was one. A run
     still going ``limits.grace`` seconds past its budget is stopped with
-    every process it started.
+    every process it started; a run with no budget is never stopped.
     """
     here = os.getcwd()
     argv = [*pyct, here, "run", f"{row.module}::{row.name}", "--args", json.dumps(row.seed)]
-    argv += ["--budget", repr(budget), "--plateau", str(limits.plateau)]
+    argv += ["--budget", NO_DEADLINE if budget is None else repr(budget)]
+    argv += ["--plateau", str(limits.plateau)]
     argv += ["--solver-timeout", repr(limits.solver_timeout), "--goal", limits.goal.value]
     with tempfile.TemporaryDirectory(prefix="pyct-sweep-") as directory:
-        limit = budget + limits.grace
+        limit = None if budget is None else budget + limits.grace
         env = {**os.environ, CACHE_VARIABLE: str(cache_folder())}
         finished = run_command(argv, cwd=Path(directory), env=env, limit=limit)
     return _outcome(row, finished, limits.grace)

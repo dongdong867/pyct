@@ -101,6 +101,23 @@ def test_an_entry_runs_with_no_more_than_the_total_budget_has_left() -> None:
     assert result.stopped is SweepStop.DONE
 
 
+def test_an_entry_with_no_budget_runs_with_budget_none() -> None:
+    result = sweep("p", limits=SweepLimits(budget=None, grace=0.5), programs=PROGRAMS)
+
+    run = result.rows[0].run
+    assert run is not None
+    assert cast("list[str]", run["argv"])[4:6] == ["--budget", "none"]
+
+
+def test_an_entry_with_no_budget_runs_with_what_the_total_budget_has_left() -> None:
+    limits = SweepLimits(budget=None, total_budget=30.0, grace=0.5)
+    result = sweep("p", limits=limits, programs=PROGRAMS)
+
+    run = result.rows[0].run
+    assert run is not None
+    assert 0 < float(cast("list[str]", run["argv"])[5]) < 30
+
+
 def test_an_entry_the_total_budget_leaves_no_time_is_skipped_with_its_seed() -> None:
     tell, said = told()
     limits = SweepLimits(total_budget=1e-9, grace=0.5)
