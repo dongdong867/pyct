@@ -1,6 +1,6 @@
 import inspect
 
-from pyct.cli import missing_args_message
+from pyct.run.seed_checks import missing_args_message
 
 
 def test_missing_args_message_names_the_parameters_and_each_form() -> None:
