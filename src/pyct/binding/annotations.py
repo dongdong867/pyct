@@ -6,6 +6,7 @@ import types
 import typing
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
 from pyct.binding.places import step_in
 
@@ -65,12 +66,27 @@ class Fields:
     each key's own annotation asks of its value.
     """
 
-    each: Mapping[str, "Check"]
+    # by a dict's str keys, or by a list's indexes
+    each: Mapping[Any, "Check"]
+
+
+@dataclass(frozen=True)
+class Builds:
+    """A class hint the value under it is built as, from a JSON object or list: the class."""
+
+    cls: type
+
+
+@dataclass(frozen=True)
+class NoOneClass:
+    """A class hint that names no one class to build, an abstract class say, and why."""
+
+    reason: str
 
 
 # what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union;
-# and what the arguments a method's instance is built from ask
-type Check = type | Items | OneOf | Fields
+# what the arguments a method's instance is built from ask; and a class a hint builds
+type Check = type | Items | OneOf | Fields | Builds | NoOneClass
 
 
 def check_of(annotation: object) -> Check | None:
@@ -157,12 +173,15 @@ def refused(
 ) -> list[str]:
     """The lines for one value and everything under it. ``written`` is its access.
 
-    A dict whose keys are not strs gives none, and so does ``Fields``, which
-    ``checked_annotations`` never makes, and so does a value in ``built``.
+    A dict whose keys are not strs gives none, and so do ``Fields``, ``Builds`` and
+    ``NoOneClass``, which ``checked_annotations`` never makes with ``check_of``, and so does a
+    value in ``built``.
     """
     if id(value) in built:
         return []
-    if isinstance(check, Fields) or (isinstance(check, Items) and check.keys is not str):
+    if isinstance(check, Fields | Builds | NoOneClass):
+        return []
+    if isinstance(check, Items) and check.keys is not str:
         return []
     if isinstance(check, type):
         check = OneOf((check,))
