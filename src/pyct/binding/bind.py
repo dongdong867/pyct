@@ -48,7 +48,9 @@ def bind(
     An object form, a dict holding ``"__class__"`` where a call builds an
     object (``builds``), is a plain dict whose keys stay fixed, its
     ``"__args__"`` a plain list of fixed length, and ``"__class__"`` is never
-    tracked; the values in it are tracked by their places.
+    tracked; the values in it are tracked by their places. A list or dict
+    that holds one at any depth is a plain copy whose length or keys stay
+    fixed too, its values tracked by their places.
     """
     tracker = _Tracker(sink)
     args = Walk(tracker).rebuilt(seed, checks)

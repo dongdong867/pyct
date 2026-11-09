@@ -221,8 +221,9 @@ class Walk:
 
         That is one at a parameter's own value, but not the dict a method's
         instance is built from, which takes ``Fields``, and one a holder of
-        fixed shape holds: the fields of a built instance, an object form, or
-        its ``"__args__"``. In any other place such a dict stays a dict.
+        fixed shape holds: the fields of a built instance, an object form, its
+        ``"__args__"``, or a list or dict that holds a form (``holding_forms``).
+        In any other place such a dict stays a dict.
         """
         if made is not None:
             return id(made) in self._forms
