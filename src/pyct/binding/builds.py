@@ -15,7 +15,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
-from pyct.binding.annotations import Builds, Check, NoOneClass
+from pyct.binding.annotations import Builds, Check, Fields, NoOneClass
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from pyct.binding.hints import NOTHING, Inside, inside_of
@@ -25,9 +25,10 @@ from pyct.binding.places import step_in
 CLASS_KEY = "__class__"
 ARGS_KEY = "__args__"
 
-# where a value sits in the seed as the traversal copies it, and the place it is written at
+# where a value sits in the seed as the traversal copies it, the place it is written at, and
+# what its hint asks
 type _Holder = dict[Any, object] | list[object]
-type _Spot = tuple[object, _Holder, Any, str]
+type _Spot = tuple[object, _Holder, Any, str, Check | None]
 
 
 def object_form(value: object) -> TypeGuard[dict[str, object]]:
@@ -142,13 +143,14 @@ class SelfBuild:
 
 @dataclass(frozen=True)
 class Found:
-    """An object form at its place, as ``object_forms`` copied it, and the list or dict and
-    slot its copy sits in."""
+    """An object form at its place, as ``object_forms`` copied it, the list or dict and slot
+    its copy sits in, and what the hint at its place asks."""
 
     place: str
     form: dict[str, object]
     into: _Holder
     slot: Any
+    check: Check | None = None
 
     @property
     def spot(self) -> tuple[_Holder, Any]:
@@ -182,7 +184,12 @@ class Forms:
         return ordered
 
 
-def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
+def object_forms(
+    args: Mapping[str, object],
+    self_name: str | None,
+    checks: Mapping[str, Check] | None = None,
+    home: str | None = None,
+) -> Forms:
     """Each object form ``args`` holds, with its place, innermost first.
 
     The objects inside one come before it, siblings in seed order, depth
@@ -194,59 +201,80 @@ def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
     way to one, is gone into once: one reached again, at a second place or
     inside itself, stays as it came there. The traversal is a loop, not a
     call per level.
+
+    With ``checks``, what each parameter's hint asks, a dict a class hint
+    builds is a form too (``hinted``), and each value in a form takes its
+    constructor's hint (``inside``), a bare class name read in ``home``.
     """
     holding = holding_forms(args)
     top = dict(args)
-    pending = _parameters(top, self_name)
+    pending = _parameters(top, self_name, checks or {})
     found: list[Found] = []
     seen: set[int] = set()
     # the last pushed goes first, so the forms come out right to left, outer before inner
     while pending:
-        value, holder, slot, place = pending.pop()
-        if not (object_form(value) or id(value) in holding) or id(value) in seen:
+        value, holder, slot, place, check = pending.pop()
+        form = object_form(value) or (type(value) is dict and hinted(value, check))
+        if not (form or id(value) in holding) or id(value) in seen:
             continue
         seen.add(id(value))
-        if object_form(value):
-            copied = holder[slot] = dict(value)
-            found.append(Found(place, copied, holder, slot))
-            pending.extend(_inside(copied, place))
+        if form:
+            copied = holder[slot] = dict(cast(dict[str, object], value))
+            found.append(Found(place, copied, holder, slot, check))
+            pending.extend(_inside(copied, place, inside(copied, check, home)))
         else:
             pending.extend(_copied(value, holder, slot, place))
     return Forms(top, tuple(reversed(found)))
 
 
-def _parameters(top: dict[str, object], self_name: str | None) -> list[_Spot]:
+def _parameters(
+    top: dict[str, object], self_name: str | None, checks: Mapping[str, Check]
+) -> list[_Spot]:
     """Where the traversal starts: each parameter's value, or each value under the fields of
     the instance a method runs on, in a copy of that dict."""
     pending: list[_Spot] = []
     for name, value in top.items():
+        check = checks.get(name)
         if name == self_name and type(value) is dict:
             fields = top[name] = dict(value)
-            pending.extend((item, fields, key, step_in(name, key)) for key, item in fields.items())
+            each = check.each if isinstance(check, Fields) else {}
+            pending.extend(
+                (item, fields, key, step_in(name, key), each.get(key))
+                for key, item in fields.items()
+            )
         else:
-            pending.append((value, top, name, name))
+            pending.append((value, top, name, name, check))
     return pending
 
 
-def _copied(value: object, holder: _Holder, slot: Any, place: str) -> Iterator[_Spot]:
-    """A list or dict on the way to a form, copied into its slot, and the values in it."""
+def _copied(
+    value: object, holder: _Holder, slot: Any, place: str, ask: Fields = NOTHING.items
+) -> Iterator[_Spot]:
+    """A list or dict on the way to a form, copied into its slot, and the values in it, each
+    with what ``ask`` asks of it by its index or key."""
     if type(value) is list:
         items = holder[slot] = list(cast(list[object], value))
-        return ((each, items, at, step_in(place, at)) for at, each in enumerate(items))
+        return (
+            (each, items, at, step_in(place, at), ask.each.get(at)) for at, each in enumerate(items)
+        )
     copied = holder[slot] = dict(cast(dict[Any, object], value))
-    return ((each, copied, key, step_in(place, key)) for key, each in list(copied.items()))
+    return (
+        (each, copied, key, step_in(place, key), ask.each.get(key))
+        for key, each in list(copied.items())
+    )
 
 
-def _inside(form: dict[str, object], place: str) -> Iterator[_Spot]:
+def _inside(form: dict[str, object], place: str, ask: Inside) -> Iterator[_Spot]:
     """The values inside an object form where another can be built: its ``"__args__"`` items,
-    in a copy of that list, and every other value but ``"__class__"``."""
+    in a copy of that list, and every other value but ``"__class__"``, each with its
+    constructor parameter's hint."""
     for key, item in list(form.items()):
         if key == CLASS_KEY:
             continue
         if key == ARGS_KEY and type(item) is list:
-            yield from _copied(item, form, key, step_in(place, key))
+            yield from _copied(item, form, key, step_in(place, key), ask.items)
         else:
-            yield item, form, key, step_in(place, key)
+            yield item, form, key, step_in(place, key), ask.keys.each.get(key)
 
 
 class BuildError(Exception):
@@ -299,21 +327,23 @@ def plan_call(
     positional: Sequence[inspect.Parameter],
     self_build: SelfBuild | None,
     home: str,
+    checks: Mapping[str, Check] | None = None,
 ) -> CallPlan:
     """How one call builds each object form ``args`` holds, and calls the target.
 
-    ``positional`` is the target's parameters passed by position, and a bare
-    class name is read in the module ``home``. With ``self_build`` and a dict
+    ``positional`` is the target's parameters passed by position, a bare
+    class name is read in the module ``home``, and ``checks`` says which
+    values a class hint builds (``object_forms``). With ``self_build`` and a dict
     under its name, the instance a method runs on is the last build, and goes
     first in the call. Each object passes its ``"__args__"`` items by
     position, then its positional-only parameters, then its other keys by
     name. Every class loads before any build is planned, so the first object,
     innermost first, whose class does not load or whose ``"__args__"`` is not
-    a list is the ``BuildError``.
+    a list, or whose hint names no one class, is the ``BuildError``.
     """
     if self_build is not None and type(args.get(self_build.name)) is not dict:
         self_build = None
-    forms = object_forms(args, None if self_build is None else self_build.name)
+    forms = object_forms(args, None if self_build is None else self_build.name, checks, home)
     loaded = [(found, _class_of(found, home)) for found in forms.found]
     calls = {id(found.form): _arguments(found.form, cls) for found, cls in loaded}
     call, last = _target_call(forms.args, positional, self_build)
@@ -327,9 +357,9 @@ def plan_call(
 
 
 def _class_of(found: Found, home: str) -> type:
-    """The class an object form names, once its ``"__args__"`` is known to be a list."""
+    """The class an object form builds, once its ``"__args__"`` is known to be a list."""
     try:
-        cls = load_class(found.form[CLASS_KEY], home)
+        cls = form_class(found.form, found.check, home)
     except ClassNameError as error:
         raise BuildError(found.place, error.reason) from error
     problem = args_problem(found.form)

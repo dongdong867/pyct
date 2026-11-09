@@ -178,7 +178,7 @@ def run(
     cvc5 = version(locate())
     bounds = Bounds.of(limits, len(seeds))
     checks = argument_checks(target)
-    copies = tuple(Seed.of(with_defaults(target, each), checks) for each in seeds)
+    copies = tuple(Seed.of(with_defaults(target, each), checks, target.home) for each in seeds)
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
     looped = _inputs(inputs, copies, bounds, told)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
