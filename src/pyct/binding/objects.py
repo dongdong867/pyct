@@ -1,13 +1,13 @@
 """An object in the walk: whether its attributes are followed, which they are, and how its
 copy takes a new value for one.
 
-An object is followed when it passes the copy rule: no class on its MRO writes one of the
-copy, pickling or look-up methods the rule names in Python, nor does its own ``__dict__`` hold
-one, and its exact class has no ``copyreg`` reducer (``copies_by_default``). It must also hold
-an attribute or be a subclass of dict or list, and ``copy.deepcopy`` must make a faithful copy
-of it (``faithful``), which is also the test that it can be copied: a module or an object
-holding a lock is refused, and reaches the target as it came. A class, a function, an enum
-member and a bound method are never followed.
+An object is followed when no class on its MRO writes one of the copy, pickling or look-up
+methods the copy rule names in Python, and its exact class has no ``copyreg`` reducer
+(``copies_by_default``); when its own ``__dict__`` holds none of those names, and it holds an
+attribute or is a subclass of dict or list (``followed``); and when ``copy.deepcopy`` makes a
+faithful copy of it (``faithful``), which is also the test that it can be copied: a module or
+an object holding a lock is refused, and reaches the target as it came. A class, a function, an
+enum member and a bound method are never followed.
 """
 
 from __future__ import annotations

@@ -9,6 +9,7 @@ which values are tracked, what each is named, or which lists and dicts are track
 from __future__ import annotations
 
 import copy
+from collections import ChainMap
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -117,11 +118,13 @@ class Walk:
     copy is gone into, at any depth (``copies.faithful_copies``); the walk
     does not go into any other, which is handed on as deepcopy made it.
 
-    A tuple's items are placed by index in a list of their own, and once
-    every path is walked each tuple is built once from them, of its own type,
-    innermost first, and put everywhere the walk put it. Any other value the
-    walk does not follow is copied whole where the walk reaches it, with
-    nothing inside it tracked, and one deepcopy refuses stays as it came.
+    A tuple's items are placed by index in a list of their own. Once every
+    path is walked, each value the walk does not follow is copied whole by
+    deepcopy over the walk's copies, so it holds the walk's copy of each
+    object, list and dict it reaches, and nothing else inside it is tracked;
+    one deepcopy refuses stays as it came. Then each tuple is built once from
+    its items, of its own type, innermost first, so a tuple inside a value
+    copied whole is a copy of its own. Each goes everywhere the walk put it.
     """
 
     def __init__(self, visitor: Visitor) -> None:
@@ -142,7 +145,8 @@ class Walk:
         self._tuples: dict[int, TupleBuild] = {}
         self._owners: dict[int, TupleBuild] = {}
         self._pending: list[_Pending | TupleBuild] = []
-        # the memo of the values copied whole, apart from the walk's copies
+        # each value to copy whole and where it goes, in walk order, and what those copies made
+        self._to_copy: list[tuple[object, Holder, Slot]] = []
         self._whole_copies: dict[int, object] = {}
 
     def rebuilt(
@@ -172,8 +176,8 @@ class Walk:
 
     def _placed(self, value: object, access: Expression | None, place: Place) -> object:
         """What goes where ``value`` was: its tracked form, its copy, the value itself, or
-        ``Later.VALUE`` for a tuple, built once every path is walked. A value with no access is
-        never tracked, and neither is anything under it."""
+        ``Later.VALUE`` for a value copied whole or a tuple built once every path is walked. A
+        value with no access is never tracked, and neither is anything under it."""
         if access is not None and binds(value, access):
             return self._visitor.scalar(value, place)
         if type(value) in _ATOMIC:
@@ -181,10 +185,10 @@ class Walk:
         if isinstance(value, tuple):
             if buildable(value):
                 return self._visit_tuple(value, access, place)
-            return self._copied_whole(value)
+            return self._copy_later(value, place)
         if type(value) is list or type(value) is dict or objects.followed(value):
             return self._followed(value, access, place)
-        return self._copied_whole(value)
+        return self._copy_later(value, place)
 
     def _followed(self, value: object, access: Expression | None, place: Place) -> object:
         """A dict's, a list's or an object's copy, its items or attributes queued."""
@@ -253,28 +257,39 @@ class Walk:
             (item, _step(access, at), items, at, None) for at, item in enumerate(build.value)
         )
 
-    def _copied_whole(self, value: object) -> object:
-        """A value the walk does not follow, copied whole by deepcopy, with nothing inside it
-        tracked, or the value itself when deepcopy refuses it.
-
-        The values copied whole share one memo, apart from the walk's copies,
-        so two that hold one list hold one copy of it. deepcopy records a copy
-        before it fills it, so it copies into a scratch memo over that one,
-        and only a copy that finishes joins it.
-        """
-        scratch = Scratch(self._whole_copies)
-        try:
-            copied = copy.deepcopy(value, scratch)
-        except Exception:
-            return value
-        self._kept.extend(scratch.pop(id(scratch), []))
-        self._whole_copies.update(scratch)
-        return copied
+    def _copy_later(self, value: object, place: Place) -> Later:
+        """Note where a value the walk does not follow goes: it is copied whole once every path
+        is walked."""
+        self._to_copy.append((value, place.into, place.slot))
+        self._kept.append(value)
+        return Later.VALUE
 
     def _finish(self) -> None:
-        """Build every tuple once every path is walked: from the items its last visit placed,
-        after every tuple among them, with ``tuple.__new__`` so a namedtuple's own constructor
-        does not run, and put it everywhere the walk put it."""
+        """Once every path is walked, copy each value the walk does not follow whole, then
+        build each tuple, and put each everywhere the walk put it.
+
+        A value copied whole is copied by deepcopy over the copies the others
+        made and the walk's own, so it holds the walk's copy of each object,
+        list and dict it reaches, whatever the seed's order, and nothing inside
+        it the walk did not reach is tracked. A tuple is built after them, so
+        each tuple inside a value copied whole is a copy of its own. deepcopy
+        records a copy before it fills it, so it copies into a scratch memo,
+        and only a copy that finishes joins the others'; one it refuses goes
+        on as it came. A tuple is built from the items its last visit placed,
+        after every tuple among them, with ``tuple.__new__`` so a namedtuple's
+        own constructor does not run.
+        """
+        under = ChainMap(self._whole_copies, self._copies)
+        for value, into, slot in self._to_copy:
+            scratch = Scratch(under)
+            try:
+                made = copy.deepcopy(value, scratch)
+            except Exception:
+                made = value
+            else:
+                self._kept.extend(scratch.pop(id(scratch), []))
+                self._whole_copies.update(scratch)
+            put(into, slot, made, value)
         builds = list(self._tuples.values())
         for build in innermost_first(builds, tuples_among(builds, self._owners)):
             made = tuple.__new__(type(build.value), build.items)

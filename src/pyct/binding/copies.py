@@ -12,12 +12,12 @@ from pyct.binding.tuples import buildable
 
 
 class Scratch(dict[int, Any]):
-    """deepcopy's memo for one copy: what it copies now, read over a memo it joins once done.
+    """deepcopy's memo for one copy: what it copies now, read over another memo.
 
     deepcopy looks a value up with ``get``, and a tuple's copy with an
     index, and records each copy by setting it. So this dict holds only the
-    new copies, and those under it stay as they were until the copy
-    finishes.
+    new copies, and the memo under it stays as it was; the caller adds what
+    it takes of them once the copy finishes.
     """
 
     def __init__(self, under: Mapping[int, object]) -> None:

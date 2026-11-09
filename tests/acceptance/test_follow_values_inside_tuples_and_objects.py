@@ -136,6 +136,24 @@ def test_follows_an_object_s_attributes(
     assert vars(rule) == {"limit": 10, "label": "x", "check": module.checked}
 
 
+# run-with-nested-arguments-follows-an-object-s-attributes, for a bound method of the object
+# itself: the target calls it on the input's own copy, as plain Python would on the caller's
+@pytest.mark.parametrize("isolation", WHERE)
+def test_follows_an_object_through_its_own_bound_method(
+    isolation: Isolation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target, module = loaded(f"{OBJECTS}::fire", monkeypatch)
+    machine = module.Machine()
+
+    result = run(target, {"machine": machine}, isolation=isolation)
+
+    for record, made in zip(result.records, args_of(result.records, "machine"), strict=True):
+        raised = record.failure is not None and record.failure.kind is FailureKind.TARGET_RAISED
+        # plain Python bumps n by one, so it raises exactly when the input's n was 0
+        assert raised == (made.n == 0), result.records
+    assert vars(machine) == {"n": 0, "handle": machine.handle} and type(machine.n) is int
+
+
 # run-with-nested-arguments-follows-an-instance-given-as-self
 @pytest.mark.parametrize("isolation", WHERE)
 def test_follows_an_instance_given_as_self(

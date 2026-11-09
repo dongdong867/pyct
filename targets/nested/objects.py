@@ -71,6 +71,24 @@ def held(holder):
     return "neither"
 
 
+class Machine:
+    """An object holding a bound method of its own."""
+
+    def __init__(self):
+        self.n = 0
+        self.handle = self.bump
+
+    def bump(self):
+        self.n += 1
+
+
+def fire(machine):
+    machine.handle()
+    if machine.n == 1:
+        raise ValueError("fired once")
+    return 0
+
+
 class Box:
     """An object deepcopy refuses, for its lock, with an int beside it."""
 
