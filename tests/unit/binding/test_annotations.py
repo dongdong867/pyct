@@ -206,3 +206,13 @@ def test_contradictions_names_each_value_under_a_place_it_is_given() -> None:
 
 def test_as_typed_writes_a_value_as_json() -> None:
     assert as_typed(["ann", 1.5, None]) == '["ann", 1.5, null]'
+
+
+def test_contradictions_gives_no_line_for_a_value_it_is_told_is_built() -> None:
+    form: dict[str, object] = {"__class__": "Customer", "age": "30"}
+    checks: dict[str, Check] = {"c": int, "cs": Items(list, str), "d": Items(dict, str)}
+    seed = {"c": form, "cs": ["a", form, 3], "d": {"k": form}}
+
+    lines = contradictions(checks, seed, built=frozenset({id(form)}))
+
+    assert lines == ["cs[2] must be a str, got 3"]

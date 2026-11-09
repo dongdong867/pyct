@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from pyct.binding.annotations import Check, contradictions
+from pyct.binding.builds import object_forms
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import UsageError
 from pyct.run.object_checks import ObjectCheck, fit_failure
@@ -133,12 +134,13 @@ class SeedCheck:
         fit = _fit_line(self.signature, seed)
         if fit is not None:
             return [fit]
+        name = None if self.under_self is None else self.under_self[0]
+        forms = object_forms(seed, name)
+        built = frozenset(id(found.form) for found in forms.found)
         lines: list[str] = []
-        if self.under_self is not None:
-            name, check = self.under_self
-            if name in seed:
-                lines = check.lines(name, seed[name])
-        return lines + contradictions(self.checks, seed)
+        if self.under_self is not None and name in seed:
+            lines = self.under_self[1].lines(name, forms.args[name], built=built)
+        return lines + contradictions(self.checks, forms.args, built=built)
 
 
 def _fit_line(signature: inspect.Signature, seed: Mapping[str, object]) -> str | None:

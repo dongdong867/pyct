@@ -153,3 +153,21 @@ def test_seed_refusals_check_nothing_under_a_self_the_seed_leaves_to_its_default
     )
 
     assert seed_refusals(target, {"discount": "1"}) == ['discount must be an int, got "1"']
+
+
+CUSTOMER = "targets.classes.customers::Customer"
+
+
+def takes_an_int(c: int) -> None:
+    pass
+
+
+def takes_a_dict(c: dict[str, str]) -> None:
+    pass
+
+
+@pytest.mark.parametrize("fn", [takes_an_int, takes_a_dict], ids=["int", "dict"])
+def test_a_parameter_s_annotation_gives_no_line_for_an_object_the_seed_names(fn: object) -> None:
+    seed = {"c": {"__class__": CUSTOMER, "name": "ann", "age": 30}}
+
+    assert seed_refusals(target_for(fn), seed) == []

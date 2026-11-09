@@ -4,7 +4,7 @@ import json
 import re
 import types
 import typing
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.places import step_in
@@ -122,7 +122,10 @@ def _of_items(item: object) -> Check | None:
 
 
 def contradictions(
-    checks: Mapping[str, Check], seed: Mapping[str, object], place: str | None = None
+    checks: Mapping[str, Check],
+    seed: Mapping[str, object],
+    place: str | None = None,
+    built: Collection[int] = frozenset(),
 ) -> list[str]:
     """One line per value in the seed that Python's own typing would not accept.
 
@@ -136,22 +139,29 @@ def contradictions(
     because the seed was typed as JSON, printable text as it was typed, so the
     value can be found on the command line that gave it (see ``as_typed``).
     With a ``place``, the seed is the object there, and each value is named
-    one step further in from it, ``self['owner']``.
+    one step further in from it, ``self['owner']``. A value whose identity is
+    in ``built``, an object each input builds, gives no line, at any depth.
     """
     return [
         line
         for name, check in checks.items()
         if name in seed
-        for line in _refused(check, seed[name], name if place is None else step_in(place, name))
+        for line in refused(
+            check, seed[name], name if place is None else step_in(place, name), built
+        )
     ]
 
 
-def _refused(check: Check, value: object, written: str) -> list[str]:
+def refused(
+    check: Check, value: object, written: str, built: Collection[int] = frozenset()
+) -> list[str]:
     """The lines for one value and everything under it. ``written`` is its access.
 
     A dict whose keys are not strs gives none, and so does ``Fields``, which
-    ``checked_annotations`` never makes.
+    ``checked_annotations`` never makes, and so does a value in ``built``.
     """
+    if id(value) in built:
+        return []
     if isinstance(check, Fields) or (isinstance(check, Items) and check.keys is not str):
         return []
     if isinstance(check, type):
@@ -166,7 +176,9 @@ def _refused(check: Check, value: object, written: str) -> list[str]:
     if check.each is None:
         return []
     each = check.each
-    return [line for key, item in entries for line in _refused(each, item, step_in(written, key))]
+    return [
+        line for key, item in entries for line in refused(each, item, step_in(written, key), built)
+    ]
 
 
 def _entries(kind: type, value: object) -> Iterable[tuple[object, object]] | None:

@@ -43,6 +43,7 @@ class ObjectCheck:
         value: object,
         allowed: Collection[str] = frozenset(),
         positional: Sequence[object] = (),
+        built: Collection[int] = frozenset(),
     ) -> list[str]:
         """Every refusal line for the object at ``place``: its shape, its reserved keys, its fit,
         then its values' types.
@@ -51,7 +52,8 @@ class ObjectCheck:
         starts and ends with ``__`` is refused unless it is ``allowed``, and is
         never bound. The other keys bind as the build passes them, after the
         ``positional`` items. With no signature, the fit and the types are not
-        checked.
+        checked. A value in ``built``, an object each input builds, has no type
+        to check (``contradictions``).
         """
         if not isinstance(value, dict):
             return [
@@ -69,7 +71,7 @@ class ObjectCheck:
             parameters = ", ".join(self.signature.parameters)
             given = _bound_keys(value, positional)
             lines.append(f"{place} ({given}) does not fit {self._name}({parameters}): {reason}")
-        return lines + contradictions(self.checks, fields, place)
+        return lines + contradictions(self.checks, fields, place, built)
 
     @property
     def _name(self) -> str:

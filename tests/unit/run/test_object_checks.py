@@ -186,3 +186,11 @@ def test_lines_check_only_the_shape_and_reserved_keys_with_no_signature() -> Non
         "self must be a JSON object of Cart's constructor arguments, got 5"
     ]
     assert check.lines("self", {"__calls__": []}) == [f"self cannot hold '__calls__': {RESERVED}"]
+
+
+def test_lines_give_no_type_line_for_an_object_each_input_builds() -> None:
+    owner = {"__class__": "Customer", "name": "ann"}
+
+    lines = check_for(Cart).lines("self", {"owner": owner}, built=frozenset({id(owner)}))
+
+    assert lines == []
