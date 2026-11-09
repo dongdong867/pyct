@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from pyct.binding.bind import access_name, leaves
-from pyct.config.budget import RUN_SECONDS
+from pyct.config.budget import RUN_SECONDS, SWEEP_SECONDS
 from pyct.config.command_line import (
     NO_DEADLINE,
     UsageError,
@@ -424,14 +424,14 @@ def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     parser.add_argument(
         "--budget",
         metavar="SECONDS",
-        help=f"each entry's budget; 30 by default, {NO_DEADLINE} for no deadline",
+        help=f"each entry's budget; {SWEEP_SECONDS:g} by default, {NO_DEADLINE} for no deadline",
     )
     parser.add_argument("--plateau", metavar="N", help="each entry's plateau; 5 by default")
     parser.add_argument(
         "--solver-timeout", metavar="SECONDS", help="each solve's limit; 10 by default"
     )
     parser.add_argument(
-        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; none by default"
+        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; no bound by default"
     )
     parser.add_argument("--goal", metavar="coverage|bugs", help="each entry's goal; coverage")
 

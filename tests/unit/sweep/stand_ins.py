@@ -1,9 +1,10 @@
 """Stand-ins for the programs a sweep starts, each a Python script run with ``-c``.
 
 ``PYCT`` acts as the boot that starts ``pyct run`` would for the entry its target names:
-``ran`` and the functions ``f`` and ``h`` print a summary line and exit 0, and the rest end
-as their name says. Its summary line holds what it was given, so a test can read the folder
-it was handed to import from, the command, and its working directory.
+``ran`` and the functions ``f`` and ``h`` print a summary line and exit 0, ``slow`` does too
+after a second, and the rest end as their name says. Its summary line holds what it was
+given, so a test can read the folder it was handed to import from, the command, and its
+working directory.
 """
 
 import sys
@@ -48,6 +49,8 @@ if name.startswith("stray"):
     sys.exit(0 if name == "stray_then_zero" else 1)
 if name == "hangs":
     time.sleep(3600)
+if name == "slow":
+    time.sleep(1)
 print('{"input": 1}')
 print(json.dumps(summary))
 """

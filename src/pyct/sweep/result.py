@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 
+from pyct.config.budget import SWEEP_SECONDS
 from pyct.config.goal import Goal
 from pyct.sweep.rows import Row, Status, count
 
@@ -28,7 +29,7 @@ class SweepLimits:
     so the grace mostly covers the import, which the budget does not count.
     """
 
-    budget: float | None = 30.0
+    budget: float | None = SWEEP_SECONDS
     plateau: int = 5
     solver_timeout: float = 10.0
     goal: Goal = Goal.COVERAGE

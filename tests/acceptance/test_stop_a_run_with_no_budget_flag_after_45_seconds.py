@@ -136,9 +136,18 @@ def test_the_run_help_says_45_seconds_by_default_and_none(
 
 # run-budget-help-sweep
 def test_the_sweep_help_says_none(capsys: pytest.CaptureFixture[str]) -> None:
-    assert "--budget SECONDS each entry's budget; 30 by default, none for no deadline" in help_of(
-        capsys, "sweep"
-    )
+    said = help_of(capsys, "sweep")
+
+    assert "--budget SECONDS each entry's budget; 30 by default, none for no deadline" in said
+    # the total budget takes no `none`, so its help does not offer one
+    assert "--total-budget SECONDS the whole sweep's bound; no bound by default" in said
+
+
+# today's refusal of each value, by whether float() reads it
+REFUSED = {
+    **dict.fromkeys(["None", "NONE", "abc"], "a number of seconds"),
+    **dict.fromkeys(["0", "-1", "inf", "nan"], "a finite number of seconds above zero"),
+}
 
 
 # run-budget-refused-bad-value
@@ -154,13 +163,6 @@ def test_any_other_budget_is_a_usage_error(
     said = capsys.readouterr()
     assert said.out == ""
     assert said.err == f"budget must be {REFUSED[text]}, got {text!r}\n"
-
-
-# today's refusal of each value, by whether float() reads it
-REFUSED = {
-    **dict.fromkeys(["None", "NONE", "abc"], "a number of seconds"),
-    **dict.fromkeys(["0", "-1", "inf", "nan"], "a finite number of seconds above zero"),
-}
 
 
 # run-budget-refused-total-budget-none

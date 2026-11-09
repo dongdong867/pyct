@@ -105,8 +105,22 @@ def test_a_run_with_budget_none_is_measured(
     assert env["COVERAGE_PROCESS_START"] == "pyproject.toml"
 
 
+@pytest.mark.parametrize(
+    "budgets",
+    [("--budget", "none", "--budget", "1"), ("--budget=1", "--budget=none")],
+    ids=["seconds-last", "none-last"],
+)
+def test_the_last_budget_decides_as_the_command_line_reads_it(
+    monkeypatch: pytest.MonkeyPatch, budgets: tuple[str, ...]
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budgets)
+
+    measured = "COVERAGE_PROCESS_START" in env
+    assert measured is (budgets[-1] in ("none", "--budget=none")), env
+
+
 def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> None:
-    # a flag that only starts like --budget sets no deadline
+    # `--budgetless` gives no budget of seconds, so the run is measured
     env = environment_for(monkeypatch, "m::f", "{}", "--budgetless")
 
     assert env["COVERAGE_PROCESS_CONFIG"] == "{}"

@@ -68,13 +68,14 @@ def run_pyct(
 
 
 def _budget_given(argv: tuple[str, ...]) -> bool:
-    """Whether ``argv`` gives a ``--budget`` of seconds, apart or joined, rather than ``none``."""
-    for at, arg in enumerate(argv):
-        if arg == "--budget":
-            return argv[at + 1 : at + 2] != ("none",)
-        if arg.startswith("--budget="):
-            return arg != "--budget=none"
-    return False
+    """Whether ``argv``'s last ``--budget``, apart or joined, gives seconds rather than ``none``.
+    The command line keeps the last one, as argparse does."""
+    budgets = [
+        arg.removeprefix("--budget=") if arg != "--budget" else "".join(argv[at + 1 : at + 2])
+        for at, arg in enumerate(argv)
+        if arg == "--budget" or arg.startswith("--budget=")
+    ]
+    return bool(budgets) and budgets[-1] != "none"
 
 
 # how a `missed` line ends: the seconds its ask took, which no two runs share

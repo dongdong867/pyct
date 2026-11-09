@@ -51,6 +51,13 @@ def test_a_run_with_no_budget_is_handed_budget_none() -> None:
     assert argv[argv.index("--budget") + 1] == "none"
 
 
+def test_a_run_with_no_budget_is_never_stopped_for_its_time() -> None:
+    # the stand-in takes 1 s, twice the grace, and still ends as ran
+    row = ran("slow", budget=None)
+
+    assert (row.status, row.reason) == (Status.RAN, None), row
+
+
 def test_each_run_starts_in_a_fresh_empty_directory_deleted_after_it() -> None:
     first, second = ran("ran").run, ran("ran").run
     assert first is not None and second is not None
