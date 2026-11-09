@@ -34,6 +34,8 @@ def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, ob
     if target.constructor is not None and type(fields) is dict:
         _fill(cast(dict[str, object], fields), target.constructor, 0)
     for found in forms.found:
+        if isinstance(found.form, list):
+            continue
         try:
             signature = signature_of(load_class(found.form[CLASS_KEY], target.home))
         except ClassNameError:

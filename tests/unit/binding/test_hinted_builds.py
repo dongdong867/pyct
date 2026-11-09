@@ -79,3 +79,20 @@ def test_a_hinted_value_gives_no_type_line() -> None:
     seed = {"p": {"x": "1"}, "s": [1], "self": {"o": "x"}}
 
     assert contradictions(checks, seed) == []
+
+
+def test_a_list_a_hint_builds_passes_its_items_by_position() -> None:
+    args = {"s": [{"x": 1, "y": 2}, "a"]}
+
+    plan = plan_call(args, (), None, HOME, SPOT)
+
+    assert [(build.cls, build.place) for build in plan.builds] == [(Point, "s[0]"), (Spot, "s")]
+    assert plan.builds[1].positional == [args["s"][0], "a"]
+    assert plan.builds[1].keywords == {}
+
+
+def test_a_list_under_a_hint_that_names_no_one_class_is_the_build_error() -> None:
+    with pytest.raises(BuildError) as raised:
+        plan_call({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason")})
+
+    assert raised.value.place == "s"

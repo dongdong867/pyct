@@ -147,7 +147,7 @@ class Found:
     its copy sits in, and what the hint at its place asks."""
 
     place: str
-    form: dict[str, object]
+    form: dict[str, object] | list[object]
     into: _Holder
     slot: Any
     check: Check | None = None
@@ -214,12 +214,12 @@ def object_forms(
     # the last pushed goes first, so the forms come out right to left, outer before inner
     while pending:
         value, holder, slot, place, check = pending.pop()
-        form = object_form(value) or (type(value) is dict and hinted(value, check))
+        form = object_form(value) or hinted(value, check)
         if not (form or id(value) in holding) or id(value) in seen:
             continue
         seen.add(id(value))
         if form:
-            copied = holder[slot] = dict(cast(dict[str, object], value))
+            copied = holder[slot] = _copy(cast(dict[str, object] | list[object], value))
             found.append(Found(place, copied, holder, slot, check))
             pending.extend(_inside(copied, place, inside(copied, check, home)))
         else:
@@ -264,10 +264,20 @@ def _copied(
     )
 
 
-def _inside(form: dict[str, object], place: str, ask: Inside) -> Iterator[_Spot]:
-    """The values inside an object form where another can be built: its ``"__args__"`` items,
-    in a copy of that list, and every other value but ``"__class__"``, each with its
-    constructor parameter's hint."""
+def _copy(form: dict[str, object] | list[object]) -> dict[str, object] | list[object]:
+    return dict(form) if type(form) is dict else list(form)
+
+
+def _inside(form: dict[str, object] | list[object], place: str, ask: Inside) -> Iterator[_Spot]:
+    """The values inside an object form where another can be built: a list's items, its
+    ``"__args__"`` items, in a copy of that list, and every other value but ``"__class__"``,
+    each with its constructor parameter's hint."""
+    if isinstance(form, list):
+        yield from (
+            (each, form, at, step_in(place, at), ask.items.each.get(at))
+            for at, each in enumerate(form)
+        )
+        return
     for key, item in list(form.items()):
         if key == CLASS_KEY:
             continue
@@ -362,7 +372,7 @@ def _class_of(found: Found, home: str) -> type:
         cls = form_class(found.form, found.check, home)
     except ClassNameError as error:
         raise BuildError(found.place, error.reason) from error
-    problem = args_problem(found.form)
+    problem = None if isinstance(found.form, list) else args_problem(found.form)
     if problem is not None:
         raise BuildError(found.place, f"'{ARGS_KEY}' {problem}")
     return cls
@@ -375,10 +385,14 @@ def args_problem(form: Mapping[str, object]) -> str | None:
     return None if type(items) is list else f"must be a list, got {written(items)}"
 
 
-def _arguments(form: dict[str, object], cls: type) -> tuple[list[object], dict[str, object]]:
-    """What an object form's class is called with: its ``"__args__"`` items, then its
-    positional-only parameters by position, as ``call_arguments`` passes them after those
-    items, and every other key by name."""
+def _arguments(
+    form: dict[str, object] | list[object], cls: type
+) -> tuple[list[object], dict[str, object]]:
+    """What an object form's class is called with: a list's items by position, or its
+    ``"__args__"`` items, then its positional-only parameters by position, as
+    ``call_arguments`` passes them after those items, and every other key by name."""
+    if isinstance(form, list):
+        return list(form), {}
     items = cast(list[object], form.get(ARGS_KEY, []))
     keys = {key: value for key, value in form.items() if key not in (CLASS_KEY, ARGS_KEY)}
     signature = signature_of(cls)
