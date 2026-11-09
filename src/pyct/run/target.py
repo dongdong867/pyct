@@ -120,7 +120,7 @@ def load_target(
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
     self_name = None if self_class is None else _self_name(signature)
-    builds = None if self_class is None or self_name is None else self_class
+    built = None if self_class is None or self_name is None else self_class
     return Target(
         spec=spec,
         fn=fn,
@@ -130,7 +130,7 @@ def load_target(
         self_class=self_class,
         followed=(spec, fn),
         self_name=self_name,
-        constructor=None if builds is None else classes.constructor(builds),
+        constructor=None if built is None else classes.constructor(built),
     )
 
 

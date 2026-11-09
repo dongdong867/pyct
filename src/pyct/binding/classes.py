@@ -14,6 +14,9 @@ from typing import TypeGuard
 
 from pyct.binding.annotations import as_typed
 
+# the types a JSON value is read as
+_JSON_TYPES: frozenset[type] = frozenset({dict, list, str, int, float, bool, type(None)})
+
 # each class's signature, or None for one Python cannot read, by the class's identity; the
 # class is kept beside it, so its identity is not reused
 _SIGNATURES: dict[int, tuple[type, inspect.Signature | None]] = {}
@@ -71,8 +74,11 @@ def _dotted(name: str) -> bool:
 
 
 def written(value: object) -> str:
-    """The value as JSON, as the seed was typed; one JSON cannot write, which only a ``run()``
-    caller can give, as its repr."""
+    """The value as JSON, as the seed was typed; one whose own type JSON has not, which only a
+    ``run()`` caller can give, a tuple or a class say, as its repr, so the line shows that
+    type. A JSON type that holds what JSON cannot write is written as its repr too."""
+    if type(value) not in _JSON_TYPES:
+        return repr(value)
     try:
         return as_typed(value)
     except (TypeError, ValueError):

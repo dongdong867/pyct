@@ -308,3 +308,21 @@ def test_fills_a_left_out_default() -> None:
         account = arg(line, "a")
         assert isinstance(account, dict)
         assert "coupon" not in account and "tags" not in account
+
+
+# build-an-object-the-seed-names-by-its-class-fails-an-object-run-cannot-build, for "__args__"
+def test_run_writes_args_of_the_wrong_kind_by_its_own_type(monkeypatch: pytest.MonkeyPatch) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    target = load_target(f"{GREET}::placed")
+
+    result = run(
+        target,
+        {"p": {"__class__": "Point", "__args__": (1,), "y": 2}},
+        isolation=Isolation.IN_PROCESS,
+    )
+
+    record = result.records[0]
+    assert record.failure is not None
+    assert record.failure.kind is FailureKind.TARGET_RAISED
+    assert record.failure.detail == "building p: '__args__' must be a list, got (1,)"
+    assert record.forks == ()

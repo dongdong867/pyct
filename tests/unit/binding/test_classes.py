@@ -7,7 +7,7 @@ import inspect
 import pytest
 
 from pyct.binding import classes
-from pyct.binding.classes import ClassNameError, load_class, signature_of
+from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from tests.unit.binding import named_classes
 
 HOME = "tests.unit.binding.named_classes"
@@ -123,5 +123,14 @@ def test_a_class_s_signature_is_read_once(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 def test_a_signature_python_cannot_read_is_none() -> None:
-    # some builds of Python read date's signature, and some cannot
-    assert signature_of(datetime.date) == classes.constructor(datetime.date)
+    class Unread:
+        # inspect refuses a __signature__ that is not a Signature
+        __signature__ = 5
+
+    assert signature_of(Unread) is None
+
+
+def test_a_value_of_a_type_json_does_not_have_is_written_as_its_repr() -> None:
+    # through run(), a tuple would otherwise read as a JSON array
+    assert written((1,)) == "(1,)"
+    assert written({"a": 1}) == '{"a": 1}'

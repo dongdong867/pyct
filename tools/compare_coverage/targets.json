@@ -60,7 +60,7 @@
     {"set": "v2", "target": "targets.classes.annotated_base::Base", "seed": {"owner": "ann"}},
     {"set": "v2", "target": "targets.classes.annotated_child::Cart", "seed": {"owner": "ann"}},
     {"set": "v2", "target": "targets.classes.cart::Cart", "seed": {"owner": "ann"}},
-    {"set": "v2", "module": "targets.classes.customers", "left_out": "the classes targets.classes.greet's seeds name, not a target"},
+    {"set": "v2", "module": "targets.classes.customers", "left_out": "its seeds name classes with \"__class__\", a seed form legacy does not read"},
     {"set": "v2", "module": "targets.classes.greet", "left_out": "its seeds name classes with \"__class__\", a seed form legacy does not read"},
     {"set": "v2", "module": "targets.classes.lazy", "left_out": "gives its one function through the module's __getattr__, which no top-level def names"},
     {"set": "v2", "module": "targets.classes.sealed", "left_out": "holds only a class whose signature Python cannot read, by design, which a class target refuses; its method runs on an instance each input builds"},
