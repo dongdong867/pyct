@@ -121,6 +121,7 @@ INFIX: dict[str, tuple[Expression, str]] = {
         "config['server']['port'] < 1",
     ),
     "key-in-double-quotes": (["[]", "d", '"it\'s"'], 'd["it\'s"]'),
+    "attribute": ([">", ["[]", ["getattr", ["[]", "r", 0], "'xs'"], 1], 5], "r[0].xs[1] > 5"),
     "item-index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
     "read-that-says-its-kind": ([">", ["[float]", "xs", "i"], 2.5], "xs[i] > 2.5"),
     "read-that-says-a-bool": (["[bool]", ["[]", "g", 0], -1], "g[0][-1]"),

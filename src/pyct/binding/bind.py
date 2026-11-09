@@ -3,13 +3,13 @@
 import json
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Check, Items, int_keys
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.dicts.dicts import ConcolicDict
-from pyct.core.foundation.branch import BranchSink, Expression
+from pyct.core.foundation.branch import ACCESS_STEPS, BranchSink, Expression
 from pyct.core.lists.list_state import kinds_of
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
@@ -24,22 +24,33 @@ def bind(
     """Give every int, str, float and bool in the seed, at any depth, its access and the sink,
     and every list the walk names its form.
 
-    A parameter's own value is named by the parameter. A value inside a dict
-    or a list is named by the access that reaches it, one ``["[]", <container>,
-    <key>]`` per step, so ``config["server"]["port"]`` is
+    A parameter's own value is named by the parameter. A value inside a dict,
+    a list, a tuple or an object is named by the access that reaches it, one
+    ``["[]", <container>, <key>]`` per key or index and one
+    ``["getattr", <object>, "'<name>'"]`` per attribute, so
+    ``config["server"]["port"]`` is
     ``["[]", ["[]", "config", "'server'"], "'port'"]``. The seed decides the
     type: JSON ``true`` is a tracked bool whatever the annotation says. A list the
     walk names is a tracked list whose form is its access, so its length and
     its changes are followed too, and a dict the walk names is a tracked dict
     of that access, so its keys and its changes are.
 
-    Every dict and list the walk reaches is rebuilt, whatever key it sits
-    under, and every other value deepcopy can copy is copied, so a change the
-    target makes to a copy reaches neither the seed nor a later input. A
+    Every dict, list and tuple the walk reaches is rebuilt, whatever key it
+    sits under, and every other value deepcopy can copy is copied, the
+    attributes of an object whose class passes the copy rule followed into
+    its copy (see ``objects``), so a change the target makes to a copy
+    reaches neither the seed nor a later input. A
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
     (see ``Walk``). ``checks`` is what each parameter's annotation asks, which marks a
     ``dict[int, X]`` dict as one the solver adds int keys to, named or made up.
+
+    An object form, a dict holding ``"__class__"`` where a call builds an
+    object (``builds``), is a plain dict whose keys stay fixed, its
+    ``"__args__"`` a plain list of fixed length, and ``"__class__"`` is never
+    tracked; the values in it are tracked by their places. A list or dict
+    that holds one at any depth is a plain copy whose length or keys stay
+    fixed too, its values tracked by their places.
     """
     tracker = _Tracker(sink)
     args = Walk(tracker).rebuilt(seed, checks)
@@ -92,13 +103,13 @@ class Seed:
     """An input's arguments as the walk copied them, and what the solver may answer about.
 
     ``leaves`` names each value the solver declares on its own: a parameter, or a value inside
-    a dict. ``lists`` names each tracked list the solver declares as a length and its items,
-    with its shape; a value inside one is an item of it, not a leaf. ``dicts``
-    names each tracked dict, a dict inside a list among them, with its keys, whose presence
-    and count the solver declares. ``checks``
+    a dict, a tuple or an object, or inside a list that is not tracked whole. ``lists`` names
+    each tracked list the solver declares as a length and its items, with its shape; a value
+    inside one is an item of it, not a leaf. ``dicts`` names each tracked dict, a dict inside
+    a list among them, with its keys, whose presence and count the solver declares. ``checks``
     is what each parameter's annotation asks of it, which says the kind of an item the solver
     adds to a list with none to go by, for this input and each answer made from it. The target
-    is never called with the dicts and lists here: ``bind`` rebuilds them for each call. So
+    is never called with the arguments here: ``bind`` copies them again for each call. So
     they stay as the walk made them, and every solve and every answer on the input's path reads
     them rather than walking the input again.
     """
@@ -151,7 +162,12 @@ class Noted:
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         made: list[object] = [None] * len(value)
-        where = (id(place.into), place.slot) if place.in_list else leaf_name(place.access)
+        where: str | tuple[int, int]
+        if place.in_list:
+            # a list inside a tracked list sits at an index
+            where = (id(place.into), cast(int, place.slot))
+        else:
+            where = leaf_name(place.access)
         check = place.check
         each = check.each if isinstance(check, Items) and check.kind is list else None
         self.made.append((made, where, each))
@@ -187,10 +203,6 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     return noted.named
 
 
-# the head of each step an access takes to a value inside an argument: `["[]", container, key]`
-_STEPS = frozenset({"[]"})
-
-
 def access_name(
     part: Expression, known: MutableMapping[int, str | None] | None = None
 ) -> str | None:
@@ -223,12 +235,13 @@ def access_name(
 
 
 def _is_step(part: Expression) -> TypeGuard[list[Expression]]:
-    """Whether a part is one step of an access, ``["[]", <container>, <key>]``, its key no list."""
+    """Whether a part is one step of an access, ``["[]", <container>, <key>]`` or
+    ``["getattr", <object>, "'<name>'"]``, its key no list."""
     return (
         isinstance(part, list)
         and len(part) == 3
         and isinstance(part[0], str)
-        and part[0] in _STEPS
+        and part[0] in ACCESS_STEPS
         and not isinstance(part[2], list)
     )
 

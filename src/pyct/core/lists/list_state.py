@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.foundation.branch import (
+    ACCESS_STEPS,
     FLOAT_AND_BOOL,
     READ_HEADS,
     BranchSink,
@@ -95,10 +96,10 @@ def plain_items(value: object) -> object:
 
 def is_read(expression: Expression) -> bool:
     """Whether a list's form reads an argument's list as it came: a parameter, or reads of one,
-    each at a position or a key the target wrote, plain or tracked."""
+    each at a position or a key the target wrote, plain or tracked, or of an attribute."""
     step = expression
     while isinstance(step, list):
-        if len(step) != 3 or step[0] != "[]":
+        if len(step) != 3 or not isinstance(step[0], str) or step[0] not in ACCESS_STEPS:
             return False
         step = step[1]
     return isinstance(step, str) and not step.startswith(("'", '"'))

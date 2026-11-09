@@ -3,11 +3,11 @@
 import enum
 import inspect
 
+from pyct.binding.classes import constructor as constructor_of
 from pyct.run.defaults import with_defaults
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import Target
-from pyct.run.target import _constructor as constructor_of
 
 
 class Size(enum.IntEnum):
@@ -142,3 +142,88 @@ def test_each_of_several_seeds_takes_its_left_out_defaults_and_keeps_its_keys() 
         [vip],
         [vip],
     ]
+
+
+class Account:
+    """A constructor with simple defaults, a positional-only one among them, for an object a
+    seed names with ``"__class__"``."""
+
+    def __init__(self, owner: str, /, limit: int = 10, *, plan: str = "free") -> None:
+        self.owner = owner
+
+
+class Wrapper:
+    def __init__(self, inner: object, size: int = 1) -> None:
+        self.inner = inner
+
+
+def takes(a: object, b: object = None) -> None:
+    """A target whose arguments are objects the seed names, its classes read here."""
+
+
+TAKES = Target(
+    spec=f"{__name__}::takes", fn=takes, file=__file__, signature=inspect.signature(takes)
+)
+
+
+def test_an_object_form_s_simple_defaults_are_filled_at_any_depth() -> None:
+    inner = {"__class__": "Account", "owner": "ann"}
+    seed: dict[str, object] = {"a": {"__class__": "Wrapper", "inner": inner}}
+
+    filled = with_defaults(TAKES, seed)
+
+    assert filled == {
+        "a": {
+            "__class__": "Wrapper",
+            "inner": {"__class__": "Account", "owner": "ann", "limit": 10, "plan": "free"},
+            "size": 1,
+        }
+    }
+    assert seed == {
+        "a": {"__class__": "Wrapper", "inner": {"__class__": "Account", "owner": "ann"}}
+    }
+
+
+def test_an_object_inside_a_list_or_dict_takes_its_defaults() -> None:
+    account = {"__class__": "Account", "owner": "ann"}
+    seed: dict[str, object] = {"a": [{"k": dict(account)}], "b": {"x": dict(account)}}
+
+    filled = with_defaults(TAKES, seed)
+
+    with_both = {**account, "limit": 10, "plan": "free"}
+    assert filled == {"a": [{"k": with_both}], "b": {"x": with_both}}
+    assert seed == {"a": [{"k": account}], "b": {"x": account}}
+
+
+def test_a_parameter_args_fills_by_position_is_not_filled() -> None:
+    seed: dict[str, object] = {"a": {"__class__": "Account", "__args__": ["ann", 3]}}
+
+    assert with_defaults(TAKES, seed) == {
+        "a": {"__class__": "Account", "__args__": ["ann", 3], "plan": "free"}
+    }
+
+
+def test_an_object_under_self_s_fields_takes_its_defaults() -> None:
+    seed: dict[str, object] = {
+        "self": {"name": "ann", "vip": True, "rank": {"__class__": "Wrapper", "inner": 1}}
+    }
+
+    filled = with_defaults(MEMBER, seed)
+
+    fields = filled["self"]
+    assert isinstance(fields, dict)
+    assert fields["rank"] == {"__class__": "Wrapper", "inner": 1, "size": 1}
+
+
+def test_a_class_python_cannot_read_or_load_gets_none_and_the_objects_inside_still_do() -> None:
+    account = {"__class__": "Account", "owner": "ann"}
+    filled_account = {**account, "limit": 10, "plan": "free"}
+    unread = {"__class__": "Unread", "n": 1, "flag": account}
+    nowhere = {"__class__": "Nowhere", "x": dict(account)}
+
+    filled = with_defaults(TAKES, {"a": unread, "b": nowhere})
+
+    assert filled == {
+        "a": {"__class__": "Unread", "n": 1, "flag": filled_account},
+        "b": {"__class__": "Nowhere", "x": filled_account},
+    }

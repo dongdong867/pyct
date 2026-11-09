@@ -27,7 +27,7 @@ import typing
 from collections.abc import Callable
 
 from pyct.binding.annotations import contradictions
-from pyct.binding.resolve import checked_annotations, resolved
+from pyct.binding.resolve import as_text, checked_annotations, resolved
 
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
@@ -100,7 +100,7 @@ def _value_for(parameter: inspect.Parameter, fn: Callable[..., object]) -> objec
     if fit is UNTESTABLE:
         return 0
     if fit is NO_FIT:
-        written = inspect.formatannotation(parameter.annotation)
+        written = inspect.formatannotation(as_text(parameter.annotation))
         raise NoSeedError(f"no seed for {parameter.name}: {written}")
     return fit
 

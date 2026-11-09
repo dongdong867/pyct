@@ -1,6 +1,7 @@
 """A model the solver answered becomes the next input's arguments."""
 
 from collections.abc import Mapping
+from typing import cast
 
 from pyct.binding.bind import Noted, Seed, leaf_name
 from pyct.binding.shapes import DictAnswer, ListAnswer, ListShape, rekeyed, resized
@@ -81,4 +82,5 @@ class _Applied(Noted):
         if not place.in_list:
             return self.origin.lists.get(name)
         parent = self.input_shapes.get(id(place.into))
-        return None if parent is None else parent.row_at(place.slot)
+        # a row of a tracked list sits at an index
+        return None if parent is None else parent.row_at(cast(int, place.slot))

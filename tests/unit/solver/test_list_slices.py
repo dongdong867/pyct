@@ -1,6 +1,8 @@
 """Positions and slices of a tracked list as terms: bounds read as sums, and clamps settled the
 way the input whose path this is went."""
 
+import json
+
 import pytest
 
 from pyct.core.foundation.branch import Expression
@@ -145,3 +147,10 @@ def test_nested_leaves_out_a_branch_that_fails_and_ends_at_one_that_holds() -> N
 def test_an_access_through_a_computed_key_names_no_list_of_the_seed() -> None:
     assert access(["[]", "items", ["+", "i", 1]]) is None
     assert access(["[]", "items", 0]) == '["[]", "items", 0]'
+
+
+def test_an_access_through_an_attribute_names_a_list_of_the_seed() -> None:
+    items: Expression = ["getattr", "rule", "'items'"]
+
+    assert access(items) == json.dumps(items)
+    assert access(["[]", items, 0]) == json.dumps(["[]", items, 0])

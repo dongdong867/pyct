@@ -49,3 +49,12 @@ def test_a_function_with_no_positional_only_parameter_takes_every_value_by_name(
 
 def test_positional_only_names_the_parameters_before_the_slash() -> None:
     assert [parameter.name for parameter in POSITIONAL] == ["a", "b"]
+
+
+def test_positions_items_already_filled_are_skipped() -> None:
+    assert call_arguments(POSITIONAL, {"b": 7, "c": 5}, filled=1) == ((7,), {"c": 5})
+
+
+def test_a_key_for_a_filled_position_stays_a_keyword() -> None:
+    # Python's own binding then says the parameter was passed twice or by keyword
+    assert call_arguments(POSITIONAL, {"a": 9}, filled=1) == ((), {"a": 9})

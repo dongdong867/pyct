@@ -1,9 +1,12 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from pyct.sweep import runs
+from pyct.sweep.process import Finished
 from pyct.sweep.result import SweepLimits
 from pyct.sweep.rows import Row, Status
 from pyct.sweep.runs import run_entry
@@ -16,7 +19,7 @@ def entry(name: str) -> Row:
     return Row("p", name, Status.LISTED, seed={"n": 0})
 
 
-def ran(name: str, budget: float = 2.5) -> Row:
+def ran(name: str, budget: float | None = 2.5) -> Row:
     return run_entry(entry(name), LIMITS, budget=budget, pyct=PYCT)
 
 
@@ -39,6 +42,34 @@ def test_a_run_that_prints_its_summary_and_exits_zero_ran_with_it() -> None:
         "--goal",
         "coverage",
     ]
+
+
+def test_a_run_with_no_budget_is_handed_budget_none() -> None:
+    row = ran("ran", budget=None)
+
+    assert row.status is Status.RAN, row
+    assert row.run is not None
+    argv = row.run["argv"]
+    assert isinstance(argv, list)
+    assert argv[argv.index("--budget") + 1] == "none"
+
+
+def test_a_run_is_waited_on_with_no_limit_or_its_budget_and_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits: list[float | None] = []
+    real = runs.run_command
+
+    def recording(*args: Any, limit: float | None, **kwargs: Any) -> Finished:
+        limits.append(limit)
+        return real(*args, limit=limit, **kwargs)
+
+    monkeypatch.setattr(runs, "run_command", recording)
+    ran("ran", budget=None)
+    ran("ran", budget=2.5)
+
+    # with a budget, the limit is the budget and LIMITS' grace
+    assert limits == [None, 3.0]
 
 
 def test_each_run_starts_in_a_fresh_empty_directory_deleted_after_it() -> None:

@@ -1,6 +1,7 @@
 import functools
 import inspect
 from collections.abc import Callable
+from typing import ForwardRef, NamedTuple
 
 import pytest
 
@@ -17,6 +18,7 @@ from tests.unit.binding.inherited import (
     MakingBase,
     Meta,
 )
+from tests.unit.binding.later_named import LaterPoint
 from tests.unit.binding.wrapping_decorator import WrapsByHand, wrapped_elsewhere
 
 
@@ -380,3 +382,21 @@ def test_checked_annotations_ends_on_a_wrapped_cycle() -> None:
 def test_checked_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
     # equal to str is not str; keeping it would hand isinstance something that is not a type
     assert checked(annotated_by_a_claim) == {}
+
+
+class NowPoint(NamedTuple):
+    x: int
+    tags: list[str]
+
+
+def test_checked_annotations_reads_a_forward_reference_as_its_text() -> None:
+    signature = inspect.signature(LaterPoint)
+    assert isinstance(signature.parameters["x"].annotation, ForwardRef)
+
+    assert checked_annotations(signature, LaterPoint) == {"x": int, "tags": Items(list, str)}
+
+
+def test_checked_annotations_reads_a_named_tuple_s_own_types_as_before() -> None:
+    signature = inspect.signature(NowPoint)
+
+    assert checked_annotations(signature, NowPoint) == {"x": int, "tags": Items(list, str)}

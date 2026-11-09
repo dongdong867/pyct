@@ -17,6 +17,9 @@ from pathlib import Path
 
 import pytest
 
+from pyct.config.budget import RUN_SECONDS
+from pyct.config.command_line import NO_DEADLINE
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # what the crashing cvc5 says before it dies, so a test can pin how pyct passes it on
@@ -42,10 +45,19 @@ def run_pyct(
 
     A run given ``--budget SECONDS`` or ``--budget=SECONDS`` arms pyct's deadline, and the
     deadline firing inside coverage.py's tracer hangs the child, as
-    ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out.
+    ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out. A run with no
+    ``--budget`` is measured: its 45 s deadline comes after ``timeout`` ends it. A test that
+    gives a longer ``timeout`` must give ``--budget none``, which arms no deadline, and fails
+    before the child starts when it does not.
     """
-    budget = any(arg == "--budget" or arg.startswith("--budget=") for arg in argv)
-    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if budget else ())}
+    budget = _last_budget(argv)
+    if budget is None and timeout > RUN_SECONDS:
+        pytest.fail(
+            f"pass --budget {NO_DEADLINE}: a run with no flag stops at {RUN_SECONDS:g} s,"
+            " and coverage's tracer can hang on its alarm"
+        )
+    seconds_given = budget not in (None, NO_DEADLINE)
+    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if seconds_given else ())}
     env = {k: v for k, v in os.environ.items() if k not in left_out}
     if path is not None:
         env["PATH"] = path
@@ -64,6 +76,18 @@ def run_pyct(
     # a line no cause explains is put down as ended before with no input that ended
     assert "no cause explains line" not in result.stderr, result.stderr
     return result
+
+
+def _last_budget(argv: tuple[str, ...]) -> str | None:
+    """The value of ``argv``'s last ``--budget``, apart or joined, or None with no such flag.
+    The command line keeps the last one, as argparse does."""
+    budget = None
+    for at, arg in enumerate(argv):
+        if arg == "--budget":
+            budget = argv[at + 1] if at + 1 < len(argv) else ""
+        elif arg.startswith("--budget="):
+            budget = arg.removeprefix("--budget=")
+    return budget
 
 
 # how a `missed` line ends: the seconds its ask took, which no two runs share

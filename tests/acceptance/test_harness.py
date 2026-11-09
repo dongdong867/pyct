@@ -1,5 +1,5 @@
-"""The harness demands the summary line, measures a pyct child only when its deadline is off,
-and narrows a printed line's fields, failing on a field of the wrong type."""
+"""The harness demands the summary line, measures a pyct child unless it is given a budget of
+seconds, and narrows a printed line's fields, failing on a field of the wrong type."""
 
 import json
 import re
@@ -67,7 +67,9 @@ def test_the_check_skips_a_run_with_no_summary() -> None:
     check_every_uncovered_line_explained_once('{"args": {"x": 3}}\n')
 
 
-def environment_for(monkeypatch: pytest.MonkeyPatch, *argv: str) -> dict[str, str]:
+def environment_for(
+    monkeypatch: pytest.MonkeyPatch, *argv: str, timeout: float = 30
+) -> dict[str, str]:
     """The environment ``run_pyct`` hands a child for ``argv``, read without starting one."""
     monkeypatch.setenv("COVERAGE_PROCESS_CONFIG", "{}")
     monkeypatch.setenv("COVERAGE_PROCESS_START", "pyproject.toml")
@@ -80,7 +82,7 @@ def environment_for(monkeypatch: pytest.MonkeyPatch, *argv: str) -> dict[str, st
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", spawn)
-    run_pyct(*argv)
+    run_pyct(*argv, timeout=timeout)
     return handed
 
 
@@ -94,8 +96,52 @@ def test_a_run_with_a_budget_starts_no_coverage(
     assert "COVERAGE_PROCESS_START" not in env
 
 
+@pytest.mark.parametrize(
+    "budget", [("--budget", "none"), ("--budget=none",)], ids=["apart", "joined"]
+)
+def test_a_run_with_budget_none_is_measured(
+    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...]
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budget)
+
+    assert env["COVERAGE_PROCESS_START"] == "pyproject.toml"
+
+
+@pytest.mark.parametrize(
+    ("budgets", "measured"),
+    [(("--budget", "none", "--budget", "1"), False), (("--budget=1", "--budget=none"), True)],
+    ids=["seconds-last", "none-last"],
+)
+def test_the_last_budget_decides_as_the_command_line_reads_it(
+    monkeypatch: pytest.MonkeyPatch, budgets: tuple[str, ...], measured: bool
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budgets)
+
+    assert ("COVERAGE_PROCESS_START" in env) is measured, env
+
+
+def test_a_run_with_no_budget_and_a_timeout_past_its_default_fails_before_it_starts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(pytest.fail.Exception, match="pass --budget none: a run with no flag"):
+        environment_for(monkeypatch, "m::f", "{}", timeout=46)
+
+
+@pytest.mark.parametrize(
+    ("budget", "timeout", "measured"),
+    [((), 45, True), (("--budget", "none"), 120, True), (("--budget", "60"), 120, False)],
+    ids=["at-45", "none", "seconds"],
+)
+def test_a_long_timeout_runs_with_a_budget_or_none_or_at_most_45_seconds(
+    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...], timeout: float, measured: bool
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budget, timeout=timeout)
+
+    assert ("COVERAGE_PROCESS_START" in env) is measured, env
+
+
 def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> None:
-    # a flag that only starts like --budget sets no deadline
+    # `--budgetless` gives no budget of seconds, so the run is measured
     env = environment_for(monkeypatch, "m::f", "{}", "--budgetless")
 
     assert env["COVERAGE_PROCESS_CONFIG"] == "{}"

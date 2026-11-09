@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import functools
-import inspect
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,13 +19,16 @@ from pathlib import Path
 from typing import NoReturn
 
 from pyct.binding.bind import access_name, leaves
+from pyct.config.budget import RUN_SECONDS, SWEEP_SECONDS
 from pyct.config.command_line import (
+    NO_DEADLINE,
     UsageError,
     dump_folder,
     parse_budget,
     parse_goal,
     parse_plateau,
     parse_solver_timeout,
+    parse_total_budget,
 )
 from pyct.config.limits import Limits
 from pyct.execution.deadline import own_the_alarm
@@ -41,7 +43,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import run
-from pyct.run.seed_checks import check_seed_fits, check_seed_types, parse_seed
+from pyct.run.seed_checks import check_seed, missing_args_message, parse_seed
 from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
@@ -202,7 +204,7 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Se
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
     file = None if command.seeds_text is None else read_seeds_file(command.seeds_text)
     limits = Limits(
-        budget=parse_budget(command.budget_text),
+        budget=parse_budget(command.budget_text, RUN_SECONDS),
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
         goal=parse_goal(command.goal_text),
@@ -223,8 +225,7 @@ def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | 
         return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
-    check_seed_fits(target.signature, seed)
-    check_seed_types(target, seed)
+    check_seed(target, seed)
     return Seeds((seed,))
 
 
@@ -284,12 +285,12 @@ def _sweep(command: SweepCommand) -> int:
 def _sweep_limits(command: SweepCommand) -> SweepLimits:
     """The limits the command line gave, each by ``pyct run``'s rule, or the sweep's defaults."""
     defaults = SweepLimits()
-    budget = parse_budget(command.budget_text).seconds
+    budget = parse_budget(command.budget_text, defaults.budget).seconds
     plateau = parse_plateau(command.plateau_text).inputs
-    total = parse_budget(command.total_budget_text, "total budget").seconds
+    total = parse_total_budget(command.total_budget_text)
     solver_timeout = command.solver_timeout_text
     return SweepLimits(
-        budget=defaults.budget if budget is None else budget,
+        budget=budget,
         plateau=defaults.plateau if plateau is None else plateau,
         solver_timeout=(
             defaults.solver_timeout
@@ -375,7 +376,11 @@ def _run_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
     run_parser.add_argument("--seeds", dest="seeds_file", metavar="FILE")
-    run_parser.add_argument("--budget", metavar="SECONDS")
+    run_parser.add_argument(
+        "--budget",
+        metavar="SECONDS",
+        help=f"the run's seconds; {RUN_SECONDS:g} by default, {NO_DEADLINE} for no deadline",
+    )
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
@@ -416,13 +421,17 @@ def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     parser.add_argument(
         "--list", dest="list_only", action="store_true", help="list the entries; run none"
     )
-    parser.add_argument("--budget", metavar="SECONDS", help="each entry's budget; 30 by default")
+    parser.add_argument(
+        "--budget",
+        metavar="SECONDS",
+        help=f"each entry's budget; {SWEEP_SECONDS:g} by default, {NO_DEADLINE} for no deadline",
+    )
     parser.add_argument("--plateau", metavar="N", help="each entry's plateau; 5 by default")
     parser.add_argument(
         "--solver-timeout", metavar="SECONDS", help="each solve's limit; 10 by default"
     )
     parser.add_argument(
-        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; none by default"
+        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; no bound by default"
     )
     parser.add_argument("--goal", metavar="coverage|bugs", help="each entry's goal; coverage")
 
@@ -455,16 +464,6 @@ def check_spec(spec: str) -> None:
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
-
-
-def missing_args_message(signature: inspect.Signature) -> str:
-    """Name the parameters the seed must give, and each way to pass it."""
-    parameters = ", ".join(signature.parameters) or "no parameters"
-    return (
-        f"args are required: a JSON object for {parameters}\n"
-        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
-        f" or a file of them through --seeds"
-    )
 
 
 class _Parser(argparse.ArgumentParser):
