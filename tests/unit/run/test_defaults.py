@@ -3,11 +3,11 @@
 import enum
 import inspect
 
+from pyct.binding.classes import constructor as constructor_of
 from pyct.run.defaults import with_defaults
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import Target
-from pyct.run.target import _constructor as constructor_of
 
 
 class Size(enum.IntEnum):

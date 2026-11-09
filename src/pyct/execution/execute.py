@@ -13,6 +13,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind
+from pyct.binding.builds import SelfBuild
 from pyct.binding.call import call_arguments
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution import line_events
@@ -23,21 +24,6 @@ from pyct.execution.tally import Tally, Watch, too_long
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
-
-
-@dataclass(frozen=True)
-class SelfBuild:
-    """How each call builds the instance a method runs on.
-
-    ``cls`` is the class the target's spec names before the method, and
-    ``name`` the method's first parameter, the seed's key for the
-    constructor's arguments. ``positional`` is the constructor's parameters
-    each construction passes by position, read once at load.
-    """
-
-    cls: type
-    name: str
-    positional: tuple[inspect.Parameter, ...] = ()
 
 
 @dataclass(frozen=True)
