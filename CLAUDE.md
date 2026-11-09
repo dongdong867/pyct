@@ -62,7 +62,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
     ├── floats/       the same for floats
     ├── lists/        the same for lists as they change
     ├── dicts/        the same for dicts as they change
-    ├── nested/       values inside an argument: a dict's and a list's
+    ├── nested/       values inside an argument: a dict's, a list's, a tuple's and an object's
     └── sweep/        packages and modules `pyct sweep` lists and runs
 ```
 
