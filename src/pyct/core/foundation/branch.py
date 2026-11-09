@@ -30,6 +30,10 @@ READ_HEADS: Mapping[str, str] = {
 
 _READ_HEAD_NAMES = frozenset(READ_HEADS.values())
 
+# the head of each step an access takes from a parameter to a value inside it: a key or an
+# index, ["[]", container, key], and an attribute, ["getattr", object, "'name'"]
+ACCESS_STEPS = frozenset({"[]", "getattr"})
+
 # the kinds that make a list's reads say their kind
 FLOAT_AND_BOOL = frozenset({"float", "bool"})
 

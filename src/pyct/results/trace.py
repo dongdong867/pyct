@@ -387,7 +387,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     A tuple reads ``('a', t)``, and one item ``('a',)``. An index reads
     ``s[i]`` and a slice ``s[i:j]`` or ``s[i:j:k]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A walk key reads ``list(config)[0]``, the key a walk of the dict reads
+    ``config['port']``. An attribute reads ``rule.limit``, its name out of its quotes: only an
+    identifier is named. A walk key reads ``list(config)[0]``, the key a walk of the dict reads
     at that pass. A list display reads ``[x, 7]``. A function in `_FUNCTIONS` reads as
     the table spells it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
     Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among them. A part cut
@@ -410,6 +411,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "key" and len(texts) == 2:
         # a walk key: the key a walk of the dict reads at that pass
         return f"list({texts[0]})[{texts[1]}]"
+    if head == "getattr" and len(texts) == 2 and isinstance(expression[2], str):
+        return f"{_operand(operands[0], _ALONE)}.{expression[2][1:-1]}"
     if head == "[]" or head == "[:]" or head in READ_HEAD_NAMES:
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import TypeGuard
 
 from pyct.binding.shapes import ListShape
-from pyct.core.foundation.branch import READ_HEADS, Expression
+from pyct.core.foundation.branch import ACCESS_STEPS, READ_HEADS, Expression
 from pyct.core.strs.str_splits import LISTED_SPLITS
 from pyct.solver.words import WORD_EDGES
 
@@ -122,13 +122,18 @@ def from_start(position: Expression) -> TypeGuard[int]:
 def access(part: Expression) -> str | None:
     """The name of an access to a list inside an argument, as the seed names it."""
     step = part
-    while isinstance(step, list) and len(step) == 3 and step[0] == "[]":
+    while isinstance(step, list) and len(step) == 3 and _is_a_step(step[0]):
         if isinstance(step[2], list):
             return None
         step = step[1]
     if step is part or not isinstance(step, str):
         return None
     return json.dumps(part)
+
+
+def _is_a_step(head: Expression) -> bool:
+    """Whether a head is one an access takes on its way in from a parameter."""
+    return isinstance(head, str) and head in ACCESS_STEPS
 
 
 def _identity(part: Expression) -> object:
