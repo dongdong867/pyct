@@ -136,17 +136,22 @@ def test_checked_gives_a_reason_with_a_line_break_one_prefix() -> None:
     assert reason.count("s.jsonl:1: ") == 1
 
 
-def test_checked_reads_the_target_s_annotations_once_for_every_line(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls: list[object] = []
-    real = seed_checks.checked_annotations
+def count_reads(monkeypatch: pytest.MonkeyPatch, module: ModuleType, calls: list[object]) -> None:
+    """Record in ``calls`` the function each ``checked_annotations`` call in ``module`` reads."""
+    real = module.checked_annotations
 
     def counted(signature: inspect.Signature, fn: Callable[..., object]) -> dict[str, Check]:
         calls.append(fn)
         return real(signature, fn)
 
-    monkeypatch.setattr(seed_checks, "checked_annotations", counted)
+    monkeypatch.setattr(module, "checked_annotations", counted)
+
+
+def test_checked_reads_the_target_s_annotations_once_for_every_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[object] = []
+    count_reads(monkeypatch, seed_checks, calls)
     file = SeedsFile("s.jsonl", ((1, '{"name": "a", "age": 1}'), (2, '{"name": "b", "age": 2}')))
 
     checked_seeds(target_for(name_and_age), file)
@@ -166,18 +171,8 @@ def test_checked_reads_a_method_s_and_its_constructor_s_annotations_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls: list[object] = []
-
-    def counting(module: ModuleType) -> None:
-        real = module.checked_annotations
-
-        def counted(signature: inspect.Signature, fn: Callable[..., object]) -> dict[str, Check]:
-            calls.append(fn)
-            return real(signature, fn)
-
-        monkeypatch.setattr(module, "checked_annotations", counted)
-
-    counting(seed_checks)
-    counting(object_checks)
+    count_reads(monkeypatch, seed_checks, calls)
+    count_reads(monkeypatch, object_checks, calls)
     target = Target(
         spec="m::Cart.total",
         fn=Cart.total,

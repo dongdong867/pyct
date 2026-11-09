@@ -89,9 +89,9 @@ def check_seed(target: Target, seed: Mapping[str, object]) -> None:
 def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
     """Every reason to refuse a parsed seed: its names, then its types.
 
-    A wrapper around ``SeedCheck.refusals`` for one seed. A new seed check
-    belongs in ``SeedCheck.refusals``, so the command line and ``--seeds``
-    both apply it.
+    A wrapper around ``SeedCheck.refusals`` for one seed. A new check on a
+    parsed seed belongs in ``SeedCheck.refusals``, so the command line and
+    ``--seeds`` both apply it.
     """
     return SeedCheck.of(target).refusals(seed)
 
@@ -102,8 +102,8 @@ class SeedCheck:
     parameters' annotations ask, and, for a method whose instance each input builds, the
     parameter that holds the constructor's arguments with the check on that object.
 
-    ``refusals`` is the one place every seed check runs, for ``--args`` and
-    for each line of ``--seeds``, so a new seed check belongs there.
+    ``refusals`` is the one place every check on a parsed seed runs, for
+    ``--args`` and for each line of ``--seeds``, so a new one belongs there.
     """
 
     signature: inspect.Signature
@@ -134,9 +134,10 @@ class SeedCheck:
         if fit is not None:
             return [fit]
         lines: list[str] = []
-        if self.under_self is not None and self.under_self[0] in seed:
+        if self.under_self is not None:
             name, check = self.under_self
-            lines = check.lines(name, seed[name])
+            if name in seed:
+                lines = check.lines(name, seed[name])
         return lines + contradictions(self.checks, seed)
 
 

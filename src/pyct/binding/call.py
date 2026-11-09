@@ -29,10 +29,9 @@ def call_arguments(
     positions, and every later value stays a keyword, so Python's own binding
     says which parameter is missing.
 
-    ``filled`` is how many positions the items the call passes first
-    already fill. The positions start after that many parameters, and a key
-    naming one of those stays a keyword, which Python's binding then
-    refuses.
+    ``filled`` is how many leading positions the items passed first already
+    take. The positions start after them, and a key naming one of them stays
+    a keyword, which Python's binding then refuses.
     """
     values: list[object] = []
     given = 0
