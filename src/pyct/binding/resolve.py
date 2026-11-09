@@ -58,12 +58,10 @@ def resolved[T](annotation: object, fn: object, read: Callable[[object], T]) -> 
     text, so they agree on what ``read`` makes of the text rather than on the
     object.
 
-    A ``ForwardRef`` is read as its text, as a str annotation is: a class
-    whose annotations Python postpones, a NamedTuple's under ``from
-    __future__ import annotations`` say, holds one in its signature.
+    A ``ForwardRef`` is read as its text, as a str annotation is
+    (``as_text``).
     """
-    if isinstance(annotation, typing.ForwardRef):
-        annotation = annotation.__forward_arg__
+    annotation = as_text(annotation)
     if not isinstance(annotation, str):
         return read(annotation)
     answers: list[T] = []
@@ -75,6 +73,14 @@ def resolved[T](annotation: object, fn: object, read: Callable[[object], T]) -> 
     if not answers or any(answer != answers[0] for answer in answers):
         return None
     return answers[0]
+
+
+def as_text(annotation: object) -> object:
+    """A ``ForwardRef`` as the text it holds, and any other annotation as it is. A NamedTuple's
+    signature holds each hint as one under ``from __future__ import annotations``."""
+    if isinstance(annotation, typing.ForwardRef):
+        return annotation.__forward_arg__
+    return annotation
 
 
 def _namespaces(fn: object) -> list[dict[str, object]]:

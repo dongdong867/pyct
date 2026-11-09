@@ -18,6 +18,7 @@ from tests.unit.binding.inherited import (
     MakingBase,
     Meta,
 )
+from tests.unit.binding.later_named import LaterPoint
 from tests.unit.binding.wrapping_decorator import WrapsByHand, wrapped_elsewhere
 
 
@@ -389,8 +390,6 @@ class NowPoint(NamedTuple):
 
 
 def test_checked_annotations_reads_a_forward_reference_as_its_text() -> None:
-    from tests.unit.binding.later_named import LaterPoint
-
     signature = inspect.signature(LaterPoint)
     assert isinstance(signature.parameters["x"].annotation, ForwardRef)
 
