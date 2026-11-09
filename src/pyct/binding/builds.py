@@ -2,9 +2,10 @@
 
 An object form is a JSON object holding ``"__class__"``. One is built at a
 parameter's own value, as a keyword value or an ``"__args__"`` item of
-another object form, and as a value directly under the fields of the
-instance a method runs on. The dict under ``self`` itself is no object form:
-its class is the method's. In any other place such a dict stays a dict.
+another object form, as a value directly under the fields of the instance a
+method runs on, and inside a plain list or dict at any of those places, at
+any depth. The dict under ``self`` itself is no object form: its class is
+the method's. In any other place such a dict stays a dict.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ CLASS_KEY = "__class__"
 ARGS_KEY = "__args__"
 
 # where a value sits in the seed as the traversal copies it, and the place it is written at
-type _Holder = dict[str, object] | list[object]
+type _Holder = dict[Any, object] | list[object]
 type _Spot = tuple[object, _Holder, Any, str]
 
 
@@ -105,10 +106,18 @@ class SelfBuild:
 
 @dataclass(frozen=True)
 class Found:
-    """An object form at its place, as ``object_forms`` copied it."""
+    """An object form at its place, as ``object_forms`` copied it, and the list or dict and
+    slot its copy sits in."""
 
     place: str
     form: dict[str, object]
+    into: _Holder
+    slot: Any
+
+    @property
+    def spot(self) -> tuple[_Holder, Any]:
+        """The list or dict its object goes into, and the slot, when no arguments hold it."""
+        return self.into, self.slot
 
 
 @dataclass(frozen=True)
@@ -126,11 +135,34 @@ def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
     The objects inside one come before it, siblings in seed order, depth
     first. ``self_name`` is the parameter whose dict holds the fields of the
     instance a method runs on. Every dict and list on the way to a form is
-    copied, the form too, so the caller's seed never changes. A form is
-    listed once: one reached again, at a second place or inside itself, stays
-    as it came there. The traversal is a loop, not a call per level.
+    copied (``holding_forms``), the form too, so the caller's seed never
+    changes, and no other is. A form, or a list or dict on the way to one, is
+    gone into once: one reached again, at a second place or inside itself,
+    stays as it came there. The traversal is a loop, not a call per level.
     """
+    holding = holding_forms(args)
     top = dict(args)
+    pending = _parameters(top, self_name)
+    found: list[Found] = []
+    seen: set[int] = set()
+    # the last pushed goes first, so the forms come out right to left, outer before inner
+    while pending:
+        value, holder, slot, place = pending.pop()
+        if not (object_form(value) or id(value) in holding) or id(value) in seen:
+            continue
+        seen.add(id(value))
+        if object_form(value):
+            copied = holder[slot] = dict(value)
+            found.append(Found(place, copied, holder, slot))
+            pending.extend(_inside(copied, place))
+        else:
+            pending.extend(_copied(value, holder, slot, place))
+    return Forms(top, tuple(reversed(found)))
+
+
+def _parameters(top: dict[str, object], self_name: str | None) -> list[_Spot]:
+    """Where the traversal starts: each parameter's value, or each value under the fields of
+    the instance a method runs on, in a copy of that dict."""
     pending: list[_Spot] = []
     for name, value in top.items():
         if name == self_name and type(value) is dict:
@@ -138,18 +170,16 @@ def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
             pending.extend((item, fields, key, step_in(name, key)) for key, item in fields.items())
         else:
             pending.append((value, top, name, name))
-    found: list[Found] = []
-    seen: set[int] = set()
-    # the last pushed goes first, so the forms come out right to left, outer before inner
-    while pending:
-        value, holder, slot, place = pending.pop()
-        if not object_form(value) or id(value) in seen:
-            continue
-        seen.add(id(value))
-        form = holder[slot] = dict(value)
-        found.append(Found(place, form))
-        pending.extend(_inside(form, place))
-    return Forms(top, tuple(reversed(found)))
+    return pending
+
+
+def _copied(value: object, holder: _Holder, slot: Any, place: str) -> Iterator[_Spot]:
+    """A list or dict on the way to a form, copied into its slot, and the values in it."""
+    if type(value) is list:
+        items = holder[slot] = list(cast(list[object], value))
+        return ((each, items, at, step_in(place, at)) for at, each in enumerate(items))
+    copied = holder[slot] = dict(cast(dict[Any, object], value))
+    return ((each, copied, key, step_in(place, key)) for key, each in list(copied.items()))
 
 
 def _inside(form: dict[str, object], place: str) -> Iterator[_Spot]:
@@ -159,10 +189,7 @@ def _inside(form: dict[str, object], place: str) -> Iterator[_Spot]:
         if key == CLASS_KEY:
             continue
         if key == ARGS_KEY and type(item) is list:
-            items: list[object] = list(item)
-            form[key] = items
-            at = step_in(place, key)
-            yield from ((each, items, i, step_in(at, i)) for i, each in enumerate(items))
+            yield from _copied(item, form, key, step_in(place, key))
         else:
             yield item, form, key, step_in(place, key)
 
@@ -193,19 +220,21 @@ class Build:
 class CallPlan:
     """One call: each object to build, innermost first, then the target's own arguments.
 
-    Each build's object goes into a slot of a later build's arguments or of the call's, so
-    the plan holds the only references pyct keeps to them.
+    Each build's object goes into a slot of a later build's arguments, of the call's, or of
+    a list or dict among them, so the plan holds the only references pyct keeps to them.
     """
 
-    builds: tuple[Build, ...]
+    builds: list[Build]
     positional: list[object]
     keywords: dict[str, object]
 
     def drop(self) -> None:
-        """Let go of every object the plan holds."""
+        """Let go of every object the plan holds, and leave the lists and dicts the target
+        was given as they are."""
         for build in self.builds:
             build.positional.clear()
             build.keywords.clear()
+        self.builds.clear()
         self.positional.clear()
         self.keywords.clear()
 
@@ -235,11 +264,11 @@ def plan_call(
     call, last = _target_call(forms.args, positional, self_build)
     lasts = () if last is None else (last,)
     holders = _holders(calls, [call, *calls.values(), *((b.positional, b.keywords) for b in lasts)])
-    builds = tuple(
-        Build(cls, found.place, *calls[id(found.form)], *holders[id(found.form)])
+    builds = [
+        Build(cls, found.place, *calls[id(found.form)], *holders.get(id(found.form), found.spot))
         for found, cls in loaded
-    )
-    return CallPlan((*builds, *lasts), *call)
+    ]
+    return CallPlan([*builds, *lasts], *call)
 
 
 def _class_of(found: Found, home: str) -> type:
@@ -288,8 +317,9 @@ def _target_call(
 def _holders(
     calls: Mapping[int, object], arguments: Iterable[tuple[list[object], dict[str, object]]]
 ) -> dict[int, tuple[_Holder, Any]]:
-    """Where each object form's object goes, by the form's identity: the list or dict of
-    arguments that holds the form, and its slot there."""
+    """Where each object form's object goes, by the form's identity, when a list or dict of
+    arguments holds the form: that list or dict, and its slot there. A form inside a plain
+    list or dict keeps the slot the traversal copied it into."""
     holders: dict[int, tuple[_Holder, Any]] = {}
     for values, keywords in arguments:
         for at, value in enumerate(values):

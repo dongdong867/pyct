@@ -146,3 +146,36 @@ def test_the_deadline_in_a_constructor_is_a_timeout() -> None:
 
     assert result.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert time.monotonic() - started < 2
+
+
+def first_age(cs: list[Customer], d: dict[str, Customer]) -> str:
+    if cs[0].age > 60:
+        return "senior"
+    return "regular"
+
+
+def customer(age: int) -> dict[str, object]:
+    return {"__class__": "Customer", "name": "ann", "age": age}
+
+
+def test_each_object_inside_a_list_or_dict_is_built_in_its_slot() -> None:
+    result = executed(first_age, {"cs": [customer(30)], "d": {"ann": customer(70)}})
+
+    age = ["[]", ["[]", "cs", 0], "'age'"]
+    assert result.failure is None
+    assert [">", age, 60] in [branch.expression for branch in result.branches]
+
+
+def test_a_constructor_s_raise_inside_a_list_names_its_place() -> None:
+    result = executed(first_age, {"cs": [customer(-1)], "d": {}})
+
+    assert result.failure == Failure(
+        kind=FailureKind.TARGET_RAISED, detail="building cs[0]: ValueError: negative age"
+    )
+
+
+def test_planning_records_no_fork_on_a_tracked_list_or_dict_beside_an_object() -> None:
+    result = executed(stalled, {"s": [customer(30), ["x"], {"k": 1}]})
+
+    age = ["[]", ["[]", "s", 0], "'age'"]
+    assert [branch.expression for branch in result.branches] == [["<", age, 0], ["==", age, 99]]

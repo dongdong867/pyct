@@ -184,6 +184,17 @@ def test_an_object_form_s_simple_defaults_are_filled_at_any_depth() -> None:
     }
 
 
+def test_an_object_inside_a_list_or_dict_takes_its_defaults() -> None:
+    account = {"__class__": "Account", "owner": "ann"}
+    seed: dict[str, object] = {"a": [{"k": dict(account)}], "b": {"x": dict(account)}}
+
+    filled = with_defaults(TAKES, seed)
+
+    with_both = {**account, "limit": 10, "plan": "free"}
+    assert filled == {"a": [{"k": with_both}], "b": {"x": with_both}}
+    assert seed == {"a": [{"k": account}], "b": {"x": account}}
+
+
 def test_a_parameter_args_fills_by_position_is_not_filled() -> None:
     seed: dict[str, object] = {"a": {"__class__": "Account", "__args__": ["ann", 3]}}
 

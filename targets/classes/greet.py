@@ -81,3 +81,31 @@ def charge(a):
     if a.limit > 100:
         return 1
     return 2
+
+
+def oldest(rows):
+    if rows[0]["c"].age > 60:
+        return "senior"
+    return "regular"
+
+
+def by_name(d):
+    if d["ann"].age > 60:
+        return "senior"
+    return "regular"
+
+
+def crowd(cs, d):
+    if len(cs) > 1:
+        return "crowd"
+    if "bob" in d:
+        return "bob"
+    if cs[0].age > 60:
+        return "senior"
+    return "few"
+
+
+def longer(cs):
+    if len(cs[1]) > 2:
+        return "long"
+    return "short"

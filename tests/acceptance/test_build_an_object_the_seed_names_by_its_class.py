@@ -326,3 +326,64 @@ def test_run_writes_args_of_the_wrong_kind_by_its_own_type(monkeypatch: pytest.M
     assert record.failure.kind is FailureKind.TARGET_RAISED
     assert record.failure.detail == "building p: '__args__' must be a list, got (1,)"
     assert record.forks == ()
+
+
+def took_the_other_side(stdout: str, expression: list[object]) -> bool:
+    """Whether a solver line with no failure takes ``expression`` true, as the seed did not."""
+    return any(
+        line["failure"] is None
+        and any(fork["expression"] == expression and fork["taken"] for fork in forks_of(line))
+        for line in solved(stdout)
+    )
+
+
+# build-an-object-the-seed-names-by-its-class-builds-an-object-inside-a-list-or-dict
+def test_builds_an_object_inside_a_list_or_dict() -> None:
+    rows_age = ["[]", ["[]", ["[]", "rows", 0], "'c'"], "'age'"]
+    ann_age = ["[]", ["[]", "d", "'ann'"], "'age'"]
+    runs = [
+        (run_pyct(f"{GREET}::oldest", "--args", seed(rows=[{"c": customer()}])), rows_age),
+        (run_pyct(f"{GREET}::by_name", "--args", seed(d={"ann": customer()})), ann_age),
+    ]
+
+    for result, age in runs:
+        assert result.returncode == 0, result.stderr
+        first = input_lines(result.stdout)[0]
+        assert [">", age, 60] in [fork["expression"] for fork in forks_of(first)], result.stdout
+        assert first["failure"] is None
+        assert took_the_other_side(result.stdout, [">", age, 60]), result.stdout
+
+
+# build-an-object-the-seed-names-by-its-class-keeps-the-shape-around-an-object
+def test_keeps_the_shape_around_an_object() -> None:
+    args = seed(cs=[customer()], d={"ann": customer()})
+    result = run_pyct(f"{GREET}::crowd", "--args", args)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    for line in lines:
+        cs, d = arg(line, "cs"), arg(line, "d")
+        assert isinstance(cs, list) and len(cs) == 1, result.stdout
+        assert isinstance(d, dict) and list(d) == ["ann"], result.stdout
+    assert any(above(arg(line, "cs", 0, "age"), 60) for line in lines[1:]), result.stdout
+
+
+# build-an-object-the-seed-names-by-its-class-builds-an-object-inside-a-list-or-dict, through run()
+def test_builds_an_object_inside_a_list_through_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = {"rows": [{"c": customer()}]}
+    lines = input_lines(run_pyct(f"{GREET}::oldest", "--args", json.dumps(args)).stdout)
+    let_pyct_run_in_process(monkeypatch)
+
+    result = run(load_target(f"{GREET}::oldest"), args)
+
+    assert result.records[0].failure is None
+    assert [record.args for record in result.records] == [line["args"] for line in lines]
+
+
+# keeps-the-shape-around-an-object: a list beside an object, holding none, keeps today's rules
+def test_a_list_beside_an_object_can_change_its_length() -> None:
+    result = run_pyct(f"{GREET}::longer", "--args", seed(cs=[customer(), ["a"]]))
+
+    assert result.returncode == 0, result.stderr
+    grown = [arg(line, "cs", 1) for line in solved(result.stdout)]
+    assert any(isinstance(each, list) and len(each) > 2 for each in grown), result.stdout
