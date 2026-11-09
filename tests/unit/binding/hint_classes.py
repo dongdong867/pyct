@@ -81,3 +81,11 @@ class Node:
     def __init__(self, value: int, next: Node | None = None) -> None:
         self.value = value
         self.next = next
+
+
+class Counts:
+    """A constructor whose hints ask for int keys, and for str items."""
+
+    def __init__(self, by: dict[int, int], tags: list[str]) -> None:
+        self.by = by
+        self.tags = tags

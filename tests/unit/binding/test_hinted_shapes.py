@@ -137,3 +137,32 @@ def test_leaves_name_a_hinted_value_by_the_same_access() -> None:
     seed = Seed.of({"p": [1, 2]}, POINT)
 
     assert set(seed.leaves) <= set(leaves(seed.args))
+
+
+HOME = "tests.unit.binding.hint_classes"
+
+
+def test_a_named_object_s_values_take_its_constructor_s_hints_in_every_walk() -> None:
+    args = {"o": {"__class__": "Spot", "at": {"x": 1, "y": 2}}}
+    sink: list[SinkItem] = []
+
+    seed = Seed.of(args, {}, HOME)
+    answered = apply(seed, {named("o", "at", "x"): 5})
+    at = bind(args, sink, {}, HOME)["o"]["at"]  # pyrefly: ignore[bad-index]
+
+    assert seed.dicts == {} and answered.dicts == {}
+    assert answered.args == {"o": {"__class__": "Spot", "at": {"x": 5, "y": 2}}}
+    assert type(at) is dict
+
+
+def test_a_named_class_that_does_not_load_asks_nothing() -> None:
+    seed = Seed.of({"o": {"__class__": "Nowhere", "at": {"x": 1}}}, {}, HOME)
+
+    assert list(seed.dicts) == [named("o", "at")]
+
+
+def test_a_named_object_s_hints_read_int_keys_and_say_an_added_item_s_kind() -> None:
+    seed = Seed.of({"o": {"__class__": "Counts", "by": {"3": 1}, "tags": []}}, {}, HOME)
+
+    assert seed.args == {"o": {"__class__": "Counts", "by": {3: 1}, "tags": []}}
+    assert seed.lists[named("o", "tags")].fill == "str"
