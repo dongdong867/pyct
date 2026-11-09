@@ -56,12 +56,13 @@ class OneOf:
 
 @dataclass(frozen=True)
 class Fields:
-    """A dict whose keys are fixed: a constructor's arguments, which pyct unpacks itself.
+    """A dict whose keys are fixed, or a list whose length is: a constructor's arguments, which
+    pyct unpacks itself.
 
-    Its values are tracked and named by their keys, as a dict's values are,
-    while the dict itself is not, so no answer adds a key, drops one or
-    changes its length. ``each`` is what each key's own annotation asks of
-    its value.
+    Its values are tracked and named by their keys or indexes, as a dict's
+    or a list's values are, while the container itself is not, so no answer
+    adds a key or an item, drops one or changes its length. ``each`` is what
+    each key's own annotation asks of its value.
     """
 
     each: Mapping[str, "Check"]

@@ -8,12 +8,16 @@ from enum import Enum
 from typing import Any, cast
 
 from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
+from pyct.binding.builds import ARGS_KEY, CLASS_KEY
 from pyct.binding.tuples import Holder, Slot
 from pyct.core.foundation.branch import Expression
 
 # one value still to place: the value, its access, and where it goes. The access is None under
 # a key no access can name
 type Pending = tuple[object, Expression | None, Holder, Slot, Check | None]
+
+# what the walk copies an object form and its "__args__" under: keys and length fixed
+FIXED = Fields({})
 
 
 def items_to_place(
@@ -41,6 +45,30 @@ def items_to_place(
         (item, step(access, key_access(key)), into, slot, fields.get(key, each))
         for (key, item), slot in pairs
     )
+
+
+def form_items(
+    items: dict[object, object], access: Expression | None, into: dict[Any, object]
+) -> Iterable[Pending]:
+    """An object form's values to place into its copy, each under its own key.
+
+    ``"__class__"`` goes under no access, so it is never tracked or named,
+    and so does an ``"__args__"`` that is not a list. A list under
+    ``"__args__"`` keeps its length, and its items are named by index. Every
+    other value is named by its key and takes no check: the constructor's
+    annotations are not read here.
+    """
+    for key, item in dict.items(items):
+        at = step(access, key_access(key))
+        if _is(key, CLASS_KEY) or (_is(key, ARGS_KEY) and type(item) is not list):
+            yield item, None, into, key, None
+        else:
+            yield item, at, into, key, FIXED if _is(key, ARGS_KEY) else None
+
+
+def _is(key: object, name: str) -> bool:
+    """Whether a key is the str ``name``, with no ``__eq__`` of a key's own class run."""
+    return type(key) is str and key == name
 
 
 def _each(check: Check | None, kind: type) -> Check | None:
