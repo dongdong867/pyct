@@ -12,7 +12,7 @@ from targets.classes.orders import Box, Color, Drawable, Item, Order, Shape, Spe
 if TYPE_CHECKING:
     from targets.classes.orders import Buyer
 
-__all__ = ["Drawable", "Square"]
+__all__ = ["Square"]
 
 
 def greet(c: Customer):
@@ -149,3 +149,7 @@ def either(c: Customer | Guest):
     if c.age > 60:
         return "older"
     return "younger"
+
+
+def render(d: Drawable):
+    return d
