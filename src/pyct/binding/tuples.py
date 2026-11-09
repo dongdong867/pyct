@@ -108,6 +108,12 @@ def holding(
     return found
 
 
+def among_items(into: Holder, owners: Mapping[int, TupleBuild]) -> bool:
+    """Whether a holder is the list a tuple's last visit placed its items in."""
+    owner = owners.get(id(into))
+    return owner is not None and into is owner.items
+
+
 def _owners_of(
     placements: Iterable[tuple[Holder, Slot]], owners: Mapping[int, TupleBuild]
 ) -> Iterable[TupleBuild]:

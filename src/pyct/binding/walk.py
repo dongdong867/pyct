@@ -23,6 +23,7 @@ from pyct.binding.tuples import (
     Later,
     Slot,
     TupleBuild,
+    among_items,
     buildable,
     holding,
     innermost_first,
@@ -122,7 +123,7 @@ class Walk:
     path is walked, each tuple is built once from its items, of its own type,
     innermost first, and each value the walk does not follow is copied whole
     by deepcopy over the walk's copies, so it holds the walk's copy of each
-    object, list and dict the walk copied, and nothing it holds is tracked;
+    object, list and dict the walk copied, and nothing else it holds is tracked;
     one deepcopy refuses stays as it came. A tuple inside a value copied
     whole is a copy of its own. Each goes everywhere the walk put it (see
     ``_finish`` for the order).
@@ -266,41 +267,47 @@ class Walk:
 
     def _finish(self) -> None:
         """Once every path is walked, build each tuple and copy each value the walk does not
-        follow whole, and put each everywhere the walk put it.
+        follow whole, and put each everywhere the walk put it, in a fixed order.
 
-        The tuples whose items hold no value copied whole, themselves or
-        through a tuple inside, are built first, innermost first, so a copy
-        made whole after them that hashes an object the walk copied hashes it
-        with its tuples in place. Each value is then copied whole by deepcopy
-        over the walk's copies and the other values' copies, so it holds the
-        walk's copy of each object, list and dict the walk copied, whatever
-        the seed's order; an object only it reaches is deepcopy's own copy,
-        and nothing it holds is tracked. A tuple inside it is a copy of its
-        own. The other tuples are built last.
+        First the tuples whose items hold no value copied whole, themselves
+        or through a tuple inside, innermost first; then the values copied
+        whole that sit among the other tuples' items; then those tuples; then
+        every other value copied whole. So a copy made whole that hashes an
+        object the walk copied hashes it with its tuples in place, and a tuple
+        that holds a value copied whole holds it once it is built. Each value
+        is copied whole by deepcopy over the walk's copies and the copies made
+        before it, so it holds the walk's copy of each object, list and dict
+        the walk copied, whatever the seed's order; an object only it reaches
+        is deepcopy's own copy, and nothing else it holds is tracked. A tuple
+        inside it is a copy of its own.
         """
         builds = list(self._tuples.values())
         order = innermost_first(builds, tuples_among(builds, self._owners))
         placements = [(into, slot) for _, into, slot in self._to_copy]
         waiting = holding(order, placements, self._owners)
+        inside = [each for each in self._to_copy if among_items(each[1], self._owners)]
+        outside = [each for each in self._to_copy if not among_items(each[1], self._owners)]
+        memo: dict[int, object] = dict(self._copies)
         for build in order:
             if id(build) not in waiting:
                 _build(build)
-        self._copy_all_whole()
+        self._copy_whole(inside, memo)
         for build in order:
             if id(build) in waiting:
                 _build(build)
+        self._copy_whole(outside, memo)
 
-    def _copy_all_whole(self) -> None:
+    def _copy_whole(
+        self, values: list[tuple[object, Holder, Slot]], memo: dict[int, object]
+    ) -> None:
         """Copy each value the walk does not follow whole, in walk order, and put it where it
         goes.
 
         deepcopy records a copy before it fills it, so each copies into a
-        scratch memo over the walk's copies and the copies made before it, and
-        only a copy that finishes joins them; one it refuses goes on as it
-        came.
+        scratch memo over ``memo``, and only a copy that finishes joins it;
+        one it refuses goes on as it came.
         """
-        memo: dict[int, object] = dict(self._copies)
-        for value, into, slot in self._to_copy:
+        for value, into, slot in values:
             scratch = Scratch(memo)
             try:
                 made = copy.deepcopy(value, scratch)

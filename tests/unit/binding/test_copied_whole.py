@@ -2,11 +2,13 @@
 inside tracked, and the copies the walk makes of the objects it follows."""
 
 import copy
+import enum
 import json
 import threading
 import time
 from collections import deque
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import pytest
@@ -197,3 +199,47 @@ def test_a_set_copied_whole_hashes_the_walk_s_copy_with_its_tuples_built() -> No
     made: Any = answered.args["g"]
     assert made.e.ends == (5, 0) and made.e in made.index
     assert graph.e.ends == (0, 0) and graph.e in graph.index and type(graph.e.ends[0]) is int
+
+
+class Suit(enum.Enum):
+    HEART = 1
+
+
+@dataclass(frozen=True)
+class Card:
+    key: tuple[int, object]
+
+
+class Hand:
+    """A frozen dataclass whose tuple mixes an int with a value copied whole, and a set that
+    holds it, hashed by that tuple."""
+
+    def __init__(self, other: object) -> None:
+        self.c = Card((0, other))
+        self.seen = {self.c}
+
+
+@pytest.mark.parametrize("other", [Suit.HEART, date(2026, 1, 1)], ids=["enum", "date"])
+def test_a_set_copied_whole_hashes_a_tuple_that_holds_a_value_copied_whole(other: object) -> None:
+    hand = Hand(other)
+    key_0 = json.dumps(["[]", ["getattr", ["getattr", "h", "'c'"], "'key'"], 0])
+
+    bound: dict[str, Any] = bind({"h": hand}, [])
+    answered = apply(Seed.of({"h": hand}), {key_0: 5})
+
+    assert bound["h"].c in bound["h"].seen and isinstance(bound["h"].c.key[0], ConcolicInt)
+    made: Any = answered.args["h"]
+    assert made.c.key == (5, other) and made.c in made.seen
+    assert hand.c.key == (0, other) and type(hand.c.key[0]) is int and hand.c in hand.seen
+
+
+class K(enum.Enum):
+    A = 1
+
+
+def test_a_tuple_holding_a_tuple_that_holds_a_value_copied_whole_is_built_after_it() -> None:
+    args: dict[str, Any] = bind({"t": ((1, K.A), 2)}, [])
+
+    made = args["t"]
+    assert made == ((1, K.A), 2) and made[0][1] is K.A
+    assert isinstance(made[0][0], ConcolicInt) and isinstance(made[1], ConcolicInt)
