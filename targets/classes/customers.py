@@ -1,9 +1,21 @@
-"""The classes the seeds of ``targets.classes.greet`` name with ``"__class__"``."""
+"""The classes the seeds of ``targets.classes.greet`` name with ``"__class__"``, and those
+``targets.classes.hinted``'s hints name."""
 
 from collections import namedtuple
 from dataclasses import dataclass
 
-__all__ = ["Account", "Customer", "Guest", "Order", "Pair", "Point", "Profile", "Shop", "Tags"]
+__all__ = [
+    "Account",
+    "Customer",
+    "Desk",
+    "Guest",
+    "Order",
+    "Pair",
+    "Point",
+    "Profile",
+    "Shop",
+    "Tags",
+]
 
 
 class Customer:
@@ -60,6 +72,16 @@ Pair = namedtuple("Pair", ["left", "right"])
 
 class Shop:
     def __init__(self, owner):
+        self.owner = owner
+
+    def serve(self):
+        if self.owner.age > 60:
+            return "senior"
+        return "regular"
+
+
+class Desk:
+    def __init__(self, owner: Customer):
         self.owner = owner
 
     def serve(self):

@@ -119,6 +119,7 @@ def test_the_caller_s_seed_never_changes() -> None:
     assert forms.args == args
     assert forms.args["p"] is not args["p"]
     outer = forms.found[-1].form
+    assert isinstance(outer, dict)
     assert outer["__args__"] is not items
     assert forms.found[0].form is outer["__args__"][0]  # pyrefly: ignore[bad-index]
 

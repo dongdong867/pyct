@@ -15,7 +15,7 @@ from typing import Any, Protocol, TypeGuard, cast
 
 from pyct.binding import objects
 from pyct.binding.annotations import Check, Fields
-from pyct.binding.builds import holding_forms, object_form
+from pyct.binding.builds import hinted, holding_forms, inside, object_form
 from pyct.binding.copies import Scratch, faithful_copies
 from pyct.binding.objects import Attributes, Held
 from pyct.binding.steps import FIXED, Pending, form_items, items_to_place, keyed, step
@@ -129,8 +129,10 @@ class Walk:
     ``_finish`` for the order).
     """
 
-    def __init__(self, visitor: Visitor) -> None:
+    def __init__(self, visitor: Visitor, home: str | None = None) -> None:
         self._visitor = visitor
+        # the module a bare class name under "__class__" is read in; None reads no named class
+        self._home = home
         # each copy by the identity of the seed's value, which is kept alive beside it so its
         # identity is not reused, the containers whose copies a path names, and the copies
         # that are tracked lists. The copies are what deepcopy finds before it copies a value
@@ -202,6 +204,9 @@ class Walk:
         made = self._copies.get(id(value))
         form = self._form(value, made, place)
         check = FIXED if form else place.check
+        if type(value) is list and hinted(value, check):
+            # a list a hint builds by position: its length fixed, each item its parameter's
+            check = inside(value, check, self._home).items
         if made is None:
             made, insides = self._made(value, access, place, check)
         elif access is None or id(value) in self._named or id(value) in self._whole:
@@ -214,7 +219,8 @@ class Walk:
             self._named.add(id(value))
         if form:
             self._forms.add(id(made))
-            self._later(form_items(cast(dict[object, object], insides), access, cast(Any, made)))
+            ask = inside(value, place.check, self._home)
+            self._later(form_items(cast(dict[Any, object], insides), access, cast(Any, made), ask))
         else:
             self._later(_insides(value, insides, access, made, check))
         return made
@@ -222,7 +228,8 @@ class Walk:
     def _form(self, value: object, made: object, place: Place) -> bool:
         """Whether ``value`` is an object form the walk keeps the shape of (``form_items``).
 
-        That is one at a parameter's own value, but not the dict a method's
+        That is a dict a class hint builds (``hinted``), one holding
+        ``"__class__"`` at a parameter's own value, but not the dict a method's
         instance is built from, which takes ``Fields``, and one a holder of
         fixed shape holds: the fields of a built instance, an object form, its
         ``"__args__"``, or a list or dict that holds a form (``holding_forms``).
@@ -230,6 +237,8 @@ class Walk:
         """
         if made is not None:
             return id(made) in self._forms
+        if type(value) is dict and hinted(value, place.check):
+            return True
         if not object_form(value):
             return False
         if id(place.into) in self._fixed:

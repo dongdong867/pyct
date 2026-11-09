@@ -114,17 +114,19 @@ def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
     object inside this one has lines of its own, so a value in ``built`` gives
     none here.
     """
+    # the seed checks list only the dicts that name their class (``object_forms`` with no checks)
+    form = cast(dict[str, object], found.form)
     try:
-        built_class = load_class(found.form[CLASS_KEY], home)
+        built_class = load_class(form[CLASS_KEY], home)
     except ClassNameError as error:
         return [_class_line(found.place, error)]
     check = ObjectCheck.of(built_class, signature_of(built_class))
-    problem = args_problem(found.form)
+    problem = args_problem(form)
     if problem is not None:
-        rest = check.lines(found.place, found.form, _FORM_KEYS, None, built)
+        rest = check.lines(found.place, form, _FORM_KEYS, None, built)
         return [f"{step_in(found.place, ARGS_KEY)} {problem}", *rest]
-    items = cast(list[object], found.form.get(ARGS_KEY, []))
-    return check.lines(found.place, found.form, _FORM_KEYS, items, built)
+    items = cast(list[object], form.get(ARGS_KEY, []))
+    return check.lines(found.place, form, _FORM_KEYS, items, built)
 
 
 def _class_line(place: str, error: ClassNameError) -> str:

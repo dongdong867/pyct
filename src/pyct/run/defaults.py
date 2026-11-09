@@ -1,14 +1,14 @@
-"""The constructor parameters a seed leaves out, filled with simple defaults: under ``self``, and
-in each object the seed names with ``"__class__"``."""
+"""The constructor parameters a seed leaves out, filled with simple defaults: under ``self``, in
+each object the seed names with ``"__class__"``, and in each JSON object a class hint builds."""
 
 import inspect
 from collections.abc import Mapping
 from typing import cast
 
-from pyct.binding.builds import ARGS_KEY, CLASS_KEY, object_forms
+from pyct.binding.builds import ARGS_KEY, form_class, object_forms
 from pyct.binding.call import by_position
-from pyct.binding.classes import ClassNameError, load_class, signature_of
-from pyct.run.target import Target
+from pyct.binding.classes import ClassNameError, signature_of
+from pyct.run.target import Target, argument_checks
 
 # the defaults a left-out parameter is filled with, matched by exact type: values bind tracks
 _SIMPLE: tuple[type, ...] = (int, float, str, bool)
@@ -16,7 +16,8 @@ _SIMPLE: tuple[type, ...] = (int, float, str, bool)
 
 def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, object]:
     """The seed with each constructor parameter it leaves out filled, under ``self`` and in
-    every object form the call builds (``object_forms``), at any depth.
+    every object form the call builds (``object_forms``), at any depth, a JSON object a class
+    hint builds among them. A JSON list a hint builds fills none: it keeps its length.
 
     A parameter is filled when its default's type is exactly ``int``,
     ``float``, ``str`` or ``bool``, so the default is tracked like a value
@@ -29,13 +30,15 @@ def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, ob
     The caller's seed is never changed.
     """
     name = target.self_name
-    forms = object_forms(seed, name)
+    forms = object_forms(seed, name, argument_checks(target), target.home)
     fields = None if name is None else forms.args.get(name)
     if target.constructor is not None and type(fields) is dict:
         _fill(cast(dict[str, object], fields), target.constructor, 0)
     for found in forms.found:
+        if isinstance(found.form, list):
+            continue
         try:
-            signature = signature_of(load_class(found.form[CLASS_KEY], target.home))
+            signature = signature_of(form_class(found.form, found.check, target.home))
         except ClassNameError:
             signature = None
         items = found.form.get(ARGS_KEY)
