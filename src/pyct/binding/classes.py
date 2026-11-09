@@ -30,14 +30,23 @@ class ClassNameError(Exception):
         self.reason = reason
 
 
+class ClassFormError(ClassNameError):
+    """A ``"__class__"`` value that is not a str, or is badly written: ``problem`` says what it
+    must be, and the reason puts the key before it."""
+
+    def __init__(self, problem: str) -> None:
+        super().__init__(f"'__class__' {problem}")
+        self.problem = problem
+
+
 def load_class(text: object, home: str) -> type:
     """The class ``text`` names, a bare name read in the module ``home``.
 
     A raise or a ``SystemExit`` as the module imports, a name the module or
     a class on the way lacks, a raise other than AttributeError as a name is
     read, and a name that reaches something other than a class are each a
-    ``ClassNameError``, and so is a text that is not a str or is badly
-    written. A KeyboardInterrupt goes on, as a Ctrl-C does.
+    ``ClassNameError``. A text that is not a str or is badly written is a
+    ``ClassFormError``. A KeyboardInterrupt goes on, as a Ctrl-C does.
     """
     module_name, qualname = _parts(text, home)
     try:
@@ -65,7 +74,7 @@ def _parts(text: object, home: str) -> tuple[str, str]:
             module_name, qualname = home, text
         if _dotted(module_name) and _dotted(qualname):
             return module_name, qualname
-    raise ClassNameError(f"'__class__' must be MODULE::CLASS or a class name, got {written(text)}")
+    raise ClassFormError(f"must be MODULE::CLASS or a class name, got {written(text)}")
 
 
 def _dotted(name: str) -> bool:

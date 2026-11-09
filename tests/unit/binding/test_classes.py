@@ -134,3 +134,20 @@ def test_a_value_of_a_type_json_does_not_have_is_written_as_its_repr() -> None:
     # through run(), a tuple would otherwise read as a JSON array
     assert written((1,)) == "(1,)"
     assert written({"a": 1}) == '{"a": 1}'
+
+
+@pytest.mark.parametrize("text", [5, "a:b", "::Outer"], ids=["not-a-str", "colon", "no-module"])
+def test_a_badly_written_name_says_what_the_text_must_be(text: object) -> None:
+    with pytest.raises(classes.ClassFormError) as raised:
+        load_class(text, HOME)
+
+    problem = f"must be MODULE::CLASS or a class name, got {written(text)}"
+    assert raised.value.problem == problem
+    assert raised.value.reason == f"'__class__' {problem}"
+
+
+def test_a_name_that_reaches_no_class_is_no_form_error() -> None:
+    with pytest.raises(ClassNameError) as raised:
+        load_class("Missing", HOME)
+
+    assert not isinstance(raised.value, classes.ClassFormError)

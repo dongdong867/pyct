@@ -17,6 +17,13 @@ def positional_only(signature: inspect.Signature) -> tuple[inspect.Parameter, ..
     )
 
 
+def by_position(signature: inspect.Signature) -> list[inspect.Parameter]:
+    """The parameters that take a position, in signature order: the ones an object form's
+    ``"__args__"`` items fill, one item each."""
+    kinds = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    return [parameter for parameter in signature.parameters.values() if parameter.kind in kinds]
+
+
 def call_arguments(
     positional: Sequence[inspect.Parameter], args: Mapping[str, object], filled: int = 0
 ) -> tuple[tuple[object, ...], dict[str, object]]:

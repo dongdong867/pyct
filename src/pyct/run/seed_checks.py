@@ -14,7 +14,7 @@ from pyct.binding.annotations import Check, contradictions
 from pyct.binding.builds import object_forms
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import UsageError
-from pyct.run.object_checks import ObjectCheck, fit_failure
+from pyct.run.object_checks import ObjectCheck, fit_failure, form_lines
 from pyct.run.target import Target
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -109,6 +109,7 @@ class SeedCheck:
 
     signature: inspect.Signature
     checks: Mapping[str, Check]
+    home: str
     under_self: tuple[str, ObjectCheck] | None = None
 
     @classmethod
@@ -118,10 +119,10 @@ class SeedCheck:
         checks = checked_annotations(target.signature, target.fn)
         name = target.self_name
         if target.self_class is None or name is None:
-            return cls(target.signature, checks)
+            return cls(target.signature, checks, target.home)
         others = {key: check for key, check in checks.items() if key != name}
         under_self = (name, ObjectCheck.of(target.self_class, target.constructor))
-        return cls(target.signature, others, under_self)
+        return cls(target.signature, others, target.home, under_self)
 
     def refusals(self, seed: Mapping[str, object]) -> list[str]:
         """Every reason to refuse ``seed``.
@@ -129,7 +130,10 @@ class SeedCheck:
         When its keys do not fit the parameters, that line is the only one.
         Otherwise the lines for the object under ``self`` come first, when the
         seed gives one, then each other value that contradicts its
-        annotation, in signature order.
+        annotation, in signature order, then the lines of each object the seed
+        names with ``"__class__"`` (``form_lines``), outer before inner in seed
+        order. No annotation checks such an object itself: each input builds
+        it, and its class checks what it is built from.
         """
         fit = _fit_line(self.signature, seed)
         if fit is not None:
@@ -140,7 +144,10 @@ class SeedCheck:
         lines: list[str] = []
         if self.under_self is not None and name in seed:
             lines = self.under_self[1].lines(name, forms.args[name], built=built)
-        return lines + contradictions(self.checks, forms.args, built=built)
+        lines += contradictions(self.checks, forms.args, built=built)
+        return lines + [
+            line for found in forms.outer_first() for line in form_lines(found, self.home, built)
+        ]
 
 
 def _fit_line(signature: inspect.Signature, seed: Mapping[str, object]) -> str | None:

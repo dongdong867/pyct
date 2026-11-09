@@ -6,14 +6,12 @@ from collections.abc import Mapping
 from typing import cast
 
 from pyct.binding.builds import ARGS_KEY, CLASS_KEY, object_forms
+from pyct.binding.call import by_position
 from pyct.binding.classes import ClassNameError, load_class, signature_of
 from pyct.run.target import Target
 
 # the defaults a left-out parameter is filled with, matched by exact type: values bind tracks
 _SIMPLE: tuple[type, ...] = (int, float, str, bool)
-
-# the kinds of parameter an ``"__args__"`` item fills by position
-_POSITIONS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
 
 def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, object]:
@@ -46,11 +44,10 @@ def with_defaults(target: Target, seed: Mapping[str, object]) -> Mapping[str, ob
     return forms.args
 
 
-def _fill(fields: dict[str, object], signature: inspect.Signature, by_position: int) -> None:
-    """Fill each simple default ``fields`` leaves out, but those of the first ``by_position``
+def _fill(fields: dict[str, object], signature: inspect.Signature, filled: int) -> None:
+    """Fill each simple default ``fields`` leaves out, but those of the first ``filled``
     parameters that take a position."""
-    positions = [each for each in signature.parameters.values() if each.kind in _POSITIONS]
-    taken = {each.name for each in positions[:by_position]}
+    taken = {each.name for each in by_position(signature)[:filled]}
     for parameter in signature.parameters.values():
         left_out = parameter.name not in fields and parameter.name not in taken
         if left_out and type(parameter.default) in _SIMPLE:
