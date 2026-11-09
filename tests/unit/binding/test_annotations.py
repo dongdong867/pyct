@@ -3,7 +3,7 @@ from typing import Any, Optional
 
 import pytest
 
-from pyct.binding.annotations import Check, Items, OneOf, check_of, contradictions
+from pyct.binding.annotations import Check, Items, OneOf, as_typed, check_of, contradictions
 from pyct.run.target import Target
 
 
@@ -191,3 +191,18 @@ def test_a_dict_annotation_names_its_key_type_and_checks_nothing_under_one_not_s
 
     # JSON keys are always strings, so neither is checked, not even its kind
     assert contradictions(checks, {"a": [1], "b": {"k": 2}}) == []
+
+
+def test_contradictions_names_each_value_under_a_place_it_is_given() -> None:
+    lines = contradictions(
+        {"owner": str, "tags": Items(list, int)}, {"owner": 5, "tags": ["a"]}, "self"
+    )
+
+    assert lines == [
+        "self['owner'] must be a str, got 5",
+        "self['tags'][0] must be an int, got \"a\"",
+    ]
+
+
+def test_as_typed_writes_a_value_as_json() -> None:
+    assert as_typed(["ann", 1.5, None]) == '["ann", 1.5, null]'

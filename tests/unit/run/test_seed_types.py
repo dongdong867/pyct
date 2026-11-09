@@ -3,7 +3,7 @@ import inspect
 import pytest
 
 from pyct.config.command_line import UsageError
-from pyct.run.seed_checks import check_seed_types
+from pyct.run.seed_checks import check_seed
 from pyct.run.target import Target
 
 
@@ -26,19 +26,19 @@ def target_for(fn: object) -> Target:
     return Target(spec="m::f", fn=fn, file="m.py", signature=inspect.signature(fn))
 
 
-def test_check_seed_types_accepts_a_seed_that_fits_a_class_init() -> None:
-    check_seed_types(target_for(Point), {"n": 5})
+def test_check_seed_accepts_a_seed_that_fits_a_class_init() -> None:
+    check_seed(target_for(Point), {"n": 5})
 
 
-def test_check_seed_types_raises_one_line_per_contradiction() -> None:
+def test_check_seed_raises_one_line_per_contradiction() -> None:
     with pytest.raises(UsageError) as raised:
-        check_seed_types(target_for(four_plain_types), {"s": 5, "n": "5", "x": 1, "b": True})
+        check_seed(target_for(four_plain_types), {"s": 5, "n": "5", "x": 1, "b": True})
 
     assert str(raised.value) == 's must be a str, got 5\nn must be an int, got "5"'
 
 
-def test_check_seed_types_accepts_a_matching_seed() -> None:
-    check_seed_types(target_for(four_plain_types), {"s": "a", "n": 1, "x": 1.5, "b": True})
+def test_check_seed_accepts_a_matching_seed() -> None:
+    check_seed(target_for(four_plain_types), {"s": "a", "n": 1, "x": 1.5, "b": True})
 
 
 class ReadOnce:
@@ -56,7 +56,7 @@ class ReadOnce:
         return n
 
 
-def test_check_seed_types_reads_the_signature_the_loader_read() -> None:
+def test_check_seed_reads_the_signature_the_loader_read() -> None:
     read_once = ReadOnce()
     loaded = inspect.Signature(
         [inspect.Parameter("n", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=int)]
@@ -64,4 +64,4 @@ def test_check_seed_types_reads_the_signature_the_loader_read() -> None:
     target = Target(spec="m::read_once", fn=read_once, file="m.py", signature=loaded)
 
     with pytest.raises(UsageError, match='n must be an int, got "5"'):
-        check_seed_types(target, {"n": "5"})
+        check_seed(target, {"n": "5"})

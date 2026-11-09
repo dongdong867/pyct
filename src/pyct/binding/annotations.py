@@ -7,6 +7,8 @@ import typing
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from pyct.binding.places import step_in
+
 # the types a value is checked against as it stands, matched by identity
 PLAIN: tuple[type, ...] = (str, int, float, bool)
 
@@ -118,7 +120,9 @@ def _of_items(item: object) -> Check | None:
     return None
 
 
-def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> list[str]:
+def contradictions(
+    checks: Mapping[str, Check], seed: Mapping[str, object], place: str | None = None
+) -> list[str]:
     """One line per value in the seed that Python's own typing would not accept.
 
     Parameters come in the order of ``checks``, which is signature order, and
@@ -129,13 +133,15 @@ def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> l
     ``int`` while ``1`` fails ``bool``. A value is named by the access that
     reaches it, as Python writes it, ``cfg['a'][1]``, and spelled as JSON
     because the seed was typed as JSON, printable text as it was typed, so the
-    value can be found on the command line that gave it (see ``_as_typed``).
+    value can be found on the command line that gave it (see ``as_typed``).
+    With a ``place``, the seed is the object there, and each value is named
+    one step further in from it, ``self['owner']``.
     """
     return [
         line
         for name, check in checks.items()
         if name in seed
-        for line in _refused(check, seed[name], name)
+        for line in _refused(check, seed[name], name if place is None else step_in(place, name))
     ]
 
 
@@ -159,7 +165,7 @@ def _refused(check: Check, value: object, written: str) -> list[str]:
     if check.each is None:
         return []
     each = check.each
-    return [line for key, item in entries for line in _refused(each, item, f"{written}[{key!r}]")]
+    return [line for key, item in entries for line in _refused(each, item, step_in(written, key))]
 
 
 def _entries(kind: type, value: object) -> Iterable[tuple[object, object]] | None:
@@ -176,10 +182,10 @@ def _accepts(hint: type, value: object) -> bool:
 
 
 def _refusal(written: str, kinds: tuple[type, ...], value: object) -> str:
-    return f"{written} must be {_wanted(kinds)}, got {_as_typed(value)}"
+    return f"{written} must be {_wanted(kinds)}, got {as_typed(value)}"
 
 
-def _as_typed(value: object) -> str:
+def as_typed(value: object) -> str:
     """The value as JSON, printable text as it was typed and every other character escaped.
 
     A line separator, a control or a bidi override would break or reorder

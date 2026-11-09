@@ -27,8 +27,7 @@ CHECKS = (
     "parse_plateau",
     "parse_solver_timeout",
     "load_target",
-    "check_seed_fits",
-    "check_seed_types",
+    "check_seed",
     "locate",
     "run",
 )

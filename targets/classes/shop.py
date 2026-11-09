@@ -7,12 +7,12 @@ class Base:
 
 
 class Cart(Base):
-    def __init__(self, owner):
+    def __init__(self, owner: str):
         if owner == "":
             raise ValueError("no owner")
         self.owner = owner
 
-    def total(self, discount):
+    def total(self, discount: int):
         if self.owner == "admin":
             return 0
         if discount > 10:

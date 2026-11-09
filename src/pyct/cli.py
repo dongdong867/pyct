@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import functools
-import inspect
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -41,7 +40,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import run
-from pyct.run.seed_checks import check_seed_fits, check_seed_types, parse_seed
+from pyct.run.seed_checks import check_seed, missing_args_message, parse_seed
 from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
@@ -223,8 +222,7 @@ def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | 
         return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
-    check_seed_fits(target.signature, seed)
-    check_seed_types(target, seed)
+    check_seed(target, seed)
     return Seeds((seed,))
 
 
@@ -455,16 +453,6 @@ def check_spec(spec: str) -> None:
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
-
-
-def missing_args_message(signature: inspect.Signature) -> str:
-    """Name the parameters the seed must give, and each way to pass it."""
-    parameters = ", ".join(signature.parameters) or "no parameters"
-    return (
-        f"args are required: a JSON object for {parameters}\n"
-        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
-        f" or a file of them through --seeds"
-    )
 
 
 class _Parser(argparse.ArgumentParser):
