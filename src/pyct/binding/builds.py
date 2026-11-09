@@ -136,9 +136,11 @@ def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
     first. ``self_name`` is the parameter whose dict holds the fields of the
     instance a method runs on. Every dict and list on the way to a form is
     copied (``holding_forms``), the form too, so the caller's seed never
-    changes, and no other is. A form, or a list or dict on the way to one, is
-    gone into once: one reached again, at a second place or inside itself,
-    stays as it came there. The traversal is a loop, not a call per level.
+    changes. So are the dict under ``self_name`` and each form's
+    ``"__args__"`` list, whatever they hold. A form, or a list or dict on the
+    way to one, is gone into once: one reached again, at a second place or
+    inside itself, stays as it came there. The traversal is a loop, not a
+    call per level.
     """
     holding = holding_forms(args)
     top = dict(args)

@@ -106,9 +106,12 @@ class Walk:
     no access can name is walked again, into the same copy, when a path that
     names it reaches it. Each is walked at most twice, so the walk ends.
 
-    A list first reached under a name is tracked whole: the visitor makes its
-    copy and says which items it takes, and every value placed in it is a
-    value inside a tracked list. An object whose class passes the copy rule
+    A list first reached under a name is tracked whole, unless its shape is
+    fixed: one under ``Fields``, an object form's ``"__args__"``, or one that
+    holds an object form (``holding_forms``) is a plain copy of the seed's
+    length, its items named by index. For a tracked list the visitor makes
+    its copy and says which items it takes, and every value placed in it is
+    a value inside a tracked list. An object whose class passes the copy rule
     (``objects.copies_by_default``), a subclass of dict or list among them,
     is copied by deepcopy with a memo that reads the walk's copies, and its
     attributes, or its items, are then followed into that copy, so the
