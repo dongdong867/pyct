@@ -36,6 +36,58 @@ def object_form(value: object) -> TypeGuard[dict[str, object]]:
     return type(value) is dict and CLASS_KEY in value
 
 
+def holding_forms(args: Mapping[str, object]) -> set[int]:
+    """The lists and dicts in ``args`` that hold an object form at any depth, by identity.
+
+    A form is held along plain lists, plain dicts and other forms, from each
+    parameter's value down: exactly a ``list`` or a ``dict``, never a tuple,
+    a subclass or any other object. Each is gone into once, by a loop, and
+    every one that reaches a form is listed, whichever path reached it
+    first, so a list in a cycle is listed when anything in the cycle holds a
+    form.
+    """
+    above: dict[int, list[int]] = {}
+    forms: list[int] = []
+    pending: list[tuple[object, int | None]] = [(value, None) for value in args.values()]
+    while pending:
+        value, parent = pending.pop()
+        if type(value) is not list and type(value) is not dict:
+            continue
+        known = id(value) in above
+        parents = above.setdefault(id(value), [])
+        if parent is not None:
+            parents.append(parent)
+        if known:
+            continue
+        if object_form(value):
+            forms.append(id(value))
+        pending.extend((item, id(value)) for item in _held(value))
+    return _reaching(forms, above)
+
+
+def _held(value: list[object] | dict[object, object]) -> Iterable[object]:
+    """The values a list or dict holds where a form is looked for: every one, but a form's
+    ``"__class__"``."""
+    if type(value) is list:
+        return value
+    items = cast(dict[object, object], value)
+    if object_form(items):
+        return (item for key, item in items.items() if key != CLASS_KEY)
+    return items.values()
+
+
+def _reaching(forms: list[int], above: Mapping[int, list[int]]) -> set[int]:
+    """Every container some path of ``above`` leads up to from a form."""
+    reaching: set[int] = set()
+    stack = list(forms)
+    while stack:
+        for parent in above[stack.pop()]:
+            if parent not in reaching:
+                reaching.add(parent)
+                stack.append(parent)
+    return reaching
+
+
 @dataclass(frozen=True)
 class SelfBuild:
     """How each call builds the instance a method runs on.

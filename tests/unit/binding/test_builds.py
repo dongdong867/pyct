@@ -1,11 +1,12 @@
 """The object forms of a seed, listed innermost first, and the plan of the call that builds them."""
 
 import inspect
+import sys
 from collections.abc import Mapping
 
 import pytest
 
-from pyct.binding.builds import BuildError, SelfBuild, object_forms, plan_call
+from pyct.binding.builds import BuildError, SelfBuild, holding_forms, object_forms, plan_call
 from pyct.binding.call import positional_only
 from tests.unit.binding.named_classes import Holder, Pinned, Point
 
@@ -130,3 +131,51 @@ def test_dropping_the_plan_lets_go_of_every_object() -> None:
 
     assert plan.keywords == {}
     assert all(not build.keywords and not build.positional for build in plan.builds)
+
+
+def test_a_list_or_dict_holds_a_form_at_any_depth_along_plain_lists_and_dicts() -> None:
+    rows = [{"c": dict(POINT)}, [1]]
+    d = {"x": [[dict(POINT)]], "y": {"k": 1}}
+
+    held = holding_forms({"rows": rows, "d": d, "plain": [1, [2]]})
+
+    assert held == {id(rows), id(rows[0]), id(d), id(d["x"]), id(d["x"][0])}
+
+
+def test_a_list_holds_a_form_through_another_form_and_through_self_s_dict() -> None:
+    inner = [dict(POINT)]
+    form = {"__class__": "Holder", "inner": inner}
+    fields = {"owners": [dict(POINT)]}
+
+    held = holding_forms({"o": form, "self": fields})
+
+    assert held == {id(inner), id(form), id(fields), id(fields["owners"])}
+
+
+def test_a_tuple_a_list_subclass_and_an_object_are_not_gone_into() -> None:
+    class Rows(list[object]):
+        pass
+
+    class Box:
+        def __init__(self) -> None:
+            self.rows = [dict(POINT)]
+
+    assert holding_forms({"t": ([dict(POINT)],), "s": Rows([dict(POINT)]), "o": Box()}) == set()
+
+
+def test_every_list_in_a_cycle_that_reaches_a_form_holds_it() -> None:
+    a: list[object] = [None, dict(POINT)]
+    b: list[object] = [a]
+    a[0] = b
+    itself: list[object] = [dict(POINT)]
+    itself.append(itself)
+
+    assert holding_forms({"b": b, "itself": itself}) == {id(a), id(b), id(itself)}
+
+
+def test_a_seed_nested_past_the_recursion_limit_is_gone_through() -> None:
+    nested: list[object] = [dict(POINT)]
+    for _ in range(sys.getrecursionlimit() * 2):
+        nested = [nested]
+
+    assert id(nested) in holding_forms({"n": nested})
