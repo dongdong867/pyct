@@ -44,6 +44,11 @@ def bind(
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
     (see ``Walk``). ``checks`` is what each parameter's annotation asks, which marks a
     ``dict[int, X]`` dict as one the solver adds int keys to, named or made up.
+
+    An object form, a dict holding ``"__class__"`` where a call builds an
+    object (``builds``), is a plain dict whose keys stay fixed, its
+    ``"__args__"`` a plain list of fixed length, and ``"__class__"`` is never
+    tracked; the values in it are tracked by their places.
     """
     tracker = _Tracker(sink)
     args = Walk(tracker).rebuilt(seed, checks)

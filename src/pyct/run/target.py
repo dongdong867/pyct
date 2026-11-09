@@ -11,13 +11,14 @@ import types
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
-from typing import TypeGuard
 
+from pyct.binding import classes
 from pyct.binding.annotations import Check, Fields
+from pyct.binding.builds import SelfBuild
 from pyct.binding.call import positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.execution.blame import one_line
-from pyct.execution.execute import ExecutionContext, SelfBuild
+from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
@@ -80,6 +81,13 @@ class Target:
     self_name: str | None = None
     constructor: inspect.Signature | None = None
 
+    @property
+    def home(self) -> str:
+        """The module a bare class name under ``"__class__"`` is read in: the one the target
+        function was written in, or the spec's own module for a callable that names none."""
+        written = getattr(self.fn, "__module__", None)
+        return written if isinstance(written, str) else self.spec.partition("::")[0]
+
 
 def load_target(
     spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
@@ -112,6 +120,7 @@ def load_target(
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
     self_name = None if self_class is None else _self_name(signature)
+    built = None if self_class is None or self_name is None else self_class
     return Target(
         spec=spec,
         fn=fn,
@@ -121,7 +130,7 @@ def load_target(
         self_class=self_class,
         followed=(spec, fn),
         self_name=self_name,
-        constructor=None if self_class is None or self_name is None else _constructor(self_class),
+        constructor=None if built is None else classes.constructor(built),
     )
 
 
@@ -136,6 +145,7 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
         positional=positional_only(target.signature),
         checks=argument_checks(target),
         self_build=_self_build(target),
+        home=target.home,
     )
 
 
@@ -170,18 +180,6 @@ def _self_name(signature: inspect.Signature) -> str | None:
     first = next(iter(signature.parameters.values()), None)
     positions = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
     return first.name if first is not None and first.kind in positions else None
-
-
-def _constructor(cls: type) -> inspect.Signature | None:
-    """The class's signature, or None when Python cannot read it.
-
-    Reading it can run the class's own code, as ``_signature`` says, so any
-    Exception or a SystemExit means the same: no signature to read.
-    """
-    try:
-        return inspect.signature(cls)
-    except (Exception, SystemExit):
-        return None
 
 
 def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], type | None]:
@@ -236,7 +234,7 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
     the class it is read through. A name only the class's own type holds,
     as ``mro``, is bound to the class too.
     """
-    if not _is_a_class(owner) or _bound_to(fn, owner):
+    if not classes.is_a_class(owner) or _bound_to(fn, owner):
         return None
     for base in inspect.getmro(owner):
         if name in vars(base):
@@ -244,12 +242,6 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
             unbinding = issubclass(type(held), (staticmethod, classmethod))
             return owner if _has_get(type(held)) and not unbinding else None
     return None
-
-
-def _is_a_class(owner: object) -> TypeGuard[type]:
-    """Whether ``owner`` is a class, told by its type alone: ``isinstance`` would read
-    ``__class__``, which an object's own property can answer."""
-    return issubclass(type(owner), type)
 
 
 def _bound_to(fn: object, owner: type) -> bool:
