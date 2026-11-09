@@ -109,3 +109,21 @@ def longer(cs):
     if len(cs[1]) > 2:
         return "long"
     return "short"
+
+
+def welcome(g):
+    if g.age > 60:
+        return "welcome back"
+    return "welcome"
+
+
+def pair(a, b):
+    if a.age > b.age:
+        return "a"
+    return "b"
+
+
+def far(p):
+    if p.x > 5:
+        return "far"
+    return "near"

@@ -128,6 +128,23 @@ class Forms:
     args: dict[str, object]
     found: tuple[Found, ...]
 
+    def outer_first(self) -> list[Found]:
+        """The forms in seed order, each before the forms inside it, depth first: the order a
+        person reads the seed in. A list or dict is gone into once, by a loop."""
+        by_identity = {id(found.form): found for found in self.found}
+        ordered: list[Found] = []
+        seen: set[int] = set()
+        pending: list[object] = list(reversed(self.args.values()))
+        while pending:
+            value = pending.pop()
+            if (type(value) is not list and type(value) is not dict) or id(value) in seen:
+                continue
+            seen.add(id(value))
+            if id(value) in by_identity:
+                ordered.append(by_identity[id(value)])
+            pending.extend(reversed(list(_held(cast(list[object] | dict[object, object], value)))))
+        return ordered
+
 
 def object_forms(args: Mapping[str, object], self_name: str | None) -> Forms:
     """Each object form ``args`` holds, with its place, innermost first.
@@ -279,10 +296,17 @@ def _class_of(found: Found, home: str) -> type:
         cls = load_class(found.form[CLASS_KEY], home)
     except ClassNameError as error:
         raise BuildError(found.place, error.reason) from error
-    items = found.form.get(ARGS_KEY, [])
-    if type(items) is not list:
-        raise BuildError(found.place, f"'{ARGS_KEY}' must be a list, got {written(items)}")
+    problem = args_problem(found.form)
+    if problem is not None:
+        raise BuildError(found.place, f"'{ARGS_KEY}' {problem}")
     return cls
+
+
+def args_problem(form: Mapping[str, object]) -> str | None:
+    """What an object form's ``"__args__"`` must be when it is not a list, or None when it is
+    one or the form has none."""
+    items = form.get(ARGS_KEY, [])
+    return None if type(items) is list else f"must be a list, got {written(items)}"
 
 
 def _arguments(form: dict[str, object], cls: type) -> tuple[list[object], dict[str, object]]:

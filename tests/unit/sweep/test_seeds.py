@@ -13,7 +13,7 @@ from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.sweep.seeds import NoSeedError, carried, seed_of
 from targets.sweep import cannot_seed, defaults, seeds, seeds_as_text, text_annotations
-from tests.unit.sweep import own_t
+from tests.unit.sweep import later_named, own_t
 
 T = TypeVar("T")
 UserId = NewType("UserId", int)
@@ -224,3 +224,11 @@ def test_every_seed_passes_pyct_runs_seed_checks(fn: Callable[..., object]) -> N
     assert contradictions(checked_annotations(signature, fn), seed) == []
     positional, keywords = call_arguments(positional_only(signature), seed)
     signature.bind(*positional, **keywords)
+
+
+def test_a_named_tuple_s_postponed_hints_are_read_as_text() -> None:
+    assert as_json(seed_of(later_named.Label)) == as_json({"text": "", "size": 0})
+
+
+def test_a_postponed_hint_no_value_fits_is_written_as_its_text() -> None:
+    assert reason(later_named.Placed) == "no seed for owner: 'Box'"

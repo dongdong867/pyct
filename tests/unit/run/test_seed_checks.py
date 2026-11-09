@@ -153,3 +153,56 @@ def test_seed_refusals_check_nothing_under_a_self_the_seed_leaves_to_its_default
     )
 
     assert seed_refusals(target, {"discount": "1"}) == ['discount must be an int, got "1"']
+
+
+class Customer:
+    def __init__(self, name, age, vip=False):  # noqa: ANN001
+        self.name, self.age, self.vip = name, age, vip
+
+
+class Guest:
+    def __init__(self, name: str, age: int, tags: list[str]) -> None:
+        self.name, self.age, self.tags = name, age, tags
+
+
+def takes_an_int(c: int) -> None:
+    pass
+
+
+def takes_a_dict(c: dict[str, str]) -> None:
+    pass
+
+
+def takes_anything(c) -> None:  # noqa: ANN001
+    pass
+
+
+@pytest.mark.parametrize("fn", [takes_an_int, takes_a_dict], ids=["int", "dict"])
+def test_a_parameter_s_annotation_gives_no_line_for_an_object_the_seed_names(fn: object) -> None:
+    seed = {"c": {"__class__": "Customer", "name": "ann", "age": 30}}
+
+    assert seed_refusals(target_for(fn), seed) == []
+
+
+def test_the_objects_inside_one_whose_class_does_not_load_are_still_checked() -> None:
+    inner = {"__class__": "Customer", "name": "ann", "age": 30, "__calls__": []}
+    seed = {"c": {"__class__": "Nowhere", "customer": inner}}
+
+    lines = seed_refusals(target_for(takes_anything), seed)
+
+    assert lines == [
+        f"c['__class__']: {__name__} has no class Nowhere",
+        "c['customer'] cannot hold '__calls__': pyct reserves keys that start and end with __",
+    ]
+
+
+def test_args_that_are_not_a_list_skip_the_fit_and_keep_the_other_lines() -> None:
+    guest = {"__class__": "Guest", "__args__": "ann", "age": "30", "__calls__": []}
+
+    lines = seed_refusals(target_for(takes_anything), {"c": guest})
+
+    assert lines == [
+        "c['__args__'] must be a list, got \"ann\"",
+        "c cannot hold '__calls__': pyct reserves keys that start and end with __",
+        "c['age'] must be an int, got \"30\"",
+    ]

@@ -25,6 +25,25 @@ def test_forms_are_listed_innermost_first_and_siblings_in_seed_order() -> None:
     assert places(args) == ["a['inner']['inner']", "a['inner']['other']", "a['inner']", "a", "b"]
 
 
+def test_outer_first_lists_each_form_before_the_ones_inside_it() -> None:
+    inner = {"__class__": "Holder", "inner": dict(POINT), "other": dict(POINT)}
+    args = {
+        "a": {"__class__": "Holder", "inner": inner},
+        "rows": [dict(POINT)],
+        "self": dict(POINT),
+    }
+
+    outer_first = object_forms(args, "self").outer_first()
+
+    assert [found.place for found in outer_first] == [
+        "a",
+        "a['inner']",
+        "a['inner']['inner']",
+        "a['inner']['other']",
+        "rows[0]",
+    ]
+
+
 def test_args_items_are_places_by_index() -> None:
     args = {"p": {"__class__": "Holder", "__args__": [dict(POINT)]}}
 

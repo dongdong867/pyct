@@ -5,13 +5,17 @@ from __future__ import annotations
 import inspect
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
+from typing import cast
 
-from pyct.binding.annotations import Check, as_typed, contradictions
-from pyct.binding.call import call_arguments, positional_only
+from pyct.binding.annotations import Check, as_typed, contradictions, refused
+from pyct.binding.builds import ARGS_KEY, CLASS_KEY, Found, args_problem
+from pyct.binding.call import by_position, call_arguments, positional_only
+from pyct.binding.classes import ClassFormError, ClassNameError, load_class, signature_of
+from pyct.binding.places import step_in
 from pyct.binding.resolve import checked_annotations
 
-# the key the items passed first by position sit under, listed in a fit line when there are any
-_ARGS = "__args__"
+# the keys that start and end with __ an object the seed names may hold
+_FORM_KEYS = frozenset({CLASS_KEY, ARGS_KEY})
 
 
 @dataclass(frozen=True)
@@ -42,7 +46,8 @@ class ObjectCheck:
         place: str,
         value: object,
         allowed: Collection[str] = frozenset(),
-        positional: Sequence[object] = (),
+        positional: Sequence[object] | None = (),
+        built: Collection[int] = frozenset(),
     ) -> list[str]:
         """Every refusal line for the object at ``place``: its shape, its reserved keys, its fit,
         then its values' types.
@@ -50,8 +55,12 @@ class ObjectCheck:
         A value that is not a JSON object gives that one line. A key that
         starts and ends with ``__`` is refused unless it is ``allowed``, and is
         never bound. The other keys bind as the build passes them, after the
-        ``positional`` items. With no signature, the fit and the types are not
-        checked.
+        ``positional`` items; with ``positional`` None, which parameters the
+        items fill is unknown, and the fit is not checked. With no signature,
+        the fit and the types are not checked. Each ``positional`` item is
+        checked against the parameter it fills, then the other values. A value
+        in ``built``, an object each input builds, has no type to check
+        (``contradictions``).
         """
         if not isinstance(value, dict):
             return [
@@ -64,16 +73,67 @@ class ObjectCheck:
         if self.signature is None:
             return lines
         fields = {key: item for key, item in value.items() if not _reserved(key)}
-        reason = fit_failure(self.signature, fields, positional)
+        reason = None if positional is None else fit_failure(self.signature, fields, positional)
         if reason is not None:
             parameters = ", ".join(self.signature.parameters)
-            given = _bound_keys(value, positional)
+            given = _bound_keys(value, positional or ())
             lines.append(f"{place} ({given}) does not fit {self._name}({parameters}): {reason}")
-        return lines + contradictions(self.checks, fields, place)
+        lines += self._item_lines(by_position(self.signature), place, positional or (), built)
+        return lines + contradictions(self.checks, fields, place, built)
+
+    def _item_lines(
+        self,
+        parameters: Sequence[inspect.Parameter],
+        place: str,
+        items: Sequence[object],
+        built: Collection[int],
+    ) -> list[str]:
+        """The lines for the items passed by position, item i checked against the i-th of the
+        ``parameters`` that take a position and named ``place['__args__'][i]``. An item past
+        those parameters fills ``*args``, and is not checked."""
+        written = step_in(place, ARGS_KEY)
+        return [
+            line
+            for index, (parameter, item) in enumerate(zip(parameters, items, strict=False))
+            if parameter.name in self.checks
+            for line in refused(self.checks[parameter.name], item, step_in(written, index), built)
+        ]
 
     @property
     def _name(self) -> str:
         return self.built.__qualname__
+
+
+def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
+    """Every refusal line for the object a seed names at ``found.place``, its class read as
+    the build reads it, a bare name in the module ``home``.
+
+    A ``"__class__"`` that names no class gives its one line: with no class,
+    nothing else of the object can be checked. An ``"__args__"`` that is not
+    a list gives its line, then the object's other lines but the fit. Each
+    object inside this one has lines of its own, so a value in ``built`` gives
+    none here.
+    """
+    try:
+        built_class = load_class(found.form[CLASS_KEY], home)
+    except ClassNameError as error:
+        return [_class_line(found.place, error)]
+    check = ObjectCheck.of(built_class, signature_of(built_class))
+    problem = args_problem(found.form)
+    if problem is not None:
+        rest = check.lines(found.place, found.form, _FORM_KEYS, None, built)
+        return [f"{step_in(found.place, ARGS_KEY)} {problem}", *rest]
+    items = cast(list[object], found.form.get(ARGS_KEY, []))
+    return check.lines(found.place, found.form, _FORM_KEYS, items, built)
+
+
+def _class_line(place: str, error: ClassNameError) -> str:
+    """The line for a ``"__class__"`` that names no class: what a badly written one must be,
+    or why the name reaches no class."""
+    written = step_in(place, CLASS_KEY)
+    if isinstance(error, ClassFormError):
+        return f"{written} {error.problem}"
+    return f"{written}: {error.reason}"
 
 
 def fit_failure(
@@ -104,7 +164,7 @@ def _star_args(signature: inspect.Signature) -> str | None:
 def _bound_keys(value: Mapping[str, object], positional: Sequence[object]) -> str:
     """The keys the fit binds, in the seed's order, and ``__args__`` when items are passed by
     position; ``nothing`` for none."""
-    bound = [key for key in value if not _reserved(key) or (key == _ARGS and positional)]
+    bound = [key for key in value if not _reserved(key) or (key == ARGS_KEY and positional)]
     return ", ".join(bound) or "nothing"
 
 

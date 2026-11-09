@@ -1,6 +1,7 @@
 import inspect
 
-from pyct.run.object_checks import ObjectCheck
+from pyct.binding.builds import object_forms
+from pyct.run.object_checks import ObjectCheck, form_lines
 
 RESERVED = "pyct reserves keys that start and end with __"
 
@@ -175,7 +176,11 @@ def test_lines_list_the_positional_items_when_they_do_not_fit() -> None:
     lines = check.lines("c", seed, allowed={"__class__", "__args__"}, positional=(1, 2, 3))
 
     fit = reason(Point, 1, 2, 3, name="a")
-    assert lines == [f"c (__args__, name) does not fit Point(x, y, name): {fit}"]
+    # the third item fills name by position, so it is checked against name's annotation too
+    assert lines == [
+        f"c (__args__, name) does not fit Point(x, y, name): {fit}",
+        "c['__args__'][2] must be a str, got 3",
+    ]
 
 
 def test_lines_check_only_the_shape_and_reserved_keys_with_no_signature() -> None:
@@ -186,3 +191,76 @@ def test_lines_check_only_the_shape_and_reserved_keys_with_no_signature() -> Non
         "self must be a JSON object of Cart's constructor arguments, got 5"
     ]
     assert check.lines("self", {"__calls__": []}) == [f"self cannot hold '__calls__': {RESERVED}"]
+
+
+def test_lines_give_no_type_line_for_an_object_each_input_builds() -> None:
+    owner = {"__class__": "Customer", "name": "ann"}
+
+    lines = check_for(Cart).lines("self", {"owner": owner}, built=frozenset({id(owner)}))
+
+    assert lines == []
+
+
+def test_lines_check_each_positional_item_against_the_parameter_it_fills() -> None:
+    seed = {"__args__": ["1"], "y": "2"}
+
+    lines = check_for(Point).lines("p", seed, allowed={"__args__"}, positional=["1"])
+
+    assert lines == [
+        "p['__args__'][0] must be an int, got \"1\"",
+        "p['y'] must be an int, got \"2\"",
+    ]
+
+
+def test_lines_check_no_item_past_the_parameters_that_take_a_position() -> None:
+    seed = {"__args__": ["a", "b"]}
+
+    assert check_for(Spread).lines("t", seed, allowed={"__args__"}, positional=["a", "b"]) == []
+
+
+def test_lines_give_no_type_line_for_an_item_each_input_builds() -> None:
+    item = {"__class__": "Customer", "name": "ann"}
+    seed = {"__args__": [item, 2]}
+
+    lines = check_for(Point).lines("p", seed, {"__args__"}, [item, 2], frozenset({id(item)}))
+
+    assert lines == []
+
+
+def test_lines_with_unknown_positions_check_no_fit_and_no_item() -> None:
+    seed = {"__args__": "a", "name": 5}
+
+    lines = check_for(Point).lines("p", seed, allowed={"__args__"}, positional=None)
+
+    assert lines == ["p['name'] must be a str, got 5"]
+
+
+def form_lines_of(seed: dict[str, object]) -> list[str]:
+    """Every object's lines for ``seed``, its bare class names read in this module."""
+    forms = object_forms(seed, None)
+    built = frozenset(id(found.form) for found in forms.found)
+    return [line for found in forms.outer_first() for line in form_lines(found, __name__, built)]
+
+
+def test_form_lines_refuse_a_reserved_key_of_a_class_python_cannot_read() -> None:
+    date = {"__class__": "datetime::date", "year": 2024, "month": 1, "day": 1, "__calls__": []}
+
+    assert form_lines_of({"d": date}) == [f"d cannot hold '__calls__': {RESERVED}"]
+
+
+def test_form_lines_give_the_fit_and_the_values_of_one_object_together() -> None:
+    lines = form_lines_of({"c": {"__class__": "Cart", "owner": 5, "colour": "red"}})
+
+    fit = reason(Cart, owner=5, colour="red")
+    assert lines == [
+        f"c (owner, colour) does not fit Cart(owner, discount): {fit}",
+        "c['owner'] must be a str, got 5",
+    ]
+
+
+def test_form_lines_check_an_object_inside_an_object_by_its_own_class() -> None:
+    inner = {"__class__": "Cart", "owner": 5}
+
+    assert form_lines_of({"p": {"__class__": "Point", "__args__": [inner, 2]}}) == [
+        "p['__args__'][0]['owner'] must be a str, got 5"
+    ]
