@@ -7,7 +7,17 @@ from datetime import date
 from typing import TYPE_CHECKING, Optional
 
 from targets.classes.customers import Customer, Guest, Pair, Point, Profile
-from targets.classes.orders import Box, Color, Drawable, Item, Order, Shape, Spec, Square
+from targets.classes.orders import (
+    Box,
+    Color,
+    Drawable,
+    Item,
+    Node,
+    Order,
+    Shape,
+    Spec,
+    Square,
+)
 
 if TYPE_CHECKING:
     from targets.classes.orders import Buyer
@@ -153,3 +163,9 @@ def either(c: Customer | Guest):
 
 def render(d: Drawable):
     return d
+
+
+def chain(n: "Node"):  # noqa: UP037 - the quoted form is what it tests
+    if n.next is not None and n.next.value > 5:
+        return "big"
+    return "small"

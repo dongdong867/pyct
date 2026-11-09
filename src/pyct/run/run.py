@@ -164,9 +164,9 @@ def run(
     The run's coverage adds the lines the target's import ran
     (``Target.import_lines``) to the inputs'; the plateau reads the inputs'
     alone. Each seed's constructor arguments, under the ``self`` of a method
-    whose instance each input builds and in each object it names with
-    ``"__class__"``, first take the simple defaults it leaves out
-    (``with_defaults``).
+    whose instance each input builds, in each object it names with
+    ``"__class__"``, and in each JSON object a class hint builds, first take
+    the simple defaults it leaves out (``with_defaults``).
     """
     seeds = (seed,) if isinstance(seed, Mapping) else tuple(seed)
     if not seeds:

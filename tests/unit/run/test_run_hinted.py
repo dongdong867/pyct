@@ -35,3 +35,25 @@ def test_an_object_a_hint_cannot_build_fails_its_input_unrun(
     assert record.failure.kind is FailureKind.TARGET_RAISED
     assert record.failure.detail == detail
     assert record.forks == () and record.covered_lines == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("spec", "name"),
+    [
+        ("targets.classes.linked::head", "n"),
+        (f"{HINTED}::chain", "n"),
+    ],
+)
+def test_a_quoted_class_in_a_union_builds_at_the_top_and_inside(spec: str, name: str) -> None:
+    seed = {name: {"value": 1, "next": {"value": 2}}}
+    fork = [">", ["[]", ["[]", name, "'next'"], "'value'"], 5]
+
+    result = run(load_target(spec), seed, isolation=Isolation.IN_PROCESS)
+
+    assert all(record.failure is None for record in result.records), result.records
+    assert fork in [branch.expression for branch in result.records[0].forks]
+    assert any(
+        record.args[name]["next"]["value"] > 5  # pyrefly: ignore[bad-index]
+        for record in result.records[1:]
+        if record.args[name]["next"] is not None  # pyrefly: ignore[bad-index]
+    )

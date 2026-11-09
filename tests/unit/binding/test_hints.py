@@ -9,15 +9,17 @@ from typing import Any, Optional, TypedDict
 import pytest
 
 from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass
-from pyct.binding.hints import Inside, hint_check, inside_of
+from pyct.binding.hints import Inside, hint_check, hints_of, inside_of
 from pyct.binding.resolve import checked_annotations
 from tests.unit.binding.hint_classes import (
     Abstract,
     Box,
+    Chain,
     Drawable,
     Line,
     Node,
     Pair,
+    Quoted,
     Rows,
     Shape,
     Spot,
@@ -167,3 +169,38 @@ def test_checked_annotations_reads_with_the_hint_reader() -> None:
         "n": int,
         "s": NoOneClass(f"hint Shape is an abstract class; {NAME_IT}"),
     }
+
+
+class Link:
+    """A class whose hint names itself in quotes, inside ``Optional``, as typed code before 3.10
+    writes it: the member is a ``ForwardRef``."""
+
+    def __init__(self, value: int, next: Optional["Link"] = None) -> None:  # noqa: UP037, UP045
+        self.value = value
+        self.next = next
+
+
+def head(n: Optional["Link"], at: "Point") -> None:  # noqa: UP037, UP045
+    return None
+
+
+def test_a_quoted_class_inside_a_union_is_read_where_it_was_written() -> None:
+    checks = checked_annotations(inspect.signature(head), head, hints_of(head))
+
+    assert checks == {"n": Builds(Link), "at": Builds(Point)}
+
+
+def test_a_quoted_class_inside_a_constructor_s_union_builds() -> None:
+    assert inside_of(Link).keys == Fields({"value": int, "next": Builds(Link)})
+
+
+def test_a_quoted_class_kept_as_text_builds() -> None:
+    assert inside_of(Chain).keys == Fields({"value": int, "next": Builds(Chain)})
+    assert inside_of(Quoted).keys == Fields({"at": Builds(Point)})
+
+
+def test_a_quoted_name_no_module_resolves_reads_as_no_class() -> None:
+    def lost(n: Optional["Missing"]) -> None:  # noqa: F821, UP037, UP045  # pyrefly: ignore[unknown-name]
+        return None
+
+    assert checked_annotations(inspect.signature(lost), lost, hints_of(lost)) == {}

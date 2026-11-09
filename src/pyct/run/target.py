@@ -16,7 +16,7 @@ from pyct.binding import classes
 from pyct.binding.annotations import Check
 from pyct.binding.builds import SelfBuild
 from pyct.binding.call import positional_only
-from pyct.binding.hints import hint_check, inside_of
+from pyct.binding.hints import hints_of, inside_of
 from pyct.binding.resolve import checked_annotations
 from pyct.execution.blame import one_line
 from pyct.execution.execute import ExecutionContext
@@ -152,13 +152,13 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
 
 def argument_checks(target: Target) -> dict[str, Check]:
     """What each parameter's hint asks of the seed, read as each input reads it
-    (``hint_check``): a class hint builds the object under it.
+    (``hints_of``): a class hint builds the object under it.
 
     For a method whose instance each input builds, the value under its first
     parameter holds the constructor's arguments, whose keys stay fixed and
     whose values the constructor's hints ask for (``Fields``).
     """
-    checks = checked_annotations(target.signature, target.fn, hint_check)
+    checks = checked_annotations(target.signature, target.fn, hints_of(target.fn))
     if target.self_class is None or target.self_name is None:
         return checks
     return {**checks, target.self_name: inside_of(target.self_class).keys}

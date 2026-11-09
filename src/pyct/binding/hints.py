@@ -10,15 +10,17 @@ of two classes name no one class.
 
 from __future__ import annotations
 
+import functools
 import inspect
 import types
 import typing
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from pyct.binding.annotations import NONE, PLAIN, Builds, Check, Fields, NoOneClass, check_of
 from pyct.binding.call import by_position
 from pyct.binding.classes import is_a_class, signature_of
-from pyct.binding.resolve import checked_annotations
+from pyct.binding.resolve import as_text, checked_annotations, resolved
 
 # the modules whose classes keep the JSON value: the types JSON gives, and typing's own forms
 _KEPT_MODULES = frozenset({"builtins", "typing"})
@@ -50,21 +52,54 @@ class Inside:
 NOTHING = Inside(Fields({}), Fields({}))
 
 
-def hint_check(annotation: object) -> Check | None:
+def hint_check(annotation: object, owner: object = None) -> Check | None:
     """What a resolved hint asks: the class it builds, why it names no one class, or what
-    ``check_of`` makes of it. A hint whose test raises asks nothing."""
+    ``check_of`` makes of it. A hint whose test raises asks nothing.
+
+    With the ``owner`` the hint was written on, a quoted name in it is read
+    in the modules that could have written it (``resolved``): one a hint
+    kept as text evaluates to, ``"C"`` under ``from __future__ import
+    annotations``, and one inside a union, ``Optional["C"]``. With none, a
+    quoted name asks nothing.
+    """
     try:
-        return _read(annotation)
+        return _read(annotation, owner)
     except Exception:
         return None
 
 
-def _read(annotation: object) -> Check | None:
+def hints_of(owner: object) -> Callable[[object], Check | None]:
+    """The hint reader for the hints written on ``owner`` (``hint_check``)."""
+    return functools.partial(hint_check, owner=owner)
+
+
+def _read(annotation: object, owner: object) -> Check | None:
+    if owner is not None and isinstance(as_text(annotation), str):
+        # read once more: a quoted name that evaluates to text again asks nothing
+        return resolved(annotation, owner, functools.partial(_read_named, owner=owner))
     origin = typing.get_origin(annotation)
     if origin is typing.Union or origin is types.UnionType:
-        return _union(annotation, typing.get_args(annotation))
+        members = tuple(_member(member, owner) for member in typing.get_args(annotation))
+        return _union(annotation, members)
     named = _named(annotation)
     return check_of(annotation) if named is None else named
+
+
+def _read_named(annotation: object, owner: object) -> Check | None:
+    """What a quoted name's value asks, when that value is no text itself."""
+    return None if isinstance(as_text(annotation), str) else _read(annotation, owner)
+
+
+def _member(member: object, owner: object) -> object:
+    """A union's member, a quoted name read in the ``owner``'s modules when it resolves."""
+    if owner is None or not isinstance(member, typing.ForwardRef):
+        return member
+    found = resolved(member, owner, _same)
+    return member if found is None else found
+
+
+def _same(value: object) -> object:
+    return value
 
 
 def _named(annotation: object) -> Builds | NoOneClass | None:
@@ -137,7 +172,7 @@ def _read_inside(cls: type) -> Inside:
     signature = signature_of(cls)
     if signature is None:
         return NOTHING
-    checks = checked_annotations(signature, cls, hint_check)
+    checks = checked_annotations(signature, cls, hints_of(cls))
     parameters = signature.parameters
     keys = {name: each for name, each in checks.items() if parameters[name].kind not in _STARRED}
     items = {

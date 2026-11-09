@@ -5,7 +5,7 @@ from __future__ import annotations
 import abc
 import collections
 import dataclasses
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Generic, Optional, Protocol, TypeVar
 
 from tests.unit.binding.named_classes import Point
 
@@ -89,3 +89,18 @@ class Counts:
     def __init__(self, by: dict[int, int], tags: list[str]) -> None:
         self.by = by
         self.tags = tags
+
+
+class Chain:
+    """A class whose hint names itself in quotes, inside ``Optional``, kept as text."""
+
+    def __init__(self, value: int, next: Optional["Chain"] = None) -> None:  # noqa: UP037, UP045
+        self.value = value
+        self.next = next
+
+
+class Quoted:
+    """A constructor whose hint is a quoted name, kept as text: ``"'Point'"``."""
+
+    def __init__(self, at: "Point") -> None:  # noqa: UP037 - the quoted form is what it reads
+        self.at = at

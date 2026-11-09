@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import abc
 import enum
-from typing import Generic, Protocol, TypedDict, TypeVar
+from typing import Generic, Optional, Protocol, TypedDict, TypeVar
 
 T = TypeVar("T")
 
@@ -68,3 +68,9 @@ class Color(enum.Enum):
 
 class Spec(TypedDict):
     size: int
+
+
+class Node:
+    def __init__(self, value: int, next: Optional["Node"] = None) -> None:  # noqa: UP037, UP045
+        self.value = value
+        self.next = next
