@@ -145,6 +145,25 @@ def test_refuses_a_class_or_args_of_the_wrong_kind() -> None:
     assert bad_args == ["c['__args__'] must be a list, got \"ann\""]
 
 
+# a NamedTuple hinted under postponed annotations, whose signature holds each hint as a
+# ForwardRef, is checked against those hints at an object the seed names and under self
+LATER = "targets.classes.later_points"
+
+
+def test_checks_a_named_tuple_hinted_under_postponed_annotations() -> None:
+    lines = refused("far", {"p": {"__class__": f"{LATER}::Spot", "__args__": ["a", 2]}})
+
+    assert lines == ["p['__args__'][0] must be an int, got \"a\""]
+
+
+def test_checks_the_fields_of_a_named_tuple_under_self_hinted_under_postponed_annotations() -> None:
+    result = run_pyct(f"{LATER}::Spot.far", "--args", '{"self": {"x": "a", "y": 2}}')
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == ["self['x'] must be an int, got \"a\""]
+
+
 # a seeds file's lines take the same checks, each line after its FILE:N
 def test_a_seeds_file_names_every_contradiction_after_its_line(tmp_path: Path) -> None:
     seeds = tmp_path / "seeds.jsonl"

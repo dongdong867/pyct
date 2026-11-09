@@ -121,3 +121,9 @@ def pair(a, b):
     if a.age > b.age:
         return "a"
     return "b"
+
+
+def far(p):
+    if p.x > 5:
+        return "far"
+    return "near"
