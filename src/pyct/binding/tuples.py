@@ -1,6 +1,7 @@
 """The tuples of a seed and the values the walk does not follow, each placed once every path
-is walked: a tuple built from its items, innermost first, and a value copied whole after them,
-each put everywhere the walk put it.
+is walked: a tuple built from its items, and a value copied whole, each once and put everywhere
+the walk put it. A tuple is built after every tuple and every value held back among its items,
+and a held-back value's copy holds the tuple the walk builds.
 """
 
 from __future__ import annotations
@@ -8,10 +9,10 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, SupportsIndex, cast
 
 from pyct.binding import objects
-from pyct.binding.objects import Held
+from pyct.binding.objects import Attribute, Held
 
 # where the walk puts a value: a dict's copy, a list's, the list a tuple's items are placed in
 # before the tuple is built, or an object's copy
@@ -34,8 +35,8 @@ class TupleBuild:
     """One tuple of the seed, built once every path is walked.
 
     ``items`` is the list its items are placed in by its last visit, which ``named`` says named
-    them, and ``placements`` every place the walk put it, where the one tuple its build makes
-    goes.
+    them, and ``placements`` every place the walk put it, where the one tuple its build makes,
+    ``made``, goes.
     """
 
     value: tuple[object, ...]
@@ -44,15 +45,22 @@ class TupleBuild:
     visiting: bool = False
     items: list[object] = field(default_factory=list)
     placements: list[tuple[Holder, Slot]] = field(default_factory=list)
+    made: tuple[object, ...] | None = None
 
 
 @dataclass(eq=False)
 class PlainCopy:
-    """A value the walk does not follow, copied whole once every tuple it may hold is built,
-    and every place the walk put it."""
+    """A value the walk does not follow, copied whole once every path is walked, and every
+    place the walk put it. ``copying`` is set while its deepcopy runs and ``done`` once its
+    copy, ``made``, is put everywhere; ``used_by`` is each tuple built with its copy part
+    made."""
 
     value: object
     placements: list[tuple[Holder, Slot]] = field(default_factory=list)
+    copying: bool = False
+    done: bool = False
+    made: object = None
+    used_by: list[TupleBuild] = field(default_factory=list)
 
 
 def buildable(value: tuple[object, ...]) -> bool:
@@ -75,38 +83,32 @@ def buildable(value: tuple[object, ...]) -> bool:
     return True
 
 
-def build_order(
-    builds: Sequence[TupleBuild], plain: Iterable[PlainCopy], owners: Mapping[int, TupleBuild]
-) -> list[tuple[TupleBuild, list[PlainCopy]]]:
-    """Each tuple with the values held back placed among its items, in the order to build them.
-
-    Each tuple comes after every tuple its items hold. The tuples that hold
-    no value held back, themselves or through a tuple their items hold, come
-    first, so a value held back that a tuple holds is copied over every one
-    of them.
-    """
-    order = _innermost_first(builds, owners)
+def held_among(
+    plain: Iterable[PlainCopy], owners: Mapping[int, TupleBuild]
+) -> dict[int, list[PlainCopy]]:
+    """The values held back among each tuple's items, by the tuple's identity."""
     among: dict[int, list[PlainCopy]] = {}
     for each in plain:
         for owner in _owners_of(each.placements, owners):
             among.setdefault(id(owner), []).append(each)
-    waiting = set(among)
-    for build in order:
-        if id(build) in waiting:
-            waiting.update(id(owner) for owner in _owners_of(build.placements, owners))
-    ready = [build for build in order if id(build) not in waiting]
-    later = [build for build in order if id(build) in waiting]
-    return [(build, among.get(id(build), [])) for build in ready + later]
+    return among
 
 
-def _innermost_first(
+def tuples_among(
     builds: Sequence[TupleBuild], owners: Mapping[int, TupleBuild]
-) -> list[TupleBuild]:
-    """The tuples in an order that builds each after every tuple its items hold."""
+) -> dict[int, list[TupleBuild]]:
+    """The tuples among each tuple's items, by the tuple's identity."""
     inside: dict[int, list[TupleBuild]] = {}
     for build in builds:
         for owner in _owners_of(build.placements, owners):
             inside.setdefault(id(owner), []).append(build)
+    return inside
+
+
+def innermost_first(
+    builds: Sequence[TupleBuild], inside: Mapping[int, list[TupleBuild]]
+) -> list[TupleBuild]:
+    """The tuples in an order that builds each after every tuple its items hold."""
     order: list[TupleBuild] = []
     done: set[int] = set()
     for build in builds:
@@ -131,3 +133,15 @@ def _owners_of(
         owner = owners.get(id(into))
         if owner is not None and into is owner.items:
             yield owner
+
+
+def put(into: Holder, slot: Slot, placed: object, value: object) -> None:
+    """Put a placed value in its holder. An attribute the walk hands on as it came keeps what
+    deepcopy made of it."""
+    if isinstance(into, Held):
+        if placed is not value:
+            cast(Attribute, slot).write(into.made, placed)
+    elif isinstance(into, list):
+        list.__setitem__(into, cast(SupportsIndex, slot), placed)
+    else:
+        dict.__setitem__(into, slot, placed)

@@ -1,8 +1,7 @@
 import enum
 import json
 import time
-from collections import defaultdict, deque, namedtuple
-from dataclasses import dataclass
+from collections import OrderedDict, defaultdict, deque, namedtuple
 from typing import Any
 
 import pytest
@@ -144,27 +143,64 @@ def test_a_tuple_python_cannot_build_from_its_items_is_copied_whole_and_plain() 
     assert leaves(seed) == {}
 
 
-@dataclass(frozen=True)
-class Key:
-    """A key deepcopy copies to a new object equal to it."""
+class IdentityKey:
+    """A key equal only to itself, as an object with no ``__eq__`` of its own is."""
 
-    name: str
+
+class Clause:
+    """What a ``Column`` compares to: a value that refuses to be a bool."""
+
+    def __bool__(self) -> bool:
+        raise TypeError("a clause is no bool")
+
+
+class Column:
+    """A key whose ``==`` builds a ``Clause``, as a query builder's column does."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+
+    def __hash__(self) -> int:
+        return hash(self.name)
+
+    def __eq__(self, other: object) -> Any:
+        return Clause()
 
 
 class Table(dict[object, object]):
     """A dict of the caller's own type."""
 
 
-def test_a_dict_subclass_takes_its_values_under_the_keys_its_copy_holds() -> None:
-    # deepcopy copies the keys, and the value goes in under the copy's own key, not the seed's
-    key = Key("k")
+@pytest.mark.parametrize(
+    "key",
+    [IdentityKey(), (IdentityKey(), 1), Column("id")],
+    ids=["identity", "tuple holding an object", "eq gives no bool"],
+)
+def test_a_dict_subclass_takes_its_values_under_the_keys_its_copy_holds(key: object) -> None:
+    # deepcopy copies the keys; each value goes in under the key deepcopy made of its own
     table = Table({key: 1, "n": 2})
 
     args: dict[str, Any] = bind({"t": table}, [])
 
     made = args["t"]
-    assert type(made) is Table and len(made) == 2
-    assert isinstance(made["n"], ConcolicInt) and made["n"].expression == ["[]", "t", "'n'"]
+    assert type(made) is Table and dict.__len__(made) == 2
+    n = dict.__getitem__(made, "n")
+    assert isinstance(n, ConcolicInt) and n.expression == ["[]", "t", "'n'"]
+    assert leaves({"t": table}) == {json.dumps(["[]", "t", "'n'"]): int}
+
+
+def test_an_ordered_dict_is_walked_in_its_own_order() -> None:
+    ordered = OrderedDict(a=1, b=2)
+    ordered.move_to_end("a")
+
+    args: dict[str, Any] = bind({"od": ordered}, [])
+
+    made = args["od"]
+    assert list(made) == ["b", "a"] and isinstance(made["a"], ConcolicInt)
+    assert list(leaves({"od": ordered})) == [
+        json.dumps(["[]", "od", "'b'"]),
+        json.dumps(["[]", "od", "'a'"]),
+    ]
 
 
 class Point(Pair):
@@ -265,3 +301,88 @@ def test_a_value_copied_whole_holds_the_tuple_the_walk_builds(first: str) -> Non
     made = args["t"]
     assert args["q"][0] is made and isinstance(made[0], ConcolicInt)
     assert type(t[0]) is int and q[0] is t
+
+
+class Item:
+    def __init__(self) -> None:
+        self.n = 0
+
+
+class Folding(dict[str, object]):
+    """A dict whose own ``__setitem__`` folds its keys to lower case."""
+
+    def __setitem__(self, key: str, value: object) -> None:
+        super().__setitem__(key.lower(), value)
+
+
+def test_nothing_under_a_copy_handed_on_plain_is_followed_at_any_depth() -> None:
+    item = Item()
+    folding = Folding()
+    dict.update(folding, {"A": 0, "a": item})
+    holder = Item()
+    holder.d = folding  # type: ignore[attr-defined]
+
+    args: dict[str, Any] = bind({"o": holder, "p": item}, [])
+
+    inside = dict.__getitem__(args["o"].d, "a")
+    assert inside is not args["p"] and type(inside.n) is int
+    assert isinstance(args["p"].n, ConcolicInt)
+
+
+@pytest.mark.parametrize("first", ["t", "ti"])
+@pytest.mark.parametrize(
+    ("held", "around"),
+    [
+        (frozenset({1}), lambda ti: deque([ti])),
+        (b"k", lambda ti: frozenset({ti})),
+        (frozenset({1}), lambda ti: frozenset({ti})),
+        (b"k", lambda ti: deque([ti])),
+    ],
+    ids=["deque", "frozenset", "frozenset holding frozenset", "deque holding bytes"],
+)
+def test_a_value_copied_whole_inside_a_tuple_holds_the_tuple_the_walk_builds(
+    first: str, held: object, around: Any
+) -> None:
+    ti = (0, held)
+    t = (around(ti), 1)
+    seed: dict[str, object] = {"t": t, "ti": ti} if first == "t" else {"ti": ti, "t": t}
+
+    args: dict[str, Any] = bind(seed, [])
+
+    inside = next(iter(args["t"][0]))
+    assert inside is args["ti"] and isinstance(inside[0], ConcolicInt)
+
+
+def test_a_deque_that_holds_the_tuple_it_sits_in_is_one_cycle() -> None:
+    held: deque[object] = deque()
+    t = (held, 0)
+    held.append(t)
+
+    args: dict[str, Any] = bind({"t": t, "q": held}, [])
+
+    made = args["t"]
+    assert made[0] is args["q"] and made[0][0] is made
+    assert isinstance(made[1], ConcolicInt) and held[0] is t
+
+
+class Method:
+    def meth(self) -> int:
+        return 1
+
+
+@pytest.mark.parametrize("first", ["t", "m"])
+def test_a_method_whose_object_holds_the_tuple_it_sits_in_is_handed_on_as_it_came(
+    first: str,
+) -> None:
+    # deepcopy copies the method's object only after it would reach the tuple, so it cannot
+    # hold the walk's tuple: the method reaches every holder as it came
+    owner: Any = Method()
+    method = owner.meth
+    t = (method, 0)
+    owner.t = t
+    seed: dict[str, object] = {"t": t, "m": method} if first == "t" else {"m": method, "t": t}
+
+    args: dict[str, Any] = bind(seed, [])
+
+    assert args["m"] is method and args["t"][0] is method
+    assert isinstance(args["t"][1], ConcolicInt) and owner.t is t

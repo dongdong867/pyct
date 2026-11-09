@@ -13,14 +13,24 @@ from __future__ import annotations
 import copyreg
 import keyword
 import types
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import cast
 
 from pyct.core.foundation.branch import Expression
 
-# the methods deepcopy's route calls, or makes the new object by, that a class may write its own
-_HOOKS = ("__deepcopy__", "__reduce__", "__reduce_ex__", "__getstate__", "__setstate__", "__new__")
+# the methods this rule reads on a class: each, written in Python, lets the class copy an
+# instance its own way
+_HOOKS = (
+    "__deepcopy__",
+    "__reduce__",
+    "__reduce_ex__",
+    "__getstate__",
+    "__setstate__",
+    "__new__",
+    "__getnewargs__",
+    "__getnewargs_ex__",
+)
 
 # what a hook built into Python is: object's own, or a builtin or extension type's
 _BUILT_IN = (
@@ -69,21 +79,36 @@ class Attribute:
 def followed(value: object) -> bool:
     """Whether the walk follows what a value that is no tuple, and no plain dict or list, holds:
     a subclass of dict's or list's items, or an object's attributes, when its class copies by
-    Python's default route. A bound method holds nothing the walk follows."""
+    Python's default route and the object answers no ``__deepcopy__`` of its own. A bound
+    method holds nothing the walk follows."""
     if isinstance(value, types.MethodType) or not copies_by_default(type(value)):
         return False
+    if _answers_deepcopy(value):
+        return False
     return isinstance(value, list | dict) or any(True for _ in _pairs(value, value))
+
+
+def _answers_deepcopy(value: object) -> bool:
+    """Whether deepcopy's own look-up of ``__deepcopy__`` on the object, which its
+    ``__dict__`` or a ``__getattr__`` may answer, finds one written in Python. A look-up that
+    raises is taken as one."""
+    try:
+        hook = getattr(value, "__deepcopy__", None)
+    except Exception:
+        return True
+    return hook is not None and not isinstance(hook, _BUILT_IN)
 
 
 def copies_by_default(cls: type) -> bool:
     """Whether deepcopy copies an instance of a class by Python's default route: no class on
     its MRO defines ``__deepcopy__``, ``__reduce__``, ``__reduce_ex__``, ``__getstate__``,
-    ``__setstate__`` or ``__new__`` in Python code, and none has a reducer registered in
-    ``copyreg.dispatch_table``. A method built into Python, object's own or a builtin or
+    ``__setstate__``, ``__new__``, ``__getnewargs__`` or ``__getnewargs_ex__`` in Python code,
+    and the class itself has no reducer in ``copyreg.dispatch_table``, which deepcopy reads
+    for the exact class only. A method built into Python, object's own or a builtin or
     extension type's, is that route."""
+    if cls in copyreg.dispatch_table:
+        return False
     for each in cls.__mro__:
-        if each in copyreg.dispatch_table:
-            return False
         for name in _HOOKS:
             hook = each.__dict__.get(name)
             if hook is not None and not isinstance(hook, _BUILT_IN):
@@ -91,21 +116,34 @@ def copies_by_default(cls: type) -> bool:
     return True
 
 
-def faithful(value: object, made: object) -> bool:
+def faithful(value: object, made: object, memo: Mapping[int, object]) -> bool:
     """Whether a deepcopy is a new object of the original's type and shape: a list subclass's
-    length, a dict subclass's keys, equal and in the same order, and the keys of the
-    ``__dict__``, as the original holds them."""
+    length, and a dict subclass's keys and its ``__dict__``'s, each the key deepcopy made of
+    the original's at the same place, in the order the original iterates. ``memo`` is that
+    deepcopy's: a key it made is found there under the original's identity, and one it copies
+    as itself is the original. No key's own ``__eq__`` runs."""
     if made is value or type(made) is not type(value):
         return False
     # the copy is of the value's own type, so a list's copy is a list and a dict's a dict
     if isinstance(value, list) and list.__len__(cast(list[object], made)) != list.__len__(value):
         return False
-    if isinstance(value, dict) and list(dict.keys(cast(dict[object, object], made))) != list(
-        dict.keys(value)
-    ):
+    copied_keys = dict.keys(cast(dict[object, object], made)) if isinstance(value, dict) else ()
+    if isinstance(value, dict) and not _same_keys(dict(value), copied_keys, memo):
         return False
     fields, copied = own_fields(value), own_fields(made)
-    return (fields is None) == (copied is None) and list(fields or ()) == list(copied or ())
+    if fields is None or copied is None:
+        return fields is copied
+    return _same_keys(fields, dict.keys(copied), memo)
+
+
+def _same_keys(
+    keys: Iterable[object], copied: Iterable[object], memo: Mapping[int, object]
+) -> bool:
+    """Whether each copied key, in order, is the one deepcopy made of the key at its place."""
+    originals, made = list(keys), list(copied)
+    return len(originals) == len(made) and all(
+        memo.get(id(key), key) is each for key, each in zip(originals, made, strict=True)
+    )
 
 
 def attributes(value: object, made: object) -> Attributes:
