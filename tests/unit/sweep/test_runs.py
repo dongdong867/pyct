@@ -1,9 +1,12 @@
 import json
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from pyct.sweep import runs
+from pyct.sweep.process import Finished
 from pyct.sweep.result import SweepLimits
 from pyct.sweep.rows import Row, Status
 from pyct.sweep.runs import run_entry
@@ -51,11 +54,20 @@ def test_a_run_with_no_budget_is_handed_budget_none() -> None:
     assert argv[argv.index("--budget") + 1] == "none"
 
 
-def test_a_run_with_no_budget_is_never_stopped_for_its_time() -> None:
-    # the stand-in takes 1 s, twice the grace, and still ends as ran
-    row = ran("slow", budget=None)
+def test_a_run_with_no_budget_is_waited_on_with_no_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+    limits: list[float | None] = []
+    real = runs.run_command
 
-    assert (row.status, row.reason) == (Status.RAN, None), row
+    def recording(*args: Any, limit: float | None, **kwargs: Any) -> Finished:
+        limits.append(limit)
+        return real(*args, limit=limit, **kwargs)
+
+    monkeypatch.setattr(runs, "run_command", recording)
+    ran("ran", budget=None)
+    ran("ran", budget=2.5)
+
+    # with a budget, the limit is the budget and LIMITS' grace
+    assert limits == [None, 3.0]
 
 
 def test_each_run_starts_in_a_fresh_empty_directory_deleted_after_it() -> None:
