@@ -315,7 +315,7 @@ class Folding(dict[str, object]):
         super().__setitem__(key.lower(), value)
 
 
-def test_nothing_under_a_copy_handed_on_plain_is_followed_at_any_depth() -> None:
+def test_a_copy_handed_on_plain_at_any_depth_is_not_gone_into() -> None:
     item = Item()
     folding = Folding()
     dict.update(folding, {"A": 0, "a": item})
@@ -374,8 +374,9 @@ class Method:
 def test_a_method_whose_object_holds_the_tuple_it_sits_in_is_handed_on_as_it_came(
     first: str,
 ) -> None:
-    # deepcopy copies the method's object only after it would reach the tuple, so it cannot
-    # hold the walk's tuple: the method reaches every holder as it came
+    # deepcopy reaches the tuple while it copies the method's object, before the method's own
+    # copy exists, so the tuple cannot hold that copy: the method reaches every holder as it
+    # came
     owner: Any = Method()
     method = owner.meth
     t = (method, 0)
@@ -386,3 +387,27 @@ def test_a_method_whose_object_holds_the_tuple_it_sits_in_is_handed_on_as_it_cam
 
     assert args["m"] is method and args["t"][0] is method
     assert isinstance(args["t"][1], ConcolicInt) and owner.t is t
+
+
+class Lazy(dict[str, int]):
+    """A dict that iterates its keys sorted and refuses to hand out a value."""
+
+    def __iter__(self) -> Any:
+        return iter(sorted(dict.keys(self)))
+
+    def __getitem__(self, key: str) -> int:
+        raise LookupError(f"{key} not loaded")
+
+
+def test_a_dict_subclass_is_read_through_dict_s_own_methods() -> None:
+    lazy = Lazy()
+    dict.update(lazy, {"b": 0, "a": 1})
+
+    args: dict[str, Any] = bind({"d": lazy}, [])
+
+    made = args["d"]
+    assert type(made) is Lazy and isinstance(dict.__getitem__(made, "b"), ConcolicInt)
+    assert list(leaves({"d": lazy})) == [
+        json.dumps(["[]", "d", "'b'"]),
+        json.dumps(["[]", "d", "'a'"]),
+    ]

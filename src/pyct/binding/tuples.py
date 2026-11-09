@@ -52,15 +52,13 @@ class TupleBuild:
 class PlainCopy:
     """A value the walk does not follow, copied whole once every path is walked, and every
     place the walk put it. ``copying`` is set while its deepcopy runs and ``done`` once its
-    copy, ``made``, is put everywhere; ``used_by`` is each tuple built with its copy part
-    made."""
+    copy, ``made``, is put everywhere."""
 
     value: object
     placements: list[tuple[Holder, Slot]] = field(default_factory=list)
     copying: bool = False
     done: bool = False
     made: object = None
-    used_by: list[TupleBuild] = field(default_factory=list)
 
 
 def buildable(value: tuple[object, ...]) -> bool:

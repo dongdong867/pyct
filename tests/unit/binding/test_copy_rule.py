@@ -121,6 +121,56 @@ def test_an_object_whose_copy_its_class_makes_its_own_way_is_handed_on_plain(
     assert leaves({"o": given}) == {}
 
 
+# an instance of each class below that the caller holds, which the class's copy route hands
+# back, or whose fields it hands to the copy
+HELD: dict[type, Plain] = {}
+
+
+def _held(value: object) -> tuple[object, ...]:
+    return (HELD.__getitem__, (type(value),))
+
+
+class OwnReduceExField(Plain):
+    """An object whose own ``__dict__`` holds a ``__reduce_ex__``."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.__reduce_ex__ = lambda protocol: _held(self)
+
+
+class OwnGetattribute(Plain):
+    """A class whose ``__getattribute__`` answers deepcopy's look-up of ``__reduce_ex__``."""
+
+    def __getattribute__(self, name: str) -> object:
+        if name == "__reduce_ex__":
+            return lambda protocol: _held(self)
+        return super().__getattribute__(name)
+
+
+class OwnGetattrSetstate(Plain):
+    """A class whose ``__getattr__`` answers ``__setstate__``, giving the copy the fields of
+    the instance the caller holds."""
+
+    def __getattr__(self, name: str) -> object:
+        if name == "__setstate__":
+            return lambda state: object.__setattr__(self, "__dict__", vars(HELD[type(self)]))
+        raise AttributeError(name)
+
+
+@pytest.mark.parametrize("kind", [OwnReduceExField, OwnGetattribute, OwnGetattrSetstate])
+def test_an_object_a_look_up_could_answer_a_copy_hook_for_is_handed_on_plain(
+    kind: type[Plain],
+) -> None:
+    held = HELD[kind] = kind()
+    fields = vars(held)
+
+    args: dict[str, Any] = bind({"o": kind()}, [])
+
+    assert type(args["o"]) is kind
+    assert vars(held) is fields and type(fields["n"]) is int and type(args["o"].n) is int
+    assert leaves({"o": kind()}) == {}
+
+
 def test_a_subclass_of_a_class_registered_with_copyreg_is_followed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -175,7 +225,8 @@ def test_a_copy_whose_dict_holds_other_keys_is_handed_on_plain() -> None:
     args: dict[str, Any] = bind({"r": recording}, [])
 
     assert type(args["r"]) is Recording and plain_ints(args["r"])
-    assert vars(recording) == {"n": 0} and plain_ints(recording)
+    assert list(vars(recording)) == ["n"] and plain_ints(vars(recording).values())
+    assert plain_ints(recording)
     assert leaves({"r": recording}) == {}
 
 

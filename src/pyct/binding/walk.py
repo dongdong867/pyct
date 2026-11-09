@@ -114,18 +114,19 @@ class Walk:
     deepcopy with a memo that reads the walk's copies, and its attributes, or
     its items, are then followed into that copy (see ``objects``), so the
     objects inside it are its copies from that one deepcopy. Only a faithful
-    copy is gone into, at any depth (``copies.faithful_copies``); any other
-    is handed on as deepcopy made it, with nothing under it followed. A value
-    deepcopy cannot copy stays as it came.
+    copy is gone into, at any depth (``copies.faithful_copies``); the walk
+    does not go into any other, which is handed on as deepcopy made it. A
+    value deepcopy cannot copy stays as it came.
 
     A tuple's items are placed by index in a list of their own, and a value
     the walk does not follow is held back: once every path is walked, each
-    tuple is built from its items, of its own type, after every tuple and
-    every value held back among its items, and each held-back value is
-    copied whole by deepcopy over the walk's copies, and each goes
-    everywhere the walk put it at once. A tuple that copy reaches is built
-    then, where its items allow, so a set, a deque or a bound method holds
-    the same tuple as every other path, whatever the seed's order.
+    tuple is built once from its items, of its own type, after every tuple
+    and every value held back among its items, and each held-back value is
+    copied once, whole, by deepcopy over the walk's copies and the copies
+    under way (``finish``), and each goes everywhere the walk put it at
+    once. A held-back copy builds each tuple it reaches that is not built
+    yet, and holds that tuple. A held-back value whose copy would close a
+    cycle through a tuple before deepcopy begins it is handed on as it came.
     """
 
     def __init__(self, visitor: Visitor) -> None:
@@ -139,6 +140,8 @@ class Walk:
         self._tracked: set[int] = set()
         # the objects whose copy is handed on plain, by the identity of the seed's
         self._whole: set[int] = set()
+        # each dict subclass's keys in the order its copy holds them, by the identity of the seed's
+        self._keys: dict[int, list[object]] = {}
         # each tuple and each value held back, by the identity of the seed's, and each tuple
         # by the identity of each list its items were placed in
         self._tuples: dict[int, TupleBuild] = {}
@@ -195,7 +198,7 @@ class Walk:
         elif access is None or id(value) in self._named or id(value) in self._whole:
             return made
         else:
-            insides = _takes(value, made, place.check)
+            insides = self._takes(value, made, place.check)
         if insides is None:
             return made
         if access is not None:
@@ -210,7 +213,7 @@ class Walk:
         it takes; None for a copy handed on as it is."""
         if type(value) is not list and type(value) is not dict:
             made = self._copy_followed(value)
-            return made, None if id(value) in self._whole else _takes(value, made, place.check)
+            return made, None if id(value) in self._whole else self._takes(value, made, place.check)
         items: list[object] | dict[object, object]
         if isinstance(value, list) and access is not None:
             made, items = self._visitor.listed(value, place)
@@ -296,26 +299,27 @@ class Walk:
         if joined is None:
             self._whole.add(id(value))
         else:
-            self._copies.update(joined)
+            self._copies.update(joined.copies)
+            self._keys.update(joined.keys)
         return copied
 
+    def _takes(self, value: object, made: object, check: Check | None) -> _Insides:
+        """What a value takes from the walk into its copy: a list's items, a dict's, or an
+        object's attributes.
 
-def _takes(value: object, made: object, check: Check | None) -> _Insides:
-    """What a value takes from the walk into its copy: a list's items, a dict's, or an object's
-    attributes.
-
-    Every copy of a subclass or an object the walk reaches here passed
-    ``copies.faithful_copies`` when it was made.
-    """
-    if type(value) is list:
-        return list(cast(list[object], value))
-    if type(value) is dict:
-        return keyed(cast(dict[object, object], value), check)
-    if isinstance(value, list):
-        return list(value)
-    if isinstance(value, dict):
-        return keyed(value, check)
-    return objects.attributes(value, made)
+        Each copy of a subclass or an object the walk reaches here passed
+        ``copies.faithful_copies`` when it was made. A dict subclass's items
+        are read with ``dict``'s own methods, in the order its copy holds its
+        keys, so no subclass's code runs.
+        """
+        if isinstance(value, list):
+            return list(list.__iter__(value))
+        if type(value) is not dict and isinstance(value, dict):
+            items = {key: dict.__getitem__(value, key) for key in self._keys[id(value)]}
+            return keyed(items, check)
+        if isinstance(value, dict):
+            return keyed(value, check)
+        return objects.attributes(value, made)
 
 
 def _insides(
