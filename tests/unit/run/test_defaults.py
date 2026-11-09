@@ -227,3 +227,39 @@ def test_a_class_python_cannot_read_or_load_gets_none_and_the_objects_inside_sti
         "a": {"__class__": "Unread", "n": 1, "flag": filled_account},
         "b": {"__class__": "Nowhere", "x": filled_account},
     }
+
+
+class Holding:
+    """A class a seed names, whose constructor's hint builds the object inside."""
+
+    def __init__(self, member: Member) -> None:
+        self.member = member
+
+
+def hinted(a: Member, b: object = None) -> None:
+    """A target whose first parameter's hint builds a Member."""
+
+
+HINTED = Target(
+    spec=f"{__name__}::hinted", fn=hinted, file=__file__, signature=inspect.signature(hinted)
+)
+MEMBER_DEFAULTS = {"vip": False, "rank": 2, "rate": 0.5, "note": ""}
+
+
+def test_an_object_a_hint_builds_takes_its_defaults() -> None:
+    seed: dict[str, object] = {"a": {"name": "ann"}}
+
+    assert with_defaults(HINTED, seed) == {"a": {"name": "ann", **MEMBER_DEFAULTS}}
+    assert seed == {"a": {"name": "ann"}}
+
+
+def test_a_list_a_hint_builds_fills_no_default() -> None:
+    assert with_defaults(HINTED, {"a": ["ann"]}) == {"a": ["ann"]}
+
+
+def test_an_object_a_hint_builds_inside_a_named_object_takes_its_defaults() -> None:
+    seed: dict[str, object] = {"a": None, "b": {"__class__": "Holding", "member": {"name": "ann"}}}
+
+    filled = with_defaults(HINTED, seed)
+
+    assert filled["b"] == {"__class__": "Holding", "member": {"name": "ann", **MEMBER_DEFAULTS}}
