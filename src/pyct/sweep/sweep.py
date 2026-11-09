@@ -107,7 +107,9 @@ class _Runner:
             return Row(row.module, row.name, Status.SKIPPED, seed=row.seed, reason=SPENT)
         if self.tell.starting is not None:
             self.tell.starting(row, number, count)
-        budget = self.limits.budget if left is None else min(self.limits.budget, left)
+        budget = self.limits.budget
+        if left is not None:
+            budget = left if budget is None else min(budget, left)
         return run_entry(row, self.limits, budget=budget, pyct=self.programs.pyct)
 
 

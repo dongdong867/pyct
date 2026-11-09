@@ -2,6 +2,9 @@
 
 from dataclasses import dataclass
 
+# the seconds ``pyct run`` gets with no ``--budget``
+RUN_SECONDS = 45.0
+
 
 @dataclass(frozen=True)
 class Budget:

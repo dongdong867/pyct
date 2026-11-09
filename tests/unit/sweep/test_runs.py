@@ -16,7 +16,7 @@ def entry(name: str) -> Row:
     return Row("p", name, Status.LISTED, seed={"n": 0})
 
 
-def ran(name: str, budget: float = 2.5) -> Row:
+def ran(name: str, budget: float | None = 2.5) -> Row:
     return run_entry(entry(name), LIMITS, budget=budget, pyct=PYCT)
 
 
@@ -39,6 +39,16 @@ def test_a_run_that_prints_its_summary_and_exits_zero_ran_with_it() -> None:
         "--goal",
         "coverage",
     ]
+
+
+def test_a_run_with_no_budget_is_handed_budget_none() -> None:
+    row = ran("ran", budget=None)
+
+    assert row.status is Status.RAN, row
+    assert row.run is not None
+    argv = row.run["argv"]
+    assert isinstance(argv, list)
+    assert argv[argv.index("--budget") + 1] == "none"
 
 
 def test_each_run_starts_in_a_fresh_empty_directory_deleted_after_it() -> None:

@@ -20,15 +20,15 @@ class SweepLimits:
     the grace.
 
     The defaults are the compare tool's, so a sweep row and a compare row of
-    one entry run under the same limits. ``total_budget`` None is no bound on
-    the whole sweep. ``grace`` is not a flag: it is both the limit on one
-    module's import while listing and how long an entry's run may go on past
-    its budget before sweep stops it; ``pyct run`` ends within a second of its
-    deadline, so the grace mostly covers the import, which the budget does
-    not count.
+    one entry run under the same limits. ``budget`` None is no deadline for
+    an entry, and ``total_budget`` None is no bound on the whole sweep.
+    ``grace`` is not a flag: it is both the limit on one module's import
+    while listing and how long an entry's run may go on past its budget
+    before sweep stops it; ``pyct run`` ends within a second of its deadline,
+    so the grace mostly covers the import, which the budget does not count.
     """
 
-    budget: float = 30.0
+    budget: float | None = 30.0
     plateau: int = 5
     solver_timeout: float = 10.0
     goal: Goal = Goal.COVERAGE

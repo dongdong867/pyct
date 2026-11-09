@@ -19,13 +19,16 @@ from pathlib import Path
 from typing import NoReturn
 
 from pyct.binding.bind import access_name, leaves
+from pyct.config.budget import RUN_SECONDS
 from pyct.config.command_line import (
+    NO_DEADLINE,
     UsageError,
     dump_folder,
     parse_budget,
     parse_goal,
     parse_plateau,
     parse_solver_timeout,
+    parse_total_budget,
 )
 from pyct.config.limits import Limits
 from pyct.execution.deadline import own_the_alarm
@@ -201,7 +204,7 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Se
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
     file = None if command.seeds_text is None else read_seeds_file(command.seeds_text)
     limits = Limits(
-        budget=parse_budget(command.budget_text),
+        budget=parse_budget(command.budget_text, RUN_SECONDS),
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
         goal=parse_goal(command.goal_text),
@@ -282,12 +285,12 @@ def _sweep(command: SweepCommand) -> int:
 def _sweep_limits(command: SweepCommand) -> SweepLimits:
     """The limits the command line gave, each by ``pyct run``'s rule, or the sweep's defaults."""
     defaults = SweepLimits()
-    budget = parse_budget(command.budget_text).seconds
+    budget = parse_budget(command.budget_text, defaults.budget).seconds
     plateau = parse_plateau(command.plateau_text).inputs
-    total = parse_budget(command.total_budget_text, "total budget").seconds
+    total = parse_total_budget(command.total_budget_text)
     solver_timeout = command.solver_timeout_text
     return SweepLimits(
-        budget=defaults.budget if budget is None else budget,
+        budget=budget,
         plateau=defaults.plateau if plateau is None else plateau,
         solver_timeout=(
             defaults.solver_timeout
@@ -373,7 +376,11 @@ def _run_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
     run_parser.add_argument("--seeds", dest="seeds_file", metavar="FILE")
-    run_parser.add_argument("--budget", metavar="SECONDS")
+    run_parser.add_argument(
+        "--budget",
+        metavar="SECONDS",
+        help=f"the run's seconds; {RUN_SECONDS:g} by default, {NO_DEADLINE} for no deadline",
+    )
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
@@ -414,7 +421,11 @@ def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     parser.add_argument(
         "--list", dest="list_only", action="store_true", help="list the entries; run none"
     )
-    parser.add_argument("--budget", metavar="SECONDS", help="each entry's budget; 30 by default")
+    parser.add_argument(
+        "--budget",
+        metavar="SECONDS",
+        help=f"each entry's budget; 30 by default, {NO_DEADLINE} for no deadline",
+    )
     parser.add_argument("--plateau", metavar="N", help="each entry's plateau; 5 by default")
     parser.add_argument(
         "--solver-timeout", metavar="SECONDS", help="each solve's limit; 10 by default"

@@ -42,10 +42,11 @@ def run_pyct(
 
     A run given ``--budget SECONDS`` or ``--budget=SECONDS`` arms pyct's deadline, and the
     deadline firing inside coverage.py's tracer hangs the child, as
-    ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out.
+    ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out. A run with no
+    ``--budget`` is measured: its 45 s deadline comes after ``timeout`` ends it, and a test
+    that gives a longer ``timeout`` gives ``--budget none``, which arms no deadline.
     """
-    budget = any(arg == "--budget" or arg.startswith("--budget=") for arg in argv)
-    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if budget else ())}
+    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if _budget_given(argv) else ())}
     env = {k: v for k, v in os.environ.items() if k not in left_out}
     if path is not None:
         env["PATH"] = path
@@ -64,6 +65,16 @@ def run_pyct(
     # a line no cause explains is put down as ended before with no input that ended
     assert "no cause explains line" not in result.stderr, result.stderr
     return result
+
+
+def _budget_given(argv: tuple[str, ...]) -> bool:
+    """Whether ``argv`` gives a ``--budget`` of seconds, apart or joined, rather than ``none``."""
+    for at, arg in enumerate(argv):
+        if arg == "--budget":
+            return argv[at + 1 : at + 2] != ("none",)
+        if arg.startswith("--budget="):
+            return arg != "--budget=none"
+    return False
 
 
 # how a `missed` line ends: the seconds its ask took, which no two runs share

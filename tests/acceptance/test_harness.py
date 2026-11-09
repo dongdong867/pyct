@@ -94,6 +94,17 @@ def test_a_run_with_a_budget_starts_no_coverage(
     assert "COVERAGE_PROCESS_START" not in env
 
 
+@pytest.mark.parametrize(
+    "budget", [("--budget", "none"), ("--budget=none",)], ids=["apart", "joined"]
+)
+def test_a_run_with_budget_none_is_measured(
+    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...]
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budget)
+
+    assert env["COVERAGE_PROCESS_START"] == "pyproject.toml"
+
+
 def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> None:
     # a flag that only starts like --budget sets no deadline
     env = environment_for(monkeypatch, "m::f", "{}", "--budgetless")

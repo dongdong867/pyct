@@ -55,9 +55,10 @@ class _HangUpError(BaseException):
 
 
 def run_command(
-    argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], limit: float
+    argv: Sequence[str], *, cwd: Path, env: Mapping[str, str], limit: float | None
 ) -> Finished:
-    """Run ``argv`` in ``cwd`` with ``env``, wait at most ``limit`` seconds, and stop its group.
+    """Run ``argv`` in ``cwd`` with ``env``, wait at most ``limit`` seconds, or for its end with
+    no limit, and stop its group.
 
     A Ctrl-C, the ``Stopped`` a SIGTERM raises in the command's process (see
     ``pyct.run.launch``), or a SIGHUP under ``hangup_stops_children`` stops
@@ -105,7 +106,7 @@ def started(
         stop_group(process)
 
 
-def _waited(process: subprocess.Popen[bytes], limit: float) -> Waited | None:
+def _waited(process: subprocess.Popen[bytes], limit: float | None) -> Waited | None:
     try:
         return waited_of(process.wait(timeout=limit))
     except subprocess.TimeoutExpired:

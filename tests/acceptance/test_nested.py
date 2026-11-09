@@ -314,7 +314,10 @@ def test_follows_a_value_nested_past_the_recursion_limit() -> None:
     # raises there and covers nothing new, so the run ends when inputs stop covering lines.
     # Each access counts a node a step, so a line prints its forks until they fill the line's
     # budget, and each later fork, `node > 5` last, as one cut part
-    result = run_pyct(DEEP, json.dumps({"config": seed}), "--plateau", "1", timeout=90)
+    # it has no deadline, so a loaded machine still runs it to its end
+    result = run_pyct(
+        DEEP, json.dumps({"config": seed}), "--plateau", "1", "--budget", "none", timeout=90
+    )
 
     assert result.returncode == 0, result.stderr[-2000:]
     lines = input_lines(result.stdout)
