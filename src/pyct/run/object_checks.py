@@ -78,15 +78,19 @@ class ObjectCheck:
             parameters = ", ".join(self.signature.parameters)
             given = _bound_keys(value, positional or ())
             lines.append(f"{place} ({given}) does not fit {self._name}({parameters}): {reason}")
-        lines += self._item_lines(place, positional or (), built)
+        lines += self._item_lines(by_position(self.signature), place, positional or (), built)
         return lines + contradictions(self.checks, fields, place, built)
 
-    def _item_lines(self, place: str, items: Sequence[object], built: Collection[int]) -> list[str]:
-        """The lines for the items passed by position, item i checked against the i-th
-        parameter that takes a position and named ``place['__args__'][i]``. An item past those
-        parameters fills ``*args``, and is not checked."""
-        assert self.signature is not None
-        parameters = by_position(self.signature)
+    def _item_lines(
+        self,
+        parameters: Sequence[inspect.Parameter],
+        place: str,
+        items: Sequence[object],
+        built: Collection[int],
+    ) -> list[str]:
+        """The lines for the items passed by position, item i checked against the i-th of the
+        ``parameters`` that take a position and named ``place['__args__'][i]``. An item past
+        those parameters fills ``*args``, and is not checked."""
         written = step_in(place, ARGS_KEY)
         return [
             line
