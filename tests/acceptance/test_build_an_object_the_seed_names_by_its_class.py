@@ -78,6 +78,27 @@ def import_raise(module: str) -> BaseException:
     raise AssertionError(f"{module} imported")
 
 
+# build-an-object-the-seed-names-by-its-class-builds-and-follows-an-object
+def test_builds_and_follows_an_object() -> None:
+    named = f"{CUSTOMERS}::Customer"
+    result = run_pyct(f"{GREET}::greet", "--args", seed(c=customer(named)))
+
+    assert result.returncode == 0, result.stderr
+    first, *rest = input_lines(result.stdout)
+    assert first["args"] == {"c": {**customer(named), "vip": False}}
+    assert AGE_ABOVE_60 in [fork["expression"] for fork in forks_of(first)]
+    forks = [line for line in result.stderr.splitlines() if line.startswith("fork ")]
+    assert any("  c['age'] > 60  " in line for line in forks), result.stderr
+    older = [
+        line
+        for line in rest
+        if above(arg(line, "c", "age"), 60)
+        and arg(line, "c", "__class__") == named
+        and line["failure"] is None
+    ]
+    assert older, result.stdout
+
+
 # build-an-object-the-seed-names-by-its-class-finds-a-bare-name-in-the-target-s-module
 def test_finds_a_bare_name_in_the_target_s_module() -> None:
     result = run_pyct(f"{GREET}::greet", "--args", seed(c=customer()))
@@ -258,3 +279,32 @@ def test_fails_an_object_run_cannot_build(
         record.failure.detail == f"building c: cannot import {missing}: {import_raise(missing)!r}"
     )
     assert record.forks == ()
+
+
+# build-an-object-the-seed-names-by-its-class-builds-through-run
+def test_builds_through_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = {"c": customer(f"{CUSTOMERS}::Customer")}
+    lines = input_lines(run_pyct(f"{GREET}::greet", "--args", json.dumps(args)).stdout)
+    let_pyct_run_in_process(monkeypatch)
+
+    result = run(load_target(f"{GREET}::greet"), args)
+
+    assert [record.args for record in result.records] == [line["args"] for line in lines]
+
+
+# build-an-object-the-seed-names-by-its-class-fills-a-left-out-default
+def test_fills_a_left_out_default() -> None:
+    result = run_pyct(
+        f"{GREET}::charge", "--args", seed(a={"__class__": "Account", "owner": "ann"})
+    )
+
+    assert result.returncode == 0, result.stderr
+    first, *rest = lines = input_lines(result.stdout)
+    filled = {"__class__": "Account", "owner": "ann", "plan": "free", "limit": 10}
+    assert first["args"] == {"a": filled}
+    assert any(arg(line, "a", "plan") == "pro" for line in rest), result.stdout
+    assert any(above(arg(line, "a", "limit"), 100) for line in rest), result.stdout
+    for line in lines:
+        account = arg(line, "a")
+        assert isinstance(account, dict)
+        assert "coupon" not in account and "tags" not in account
