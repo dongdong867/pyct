@@ -40,12 +40,15 @@ class Items:
     ``keys`` is a dict's key type as the annotation names it, ``str`` when it
     names none. A dict whose keys are not strs is not checked, since JSON
     keys are always strings; its keys are read back by it instead (see
-    ``walk``).
+    ``walk``). ``fixed`` marks a ``list[C]`` or ``dict[str, C]`` whose
+    items a class hint builds (``hints``): such a list keeps its length and
+    such a dict its keys, and each value is named by its place.
     """
 
     kind: type
     each: "Check | None"
     keys: object = str
+    fixed: bool = False
 
 
 @dataclass(frozen=True)

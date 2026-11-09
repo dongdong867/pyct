@@ -1,3 +1,4 @@
+import collections
 import collections.abc
 import datetime
 import functools
@@ -13,8 +14,10 @@ from pyct.binding.hints import Inside, hint_check, hints_of, inside_of
 from pyct.binding.resolve import checked_annotations
 from tests.unit.binding.hint_classes import (
     Abstract,
+    Basket,
     Box,
     Chain,
+    Coord,
     Drawable,
     Line,
     Node,
@@ -57,6 +60,7 @@ class Odd(metaclass=Raising):
         (Optional[Point], Point),  # noqa: UP045 - the old spelling is what it reads
         (Point | str, Point),
         (int | Point | None, Point),
+        (Coord, Coord),
     ],
 )
 def test_a_hint_that_names_one_class_builds_it(hint: object, built: type) -> None:
@@ -85,6 +89,14 @@ def test_a_hint_that_names_one_class_builds_it(hint: object, built: type) -> Non
         (Point | Spec, None),
         (int | None, None),
         (str | int, None),
+        (list[Any], Items(list, None)),
+        (list[object], Items(list, None)),
+        (list[dict], Items(list, Items(dict, None))),
+        (list[Point | list[int]], Items(list, None)),
+        (tuple[Point, ...], None),
+        (list[Point] | None, None),
+        (Optional[list[Point]], None),  # noqa: UP045 - the old spelling is what it reads
+        (dict[str, Point] | None, None),
     ],
 )
 def test_a_hint_that_names_no_class_to_build_reads_as_before(
@@ -108,6 +120,60 @@ def test_a_hint_that_names_no_class_to_build_reads_as_before(
 )
 def test_a_hint_that_names_no_one_class_says_why(hint: object, reason: str) -> None:
     assert hint_check(hint) == NoOneClass(reason)
+
+
+SHAPE = NoOneClass(f"hint Shape is an abstract class; {NAME_IT}")
+
+
+@pytest.mark.parametrize(
+    ("hint", "fixed"),
+    [
+        (list[Point], Items(list, Builds(Point), fixed=True)),
+        (typing.List[Point], Items(list, Builds(Point), fixed=True)),  # noqa: UP006
+        (dict[str, Point], Items(dict, Builds(Point), fixed=True)),
+        (list[Shape], Items(list, SHAPE, fixed=True)),
+        (list[Point | None], Items(list, Builds(Point), fixed=True)),
+        (list[Point | str], Items(list, Builds(Point), fixed=True)),
+        (list[list[Point]], Items(list, Items(list, Builds(Point), fixed=True), fixed=True)),
+        (dict[str, list[Point]], Items(dict, Items(list, Builds(Point), fixed=True), fixed=True)),
+    ],
+)
+def test_a_list_or_dict_of_a_class_keeps_its_shape(hint: object, fixed: Items) -> None:
+    assert hint_check(hint) == fixed
+
+
+def test_a_constructor_s_list_and_dict_of_a_class_keep_their_shape() -> None:
+    assert inside_of(Basket).keys == Fields(
+        {
+            "items": Items(list, Builds(Point), fixed=True),
+            "by": Items(dict, Builds(Point), fixed=True),
+            "tags": Items(list, str),
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "hint",
+    [
+        collections.deque,
+        collections.deque[int],
+        collections.ChainMap,
+        collections.Counter,
+        collections.UserDict,
+        list[collections.deque],
+    ],
+)
+def test_a_class_from_collections_keeps_the_json_value(hint: object) -> None:
+    check = hint_check(hint)
+
+    assert not isinstance(check, Builds | NoOneClass), check
+    assert not (isinstance(check, Items) and check.fixed), check
+
+
+def test_a_namedtuple_a_user_module_defines_still_builds() -> None:
+    assert hint_check(Pair) == Builds(Pair)
+    assert hint_check(Coord) == Builds(Coord)
+    assert hint_check(list[Coord]) == Items(list, Builds(Coord), fixed=True)
 
 
 def test_a_union_of_ten_classes_counts_them_in_digits() -> None:

@@ -3,9 +3,11 @@ inside such an object ask: its constructor's own hints, read where they were wri
 
 A hint builds when it names one class pyct can call: a plain class, a dataclass, a
 namedtuple, a C class, or a parameterized generic class, which builds its origin. A class
-from ``builtins`` or ``typing``, a base of ``list`` or ``dict`` and a subclass of either keep
-the JSON value, and read as ``check_of`` reads them. A Protocol, an abstract class and a union
-of two classes name no one class.
+from ``builtins``, ``typing`` or ``collections``, a base of ``list`` or ``dict`` and a subclass
+of either keep the JSON value, and read as ``check_of`` reads them. A Protocol, an abstract
+class and a union of two classes name no one class. A ``list[X]`` or ``dict[str, X]`` whose
+``X`` builds, names no one class, or is such a list or dict itself, is a fixed ``Items``:
+each item or value is built, and the list keeps its length and the dict its keys.
 """
 
 from __future__ import annotations
@@ -17,13 +19,23 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from pyct.binding.annotations import NONE, PLAIN, Builds, Check, Fields, NoOneClass, check_of
+from pyct.binding.annotations import (
+    NONE,
+    PLAIN,
+    Builds,
+    Check,
+    Fields,
+    Items,
+    NoOneClass,
+    check_of,
+)
 from pyct.binding.call import by_position
 from pyct.binding.classes import is_a_class, signature_of
 from pyct.binding.resolve import as_text, checked_annotations, resolved
 
-# the modules whose classes keep the JSON value: the types JSON gives, and typing's own forms
-_KEPT_MODULES = frozenset({"builtins", "typing"})
+# the modules whose classes keep the JSON value: the types JSON gives, typing's own forms, and
+# the containers of collections, which a JSON value would build wrong: deque(1, 2, 3)
+_KEPT_MODULES = frozenset({"builtins", "typing", "collections"})
 
 # what every reason a hint builds no one class ends with
 _NAME_IT = 'name the class to build with "__class__"'
@@ -82,7 +94,27 @@ def _read(annotation: object, owner: object) -> Check | None:
         members = tuple(_member(member, owner) for member in typing.get_args(annotation))
         return _union(annotation, members)
     named = _named(annotation)
-    return check_of(annotation) if named is None else named
+    if named is not None:
+        return named
+    fixed = _fixed(annotation, owner)
+    return check_of(annotation) if fixed is None else fixed
+
+
+def _fixed(annotation: object, owner: object) -> Items | None:
+    """A ``list[X]`` or ``dict[str, X]`` whose ``X`` reads as a class to build, as one that
+    names no one class, or as such a list or dict itself; None for any other hint."""
+    origin = typing.get_origin(annotation)
+    arguments = typing.get_args(annotation)
+    if origin is list and len(arguments) == 1:
+        kind, item = list, arguments[0]
+    elif origin is dict and len(arguments) == 2 and arguments[0] is str:
+        kind, item = dict, arguments[1]
+    else:
+        return None
+    each = _read(item, owner)
+    if isinstance(each, Builds | NoOneClass) or (isinstance(each, Items) and each.fixed):
+        return Items(kind, each, fixed=True)
+    return None
 
 
 def _read_named(annotation: object, owner: object) -> Check | None:
