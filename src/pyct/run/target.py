@@ -81,6 +81,13 @@ class Target:
     self_name: str | None = None
     constructor: inspect.Signature | None = None
 
+    @property
+    def home(self) -> str:
+        """The module a bare class name under ``"__class__"`` is read in: the one the target
+        function was written in, or the spec's own module for a callable that names none."""
+        written = getattr(self.fn, "__module__", None)
+        return written if isinstance(written, str) else self.spec.partition("::")[0]
+
 
 def load_target(
     spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
@@ -138,6 +145,7 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
         positional=positional_only(target.signature),
         checks=argument_checks(target),
         self_build=_self_build(target),
+        home=target.home,
     )
 
 

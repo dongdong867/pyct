@@ -57,12 +57,12 @@ def _parts(text: object, home: str) -> tuple[str, str]:
     """The module and the dotted name a ``"__class__"`` text names, the bare name's module
     ``home``."""
     if isinstance(text, str):
-        module_name, written, qualname = text.partition("::")
-        if not written:
+        module_name, joined, qualname = text.partition("::")
+        if not joined:
             module_name, qualname = home, text
         if _dotted(module_name) and _dotted(qualname):
             return module_name, qualname
-    raise ClassNameError(f"'__class__' must be MODULE::CLASS or a class name, got {_written(text)}")
+    raise ClassNameError(f"'__class__' must be MODULE::CLASS or a class name, got {written(text)}")
 
 
 def _dotted(name: str) -> bool:
@@ -70,7 +70,7 @@ def _dotted(name: str) -> bool:
     return all(part.isidentifier() for part in name.split("."))
 
 
-def _written(value: object) -> str:
+def written(value: object) -> str:
     """The value as JSON, as the seed was typed; one JSON cannot write, which only a ``run()``
     caller can give, as its repr."""
     try:
