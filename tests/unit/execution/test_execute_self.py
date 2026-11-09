@@ -7,11 +7,12 @@ from pathlib import Path
 import pytest
 
 from pyct.binding.annotations import Fields
+from pyct.binding.builds import SelfBuild
 from pyct.binding.call import positional_only
 from pyct.core.foundation import values
 from pyct.core.foundation.branch import Site
 from pyct.execution.blame import one_line
-from pyct.execution.execute import ExecutionContext, ExecutionResult, SelfBuild, execute
+from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure, FailureKind
 from tests.unit.deadline_fires import DEADLINE_FIRES
 

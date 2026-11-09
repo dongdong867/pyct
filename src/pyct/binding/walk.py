@@ -11,13 +11,14 @@ from __future__ import annotations
 import copy
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Protocol, TypeGuard, cast
 
 from pyct.binding import objects
-from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
+from pyct.binding.annotations import Check, Fields
+from pyct.binding.builds import object_form
 from pyct.binding.copies import Scratch, faithful_copies
 from pyct.binding.objects import Attributes, Held
+from pyct.binding.steps import FIXED, Pending, form_items, items_to_place, keyed, step
 from pyct.binding.tuples import (
     Holder,
     Later,
@@ -84,10 +85,6 @@ def binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
 # the types whose values the walk hands on as they are: nothing can change one
 _ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
 
-# one value still to place: the value, its access, and where it goes. The access is None under
-# a key no access can name
-type _Pending = tuple[object, Expression | None, Holder, Slot, Check | None]
-
 # what a container or an object takes from the walk into its copy: a list's items, a dict's,
 # or an object's attributes
 type _Insides = list[object] | dict[object, object] | Attributes
@@ -140,13 +137,16 @@ class Walk:
         self._tracked: set[int] = set()
         # the objects whose copy is handed on plain, by the identity of the seed's
         self._whole: set[int] = set()
+        # the copies of fixed shape, the object forms among them, whose values may be object forms
+        self._fixed: set[int] = set()
+        self._forms: set[int] = set()
         # each dict subclass's keys in the order its copy holds them, by the identity of the seed's
         self._keys: dict[int, list[object]] = {}
         # each tuple by the identity of the seed's, and by the identity of each list its items
         # were placed in
         self._tuples: dict[int, TupleBuild] = {}
         self._owners: dict[int, TupleBuild] = {}
-        self._pending: list[_Pending | TupleBuild] = []
+        self._pending: list[Pending | TupleBuild] = []
         # each value to copy whole and where it goes, in walk order
         self._to_copy: list[tuple[object, Holder, Slot]] = []
 
@@ -171,7 +171,7 @@ class Walk:
         self._finish()
         return rebuilt
 
-    def _later(self, values: Iterable[_Pending]) -> None:
+    def _later(self, values: Iterable[Pending]) -> None:
         """Queue values to place in the order given: the stack pops the last one first."""
         self._pending.extend(reversed(list(values)))
 
@@ -194,39 +194,65 @@ class Walk:
     def _followed(self, value: object, access: Expression | None, place: Place) -> object:
         """A dict's, a list's or an object's copy, its items or attributes queued."""
         made = self._copies.get(id(value))
+        form = self._form(value, made, place)
+        check = FIXED if form else place.check
         if made is None:
-            made, insides = self._made(value, access, place)
+            made, insides = self._made(value, access, place, check)
         elif access is None or id(value) in self._named or id(value) in self._whole:
             return made
         else:
-            insides = self._takes(value, made, place.check)
+            insides = self._takes(value, made, check)
         if insides is None:
             return made
         if access is not None:
             self._named.add(id(value))
-        self._later(_insides(value, insides, access, made, place.check))
+        if form:
+            self._forms.add(id(made))
+            self._later(form_items(cast(dict[object, object], insides), access, cast(Any, made)))
+        else:
+            self._later(_insides(value, insides, access, made, check))
         return made
 
+    def _form(self, value: object, made: object, place: Place) -> bool:
+        """Whether ``value`` is an object form the walk keeps the shape of (``form_items``).
+
+        That is one at a parameter's own value, but not the dict a method's
+        instance is built from, which takes ``Fields``, and one a holder of
+        fixed shape holds: the fields of a built instance, an object form, or
+        its ``"__args__"``. In any other place such a dict stays a dict.
+        """
+        if made is not None:
+            return id(made) in self._forms
+        if not object_form(value):
+            return False
+        if id(place.into) in self._fixed:
+            return True
+        return isinstance(place.access, str) and not isinstance(place.check, Fields)
+
     def _made(
-        self, value: object, access: Expression | None, place: Place
+        self, value: object, access: Expression | None, place: Place, check: Check | None
     ) -> tuple[object, _Insides | None]:
         """A container's or an object's copy, made the first time the walk reaches it, and what
-        it takes; None for a copy handed on as it is."""
+        it takes; None for a copy handed on as it is. A list or a dict under ``Fields`` is a
+        plain copy of fixed shape."""
         if type(value) is not list and type(value) is not dict:
             made = self._copy_followed(value)
-            return made, None if id(value) in self._whole else self._takes(value, made, place.check)
+            return made, None if id(value) in self._whole else self._takes(value, made, check)
         items: list[object] | dict[object, object]
-        if isinstance(value, list) and access is not None:
+        fixed = isinstance(check, Fields)
+        if isinstance(value, list) and access is not None and not fixed:
             made, items = self._visitor.listed(value, place)
             self._tracked.add(id(made))
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
-        elif access is not None and not isinstance(place.check, Fields):
-            made, items = self._visitor.mapped(keyed(value, place.check), place)
+        elif access is not None and not fixed:
+            made, items = self._visitor.mapped(keyed(value, check), place)
         else:
             # a dict under no access, or under ``Fields``: a plain copy, its keys and length fixed
-            items = keyed(value, place.check)
+            items = keyed(value, check)
             made = dict.fromkeys(items)
+        if fixed:
+            self._fixed.add(id(made))
         self._copies[id(value)] = made
         self._kept.append(value)
         return made, items
@@ -255,7 +281,7 @@ class Walk:
         self._kept.append(items)
         self._pending.append(build)
         self._later(
-            (item, _step(access, at), items, at, None) for at, item in enumerate(build.value)
+            (item, step(access, at), items, at, None) for at, item in enumerate(build.value)
         )
 
     def _copy_later(self, value: object, place: Place) -> Later:
@@ -382,7 +408,7 @@ def _build(build: TupleBuild) -> None:
 
 def _insides(
     value: object, insides: _Insides, access: Expression | None, into: object, check: Check | None
-) -> Iterable[_Pending]:
+) -> Iterable[Pending]:
     """The values inside a container or an object to place into its copy, in order: a list's
     and a dict's items (see ``_items``), or an object's attributes, which take no check."""
     if isinstance(insides, Attributes):
@@ -390,85 +416,6 @@ def _insides(
         return (
             (item, objects.step(access, each), held, each, None) for each, item in insides.pairs
         )
-    return _items(value, insides, access, cast(list[object] | dict[Any, object], into), check)
-
-
-def _items(
-    value: object,
-    items: list[object] | dict[object, object],
-    access: Expression | None,
-    into: list[object] | dict[Any, object],
-    check: Check | None,
-) -> Iterable[_Pending]:
-    """A container's values to place into its copy, each with the access one step in.
-
-    A list's and a dict's are the items the walk decided it takes. A dict's value is named by
-    its key when the key can be written as a literal (see ``_key``), and by nothing otherwise.
-    It goes in under the copy's own key, in the same order: a copy deepcopy made holds copies
-    of the seed's keys, and a key equal only to itself would go in twice. The copy's keys are
-    read in C, since a tracked dict's own walk records forks. Under ``Fields``, each value takes
-    its own key's check.
-    """
-    each = _each(check, list if isinstance(value, list) else dict)
-    if isinstance(items, list):
-        return ((item, _step(access, i), into, i, each) for i, item in enumerate(items))
-    pairs = zip(dict.items(items), dict.keys(cast(dict[Any, object], into)), strict=True)
-    fields: Mapping[Any, Check] = check.each if isinstance(check, Fields) else {}
-    return (
-        (item, _step(access, _key(key)), into, slot, fields.get(key, each))
-        for (key, item), slot in pairs
+    return items_to_place(
+        value, insides, access, cast(list[object] | dict[Any, object], into), check
     )
-
-
-def _each(check: Check | None, kind: type) -> Check | None:
-    """What a list or dict annotation asks of each of its items, when it is that kind."""
-    return check.each if isinstance(check, Items) and check.kind is kind else None
-
-
-def keyed(value: dict[object, object], check: Check | None) -> dict[object, object]:
-    """A dict's items, each key read back as its annotation's key type says.
-
-    JSON keys are always strings, so an int key an input's line wrote as ``"3"`` is read back
-    as ``3`` under a ``dict[int, X]`` annotation, and the line's ``args`` given back through
-    ``--args`` is the same input. A key written any other way, or under any other annotation,
-    stays as it came.
-    """
-    if not int_keys(check):
-        return dict(value)
-    return {_read_back(key): item for key, item in dict.items(value)}
-
-
-def _read_back(key: object) -> object:
-    """A key as a ``dict[int, X]`` reads it: the int an int's JSON text writes, else itself."""
-    return int(key) if isinstance(key, str) and reads_as_int(key) else key
-
-
-class _Unnamed(Enum):
-    """What ``_key`` answers for a key no access can write, apart from every literal."""
-
-    KEY = "a key no access can name"
-
-
-def _step(container: Expression | None, key: Expression | _Unnamed) -> Expression | None:
-    """The access one step further in, ``["[]", container, key]``.
-
-    None when the container has no access, or the key cannot be written.
-    """
-    if container is None or key is _Unnamed.KEY:
-        return None
-    return ["[]", container, key]
-
-
-def _key(key: object) -> Expression | _Unnamed:
-    """A key as an access writes it: a str in its Python quotes, an int as itself.
-
-    Any other key is ``_Unnamed.KEY``: no access names the value under it.
-    The answer is apart from every literal, so a key written as ``null`` can
-    join them later.
-    """
-    if isinstance(key, str):
-        # str's own repr: a key of the target's own str subclass may print itself another way
-        return str.__repr__(key)
-    if isinstance(key, int) and not isinstance(key, bool):
-        return int(key)
-    return _Unnamed.KEY
