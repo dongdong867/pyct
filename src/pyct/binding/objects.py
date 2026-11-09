@@ -1,11 +1,13 @@
 """An object in the walk: whether its attributes are followed, which they are, and how its
 copy takes a new value for one.
 
-An object is followed when its class copies by Python's default route (``copies_by_default``)
-and it holds an attribute, or is a subclass of dict or list, and then once ``copy.deepcopy``
-makes a faithful copy of it (``faithful``), which is also the test that it can be copied: a
-module or an object holding a lock is refused, and reaches the target as it came. A class, a
-function, an enum member and a bound method are never followed.
+An object is followed when it passes the copy rule: no class on its MRO writes one of the
+copy, pickling or look-up methods the rule names in Python, nor does its own ``__dict__`` hold
+one, and its exact class has no ``copyreg`` reducer (``copies_by_default``). It must also hold
+an attribute or be a subclass of dict or list, and ``copy.deepcopy`` must make a faithful copy
+of it (``faithful``), which is also the test that it can be copied: a module or an object
+holding a lock is refused, and reaches the target as it came. A class, a function, an enum
+member and a bound method are never followed.
 """
 
 from __future__ import annotations
@@ -108,24 +110,27 @@ def copies_by_default(cls: type) -> bool:
     return True
 
 
-def faithful(value: object, made: object, memo: Mapping[int, object]) -> bool:
-    """Whether a deepcopy is a new object of the original's type and shape: a list subclass's
-    length, and a dict subclass's keys and its ``__dict__``'s, each copied key the one
-    deepcopy made of an original key (``keys_as_copied``)."""
+def faithful(value: object, made: object, memo: Mapping[int, object]) -> list[object] | None:
+    """The original dict subclass's keys in the order its copy holds them, or an empty list for
+    any other value, when a deepcopy is a new object of the original's type and shape: a list
+    subclass's length, and a dict subclass's keys and its ``__dict__``'s, each copied key the
+    one deepcopy made of an original key (``keys_as_copied``); None when it is not."""
     if made is value or type(made) is not type(value):
-        return False
+        return None
     # the copy is of the value's own type, so a list's copy is a list and a dict's a dict
     if isinstance(value, list) and list.__len__(cast(list[object], made)) != list.__len__(value):
-        return False
-    if (
-        isinstance(value, dict)
-        and keys_as_copied(value, cast(dict[object, object], made), memo) is None
-    ):
-        return False
+        return None
+    keys = (
+        keys_as_copied(value, cast(dict[object, object], made), memo)
+        if isinstance(value, dict)
+        else []
+    )
     fields, copied = own_fields(value), own_fields(made)
-    if fields is None or copied is None:
-        return fields is copied
-    return keys_as_copied(fields, copied, memo) is not None
+    if keys is None or (fields is None) != (copied is None):
+        return None
+    if fields is None or copied is None or keys_as_copied(fields, copied, memo) is not None:
+        return keys
+    return None
 
 
 def keys_as_copied(

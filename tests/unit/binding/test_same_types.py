@@ -1,4 +1,3 @@
-import enum
 import json
 import time
 from collections import OrderedDict, defaultdict, deque, namedtuple
@@ -220,44 +219,6 @@ def test_a_namedtuple_subclass_with_an_empty_dict_is_built_from_its_items() -> N
     }
 
 
-class Owner:
-    def __init__(self, held: object) -> None:
-        self.held = held
-
-    def method(self) -> object:
-        return self.held
-
-
-def test_a_tuple_named_late_is_the_one_tuple_every_holder_holds() -> None:
-    t = (0,)
-    seed: dict[str, object] = {
-        "a": {1.5: t},
-        "s": frozenset({t}),
-        "q": deque([t]),
-        "f": Owner(t).method,
-        "b": t,
-    }
-
-    args: dict[str, Any] = bind(seed, [])
-
-    b = args["b"]
-    assert isinstance(b[0], ConcolicInt)
-    assert dict.__getitem__(args["a"], 1.5) is b
-    assert next(iter(args["s"])) is b and args["q"][0] is b
-    assert args["f"].__self__.held is b
-
-
-def test_a_tuple_a_set_holds_before_its_name_is_the_one_tuple_its_name_gives() -> None:
-    point = (1, 2)
-    seed: dict[str, object] = {"seen": {point}, "box": Owner({point}), "p": point}
-
-    args: dict[str, Any] = bind(seed, [])
-
-    p = args["p"]
-    assert isinstance(p[0], ConcolicInt)
-    assert next(iter(args["seen"])) is p and next(iter(args["box"].held)) is p
-
-
 def test_tuples_shared_at_every_level_are_built_once_each() -> None:
     # each level holds the one below twice, and the innermost is named last: a build again
     # per place it was put would cost 2 ** 24 builds
@@ -271,36 +232,6 @@ def test_tuples_shared_at_every_level_are_built_once_each() -> None:
 
     assert time.monotonic() - started < 2
     assert len(named) == 1
-
-
-class Color(enum.Enum):
-    RED = 1
-
-
-@pytest.mark.parametrize(
-    "held", [Color.RED, b"k", frozenset({1})], ids=["enum", "bytes", "frozenset"]
-)
-def test_a_tuple_holding_a_value_copied_whole_is_one_tuple_for_every_holder(held: object) -> None:
-    p = (held, 1)
-
-    args: dict[str, Any] = bind({"seen": {p}, "q": deque([p]), "p": p}, [])
-
-    made = args["p"]
-    assert isinstance(made[1], ConcolicInt)
-    assert next(iter(args["seen"])) is made and args["q"][0] is made
-
-
-@pytest.mark.parametrize("first", ["q", "t"])
-def test_a_value_copied_whole_holds_the_tuple_the_walk_builds(first: str) -> None:
-    t = (0, deque())
-    q = deque([t])
-    seed: dict[str, object] = {"q": q, "t": t} if first == "q" else {"t": t, "q": q}
-
-    args: dict[str, Any] = bind(seed, [])
-
-    made = args["t"]
-    assert args["q"][0] is made and isinstance(made[0], ConcolicInt)
-    assert type(t[0]) is int and q[0] is t
 
 
 class Item:
@@ -329,66 +260,6 @@ def test_a_copy_handed_on_plain_at_any_depth_is_not_gone_into() -> None:
     assert isinstance(args["p"].n, ConcolicInt)
 
 
-@pytest.mark.parametrize("first", ["t", "ti"])
-@pytest.mark.parametrize(
-    ("held", "around"),
-    [
-        (frozenset({1}), lambda ti: deque([ti])),
-        (b"k", lambda ti: frozenset({ti})),
-        (frozenset({1}), lambda ti: frozenset({ti})),
-        (b"k", lambda ti: deque([ti])),
-    ],
-    ids=["deque", "frozenset", "frozenset holding frozenset", "deque holding bytes"],
-)
-def test_a_value_copied_whole_inside_a_tuple_holds_the_tuple_the_walk_builds(
-    first: str, held: object, around: Any
-) -> None:
-    ti = (0, held)
-    t = (around(ti), 1)
-    seed: dict[str, object] = {"t": t, "ti": ti} if first == "t" else {"ti": ti, "t": t}
-
-    args: dict[str, Any] = bind(seed, [])
-
-    inside = next(iter(args["t"][0]))
-    assert inside is args["ti"] and isinstance(inside[0], ConcolicInt)
-
-
-def test_a_deque_that_holds_the_tuple_it_sits_in_is_one_cycle() -> None:
-    held: deque[object] = deque()
-    t = (held, 0)
-    held.append(t)
-
-    args: dict[str, Any] = bind({"t": t, "q": held}, [])
-
-    made = args["t"]
-    assert made[0] is args["q"] and made[0][0] is made
-    assert isinstance(made[1], ConcolicInt) and held[0] is t
-
-
-class Method:
-    def meth(self) -> int:
-        return 1
-
-
-@pytest.mark.parametrize("first", ["t", "m"])
-def test_a_method_whose_object_holds_the_tuple_it_sits_in_is_handed_on_as_it_came(
-    first: str,
-) -> None:
-    # deepcopy reaches the tuple while it copies the method's object, before the method's own
-    # copy exists, so the tuple cannot hold that copy: the method reaches every holder as it
-    # came
-    owner: Any = Method()
-    method = owner.meth
-    t = (method, 0)
-    owner.t = t
-    seed: dict[str, object] = {"t": t, "m": method} if first == "t" else {"m": method, "t": t}
-
-    args: dict[str, Any] = bind(seed, [])
-
-    assert args["m"] is method and args["t"][0] is method
-    assert isinstance(args["t"][1], ConcolicInt) and owner.t is t
-
-
 class Lazy(dict[str, int]):
     """A dict that iterates its keys sorted and refuses to hand out a value."""
 
@@ -411,3 +282,14 @@ def test_a_dict_subclass_is_read_through_dict_s_own_methods() -> None:
         json.dumps(["[]", "d", "'b'"]),
         json.dumps(["[]", "d", "'a'"]),
     ]
+
+
+def test_a_tuple_a_value_copied_whole_holds_is_a_copy_of_its_own_and_plain() -> None:
+    t = (0,)
+    q = deque([t])
+
+    args: dict[str, Any] = bind({"t": t, "q": q}, [])
+
+    assert args["q"][0] is not args["t"] and type(args["q"][0][0]) is int
+    assert isinstance(args["t"][0], ConcolicInt)
+    assert q[0] is t and type(t[0]) is int

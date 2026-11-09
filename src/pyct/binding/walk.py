@@ -17,16 +17,16 @@ from typing import Any, Protocol, TypeGuard, cast
 from pyct.binding import objects
 from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
 from pyct.binding.copies import Scratch, faithful_copies
-from pyct.binding.finish import Finish
 from pyct.binding.objects import Attributes, Held
 from pyct.binding.tuples import (
     Holder,
     Later,
-    PlainCopy,
     Slot,
     TupleBuild,
     buildable,
+    innermost_first,
     put,
+    tuples_among,
 )
 from pyct.core.foundation.branch import Expression
 
@@ -109,24 +109,19 @@ class Walk:
 
     A list first reached under a name is tracked whole: the visitor makes its
     copy and says which items it takes, and every value placed in it is a
-    value inside a tracked list. An object whose class copies by Python's
-    default route, a subclass of dict or list among them, is copied by
-    deepcopy with a memo that reads the walk's copies, and its attributes, or
-    its items, are then followed into that copy (see ``objects``), so the
+    value inside a tracked list. An object whose class passes the copy rule
+    (``objects.copies_by_default``), a subclass of dict or list among them,
+    is copied by deepcopy with a memo that reads the walk's copies, and its
+    attributes, or its items, are then followed into that copy, so the
     objects inside it are its copies from that one deepcopy. Only a faithful
     copy is gone into, at any depth (``copies.faithful_copies``); the walk
-    does not go into any other, which is handed on as deepcopy made it. A
-    value deepcopy cannot copy stays as it came.
+    does not go into any other, which is handed on as deepcopy made it.
 
-    A tuple's items are placed by index in a list of their own, and a value
-    the walk does not follow is held back: once every path is walked, each
-    tuple is built once from its items, of its own type, after every tuple
-    and every value held back among its items, and each held-back value is
-    copied once, whole, by deepcopy over the walk's copies and the copies
-    under way (``finish``), and each goes everywhere the walk put it at
-    once. A held-back copy builds each tuple it reaches that is not built
-    yet, and holds that tuple. A held-back value whose copy would close a
-    cycle through a tuple before deepcopy begins it is handed on as it came.
+    A tuple's items are placed by index in a list of their own, and once
+    every path is walked each tuple is built once from them, of its own type,
+    innermost first, and put everywhere the walk put it. Any other value the
+    walk does not follow is copied whole where the walk reaches it, with
+    nothing inside it tracked, and one deepcopy refuses stays as it came.
     """
 
     def __init__(self, visitor: Visitor) -> None:
@@ -142,12 +137,13 @@ class Walk:
         self._whole: set[int] = set()
         # each dict subclass's keys in the order its copy holds them, by the identity of the seed's
         self._keys: dict[int, list[object]] = {}
-        # each tuple and each value held back, by the identity of the seed's, and each tuple
-        # by the identity of each list its items were placed in
+        # each tuple by the identity of the seed's, and by the identity of each list its items
+        # were placed in
         self._tuples: dict[int, TupleBuild] = {}
         self._owners: dict[int, TupleBuild] = {}
-        self._plain: dict[int, PlainCopy] = {}
         self._pending: list[_Pending | TupleBuild] = []
+        # the memo of the values copied whole, apart from the walk's copies
+        self._whole_copies: dict[int, object] = {}
 
     def rebuilt(
         self, seed: Mapping[str, object], checks: Mapping[str, Check] | None = None
@@ -176,7 +172,7 @@ class Walk:
 
     def _placed(self, value: object, access: Expression | None, place: Place) -> object:
         """What goes where ``value`` was: its tracked form, its copy, the value itself, or
-        ``Later.VALUE`` for one placed once every path is walked. A value with no access is
+        ``Later.VALUE`` for a tuple, built once every path is walked. A value with no access is
         never tracked, and neither is anything under it."""
         if access is not None and binds(value, access):
             return self._visitor.scalar(value, place)
@@ -185,10 +181,10 @@ class Walk:
         if isinstance(value, tuple):
             if buildable(value):
                 return self._visit_tuple(value, access, place)
-            return self._held_back(value, place)
+            return self._copied_whole(value)
         if type(value) is list or type(value) is dict or objects.followed(value):
             return self._followed(value, access, place)
-        return self._held_back(value, place)
+        return self._copied_whole(value)
 
     def _followed(self, value: object, access: Expression | None, place: Place) -> object:
         """A dict's, a list's or an object's copy, its items or attributes queued."""
@@ -257,20 +253,33 @@ class Walk:
             (item, _step(access, at), items, at, None) for at, item in enumerate(build.value)
         )
 
-    def _held_back(self, value: object, place: Place) -> Later:
-        """Note where a value the walk does not follow goes; it is copied once every path is
-        walked."""
-        plain = self._plain.get(id(value))
-        if plain is None:
-            plain = self._plain[id(value)] = PlainCopy(value)
-            self._kept.append(value)
-        plain.placements.append((place.into, place.slot))
-        return Later.VALUE
+    def _copied_whole(self, value: object) -> object:
+        """A value the walk does not follow, copied whole by deepcopy, with nothing inside it
+        tracked, or the value itself when deepcopy refuses it.
+
+        The values copied whole share one memo, apart from the walk's copies,
+        so two that hold one list hold one copy of it. deepcopy records a copy
+        before it fills it, so it copies into a scratch memo over that one,
+        and only a copy that finishes joins it.
+        """
+        scratch = Scratch(self._whole_copies)
+        try:
+            copied = copy.deepcopy(value, scratch)
+        except Exception:
+            return value
+        self._kept.extend(scratch.pop(id(scratch), []))
+        self._whole_copies.update(scratch)
+        return copied
 
     def _finish(self) -> None:
-        """Build every tuple and copy every value held back, now that every path is walked
-        (see ``finish.Finish``)."""
-        Finish(self._copies, self._kept, self._tuples, self._owners).run(self._plain.values())
+        """Build every tuple once every path is walked: from the items its last visit placed,
+        after every tuple among them, with ``tuple.__new__`` so a namedtuple's own constructor
+        does not run, and put it everywhere the walk put it."""
+        builds = list(self._tuples.values())
+        for build in innermost_first(builds, tuples_among(builds, self._owners)):
+            made = tuple.__new__(type(build.value), build.items)
+            for into, slot in build.placements:
+                put(into, slot, made, build.value)
 
     def _copy_followed(self, value: object) -> object:
         """An object's copy, made by one deepcopy over the walk's copies, or the object itself
@@ -309,14 +318,15 @@ class Walk:
 
         Each copy of a subclass or an object the walk reaches here passed
         ``copies.faithful_copies`` when it was made. A dict subclass's items
-        are read with ``dict``'s own methods, in the order its copy holds its
-        keys, so no subclass's code runs.
+        are read with ``dict``'s own methods, each paired with its key by
+        identity, in the order its copy holds its keys, so no subclass's code
+        runs.
         """
         if isinstance(value, list):
             return list(list.__iter__(value))
         if type(value) is not dict and isinstance(value, dict):
-            items = {key: dict.__getitem__(value, key) for key in self._keys[id(value)]}
-            return keyed(items, check)
+            by_key = {id(key): item for key, item in dict.items(value)}
+            return keyed({key: by_key[id(key)] for key in self._keys[id(value)]}, check)
         if isinstance(value, dict):
             return keyed(value, check)
         return objects.attributes(value, made)

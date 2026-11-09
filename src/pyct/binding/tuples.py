@@ -1,8 +1,5 @@
-"""The tuples of a seed and the values the walk does not follow, each placed once every path
-is walked: a tuple built from its items, and a value copied whole, each once and put everywhere
-the walk put it. A tuple is built after every tuple and every value held back among its items,
-and a held-back value's copy holds the tuple the walk builds.
-"""
+"""The tuples of a seed, each built once every path is walked, from its items and after every
+tuple among them, and put everywhere the walk put it; and where the walk puts a value."""
 
 from __future__ import annotations
 
@@ -24,8 +21,8 @@ type Slot = Hashable
 
 
 class Later(Enum):
-    """What the walk places where a value goes once every path is walked: a tuple, or a copy
-    of a value the walk does not follow."""
+    """What the walk places where a tuple goes, until the tuple is built once every path is
+    walked."""
 
     VALUE = "placed once every path is walked"
 
@@ -35,8 +32,8 @@ class TupleBuild:
     """One tuple of the seed, built once every path is walked.
 
     ``items`` is the list its items are placed in by its last visit, which ``named`` says named
-    them, and ``placements`` every place the walk put it, where the one tuple its build makes,
-    ``made``, goes.
+    them, and ``placements`` every place the walk put it, where the one tuple its build makes
+    goes.
     """
 
     value: tuple[object, ...]
@@ -45,20 +42,6 @@ class TupleBuild:
     visiting: bool = False
     items: list[object] = field(default_factory=list)
     placements: list[tuple[Holder, Slot]] = field(default_factory=list)
-    made: tuple[object, ...] | None = None
-
-
-@dataclass(eq=False)
-class PlainCopy:
-    """A value the walk does not follow, copied whole once every path is walked, and every
-    place the walk put it. ``copying`` is set while its deepcopy runs and ``done`` once its
-    copy, ``made``, is put everywhere."""
-
-    value: object
-    placements: list[tuple[Holder, Slot]] = field(default_factory=list)
-    copying: bool = False
-    done: bool = False
-    made: object = None
 
 
 def buildable(value: tuple[object, ...]) -> bool:
@@ -79,17 +62,6 @@ def buildable(value: tuple[object, ...]) -> bool:
     except TypeError:
         return False
     return True
-
-
-def held_among(
-    plain: Iterable[PlainCopy], owners: Mapping[int, TupleBuild]
-) -> dict[int, list[PlainCopy]]:
-    """The values held back among each tuple's items, by the tuple's identity."""
-    among: dict[int, list[PlainCopy]] = {}
-    for each in plain:
-        for owner in _owners_of(each.placements, owners):
-            among.setdefault(id(owner), []).append(each)
-    return among
 
 
 def tuples_among(
