@@ -120,9 +120,8 @@ def _owners_of(
     """The tuples whose items a value was placed among, by their last visit: an item list an
     earlier visit filled belongs to a build no tuple is made from."""
     for into, _ in placements:
-        owner = owners.get(id(into))
-        if owner is not None and into is owner.items:
-            yield owner
+        if among_items(into, owners):
+            yield owners[id(into)]
 
 
 def put(into: Holder, slot: Slot, placed: object, value: object) -> None:

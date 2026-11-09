@@ -272,9 +272,10 @@ class Walk:
         First the tuples whose items hold no value copied whole, themselves
         or through a tuple inside, innermost first; then the values copied
         whole that sit among the other tuples' items; then those tuples; then
-        every other value copied whole. So a copy made whole that hashes an
-        object the walk copied hashes it with its tuples in place, and a tuple
-        that holds a value copied whole holds it once it is built. Each value
+        every other value copied whole. So a copy made whole outside a tuple's
+        items that hashes an object the walk copied hashes it with its tuples
+        in place, and a tuple that holds a value copied whole holds it once it
+        is built. Each value
         is copied whole by deepcopy over the walk's copies and the copies made
         before it, so it holds the walk's copy of each object, list and dict
         the walk copied, whatever the seed's order; an object only it reaches
@@ -285,8 +286,10 @@ class Walk:
         order = innermost_first(builds, tuples_among(builds, self._owners))
         placements = [(into, slot) for _, into, slot in self._to_copy]
         waiting = holding(order, placements, self._owners)
-        inside = [each for each in self._to_copy if among_items(each[1], self._owners)]
-        outside = [each for each in self._to_copy if not among_items(each[1], self._owners)]
+        inside: list[tuple[object, Holder, Slot]] = []
+        outside: list[tuple[object, Holder, Slot]] = []
+        for each in self._to_copy:
+            (inside if among_items(each[1], self._owners) else outside).append(each)
         memo: dict[int, object] = dict(self._copies)
         for build in order:
             if id(build) not in waiting:
