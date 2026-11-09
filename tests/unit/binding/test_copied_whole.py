@@ -2,14 +2,17 @@
 inside tracked, and the copies the walk makes of the objects it follows."""
 
 import copy
+import json
 import threading
 import time
 from collections import deque
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
-from pyct.binding.bind import bind, leaves
+from pyct.binding.bind import Seed, bind, leaves
+from pyct.binding.model import apply
 from pyct.core.numbers.ints import ConcolicInt
 
 
@@ -168,3 +171,29 @@ def test_a_method_given_beside_its_object_is_bound_to_the_walk_s_copy(first: str
 
     assert args["cb"].__self__ is args["cart"] and isinstance(args["cart"].n, ConcolicInt)
     assert type(cart.n) is int
+
+
+@dataclass(frozen=True)
+class Edge:
+    ends: tuple[int, int]
+
+
+class Graph:
+    """An object holding a frozen dataclass and a set that holds it, hashed by its tuple."""
+
+    def __init__(self) -> None:
+        self.e = Edge((0, 0))
+        self.index = {self.e}
+
+
+def test_a_set_copied_whole_hashes_the_walk_s_copy_with_its_tuples_built() -> None:
+    graph = Graph()
+    ends_0 = json.dumps(["[]", ["getattr", ["getattr", "g", "'e'"], "'ends'"], 0])
+
+    bound: dict[str, Any] = bind({"g": graph}, [])
+    answered = apply(Seed.of({"g": graph}), {ends_0: 5})
+
+    assert bound["g"].e in bound["g"].index
+    made: Any = answered.args["g"]
+    assert made.e.ends == (5, 0) and made.e in made.index
+    assert graph.e.ends == (0, 0) and graph.e in graph.index and type(graph.e.ends[0]) is int

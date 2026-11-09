@@ -94,6 +94,20 @@ def innermost_first(
     return order
 
 
+def holding(
+    order: Sequence[TupleBuild],
+    placements: Iterable[tuple[Holder, Slot]],
+    owners: Mapping[int, TupleBuild],
+) -> set[int]:
+    """The tuples among whose items a value was placed at one of ``placements``, themselves
+    or through a tuple their items hold, by identity, given the tuples innermost first."""
+    found = {id(owner) for owner in _owners_of(placements, owners)}
+    for build in order:
+        if id(build) in found:
+            found.update(id(owner) for owner in _owners_of(build.placements, owners))
+    return found
+
+
 def _owners_of(
     placements: Iterable[tuple[Holder, Slot]], owners: Mapping[int, TupleBuild]
 ) -> Iterable[TupleBuild]:
