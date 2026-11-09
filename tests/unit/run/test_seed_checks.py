@@ -196,7 +196,7 @@ def test_the_objects_inside_one_whose_class_does_not_load_are_still_checked() ->
     ]
 
 
-def test_args_that_are_no_list_skip_the_fit_and_keep_the_other_lines() -> None:
+def test_args_that_are_not_a_list_skip_the_fit_and_keep_the_other_lines() -> None:
     guest = {"__class__": "Guest", "__args__": "ann", "age": "30", "__calls__": []}
 
     lines = seed_refusals(target_for(takes_anything), {"c": guest})

@@ -1,4 +1,5 @@
-"""The checks a seed passes before a run: its shape as JSON, its names, then its types.
+"""The checks a seed passes before a run: its shape as JSON, its names, its types, then each
+object it names with ``"__class__"``.
 
 Each refusal is a UsageError naming what is wrong, as the command line reports it.
 """
@@ -88,7 +89,7 @@ def check_seed(target: Target, seed: Mapping[str, object]) -> None:
 
 
 def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
-    """Every reason to refuse a parsed seed: its names, then its types.
+    """Every reason to refuse a parsed seed: its names, its types, then each object it names.
 
     A wrapper around ``SeedCheck.refusals`` for one seed. A new check on a
     parsed seed belongs in ``SeedCheck.refusals``, so the command line and
