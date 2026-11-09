@@ -2,9 +2,9 @@
 an object at, its keys fixed, its ``"__args__"`` a list of fixed length, its values named."""
 
 import json
-from typing import Any
+from typing import Any, cast
 
-from pyct.binding.annotations import Fields
+from pyct.binding.annotations import Fields, Items
 from pyct.binding.bind import Seed, bind, leaves
 from pyct.binding.model import apply
 from pyct.core.numbers.ints import ConcolicInt
@@ -115,12 +115,64 @@ def test_class_directly_under_a_built_instance_s_fields_stays_a_key() -> None:
     }
 
 
-def test_a_dict_with_class_inside_a_plain_dict_or_list_stays_a_tracked_dict() -> None:
-    seed = Seed.of({"d": {"k": dict(CUSTOMER)}, "rows": [dict(CUSTOMER)]})
+def test_a_list_or_dict_that_holds_a_form_keeps_its_shape_and_names_its_values() -> None:
+    seed = Seed.of({"rows": [{"c": dict(CUSTOMER)}, 5], "d": {"ann": dict(CUSTOMER)}})
 
-    inner = json.dumps(["[]", "d", "'k'"])
-    assert list(seed.dicts) == ["d", inner, json.dumps(["[]", "rows", 0])]
-    assert json.dumps(["[]", ["[]", "d", "'k'"], "'__class__'"]) in seed.leaves
+    assert seed.lists == {} and seed.dicts == {}
+    assert seed.args == {"rows": [{"c": CUSTOMER}, 5], "d": {"ann": CUSTOMER}}
+    c = ["[]", ["[]", "rows", 0], "'c'"]
+    ann = ["[]", "d", "'ann'"]
+    assert seed.leaves == {
+        json.dumps(["[]", c, "'name'"]): str,
+        json.dumps(["[]", c, "'age'"]): int,
+        json.dumps(["[]", "rows", 1]): int,
+        json.dumps(["[]", ann, "'name'"]): str,
+        json.dumps(["[]", ann, "'age'"]): int,
+    }
+    assert leaves({"rows": [{"c": dict(CUSTOMER)}, 5]}) == {
+        name: kind for name, kind in seed.leaves.items() if "rows" in name
+    }
+
+
+def test_a_list_beside_a_form_holding_none_is_tracked_by_its_place() -> None:
+    seed = Seed.of({"cs": [dict(CUSTOMER), ["x"], {"k": 1}]})
+
+    assert list(seed.lists) == [json.dumps(["[]", "cs", 1])]
+    assert list(seed.dicts) == [json.dumps(["[]", "cs", 2])]
+
+
+def test_bind_copies_a_list_that_holds_a_form_plain() -> None:
+    args: dict[str, Any] = bind({"cs": [dict(CUSTOMER), 5]}, [])
+
+    cs = args["cs"]
+    assert type(cs) is list and type(cs[0]) is dict
+    assert isinstance(cs[1], ConcolicInt) and cs[1].expression == ["[]", "cs", 1]
+
+
+def test_the_annotation_of_a_list_that_holds_a_form_still_reads_its_items() -> None:
+    checks = {"cs": Items(list, Items(dict, int, keys=int)), "d": Items(dict, None, keys=int)}
+    seed = Seed.of({"cs": [dict(CUSTOMER), {"1": 2}], "d": {"3": dict(CUSTOMER)}}, checks)
+
+    assert seed.dicts[json.dumps(["[]", "cs", 1])].keys == (1,)
+    assert list(cast(dict[object, object], seed.args["d"])) == [3]
+    assert json.dumps(["[]", ["[]", "d", 3], "'age'"]) in seed.leaves
+
+
+def test_an_answer_keeps_the_shape_around_a_form() -> None:
+    origin = Seed.of({"cs": [dict(CUSTOMER)], "d": {"ann": dict(CUSTOMER)}})
+    age = json.dumps(["[]", ["[]", "cs", 0], "'age'"])
+
+    answered = apply(origin, {age: 70})
+
+    assert answered.args == {"cs": [{**CUSTOMER, "age": 70}], "d": {"ann": CUSTOMER}}
+    assert answered.leaves == origin.leaves
+
+
+def test_a_form_under_a_key_no_access_names_is_kept_untracked() -> None:
+    seed = Seed.of({"d": {2.5: dict(CUSTOMER)}})
+
+    assert seed.args == {"d": {2.5: CUSTOMER}}
+    assert seed.leaves == {} and seed.dicts == {}
 
 
 def test_a_dict_with_class_inside_a_tuple_or_an_object_stays_a_tracked_dict() -> None:

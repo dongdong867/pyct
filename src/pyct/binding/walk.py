@@ -15,7 +15,7 @@ from typing import Any, Protocol, TypeGuard, cast
 
 from pyct.binding import objects
 from pyct.binding.annotations import Check, Fields
-from pyct.binding.builds import object_form
+from pyct.binding.builds import holding_forms, object_form
 from pyct.binding.copies import Scratch, faithful_copies
 from pyct.binding.objects import Attributes, Held
 from pyct.binding.steps import FIXED, Pending, form_items, items_to_place, keyed, step
@@ -106,9 +106,12 @@ class Walk:
     no access can name is walked again, into the same copy, when a path that
     names it reaches it. Each is walked at most twice, so the walk ends.
 
-    A list first reached under a name is tracked whole: the visitor makes its
-    copy and says which items it takes, and every value placed in it is a
-    value inside a tracked list. An object whose class passes the copy rule
+    A list first reached under a name is tracked whole, unless its shape is
+    fixed: one under ``Fields``, an object form's ``"__args__"``, or one that
+    holds an object form (``holding_forms``) is a plain copy of the seed's
+    length, its items named by index. For a tracked list the visitor makes
+    its copy and says which items it takes, and every value placed in it is
+    a value inside a tracked list. An object whose class passes the copy rule
     (``objects.copies_by_default``), a subclass of dict or list among them,
     is copied by deepcopy with a memo that reads the walk's copies, and its
     attributes, or its items, are then followed into that copy, so the
@@ -140,6 +143,8 @@ class Walk:
         # the copies of fixed shape, the object forms among them, whose values may be object forms
         self._fixed: set[int] = set()
         self._forms: set[int] = set()
+        # the seed's lists and dicts that hold an object form, by identity: their shape is fixed
+        self._holding: set[int] = set()
         # each dict subclass's keys in the order its copy holds them, by the identity of the seed's
         self._keys: dict[int, list[object]] = {}
         # each tuple by the identity of the seed's, and by the identity of each list its items
@@ -156,6 +161,7 @@ class Walk:
         """The seed as the walk rebuilds it, one parameter per key, each with its annotation's
         check when ``checks`` names one."""
         asked = checks or {}
+        self._holding = holding_forms(seed)
         rebuilt: dict[str, object] = dict.fromkeys(seed)
         self._later((value, name, rebuilt, name, asked.get(name)) for name, value in seed.items())
         while self._pending:
@@ -218,8 +224,9 @@ class Walk:
 
         That is one at a parameter's own value, but not the dict a method's
         instance is built from, which takes ``Fields``, and one a holder of
-        fixed shape holds: the fields of a built instance, an object form, or
-        its ``"__args__"``. In any other place such a dict stays a dict.
+        fixed shape holds: the fields of a built instance, an object form, its
+        ``"__args__"``, or a list or dict that holds a form (``holding_forms``).
+        In any other place such a dict stays a dict.
         """
         if made is not None:
             return id(made) in self._forms
@@ -233,13 +240,14 @@ class Walk:
         self, value: object, access: Expression | None, place: Place, check: Check | None
     ) -> tuple[object, _Insides | None]:
         """A container's or an object's copy, made the first time the walk reaches it, and what
-        it takes; None for a copy handed on as it is. A list or a dict under ``Fields`` is a
-        plain copy of fixed shape."""
+        it takes; None for a copy handed on as it is. A list or a dict under ``Fields``, or one
+        that holds an object form (``holding_forms``), is a plain copy of fixed shape, and its
+        own annotation still reads its items."""
         if type(value) is not list and type(value) is not dict:
             made = self._copy_followed(value)
             return made, None if id(value) in self._whole else self._takes(value, made, check)
         items: list[object] | dict[object, object]
-        fixed = isinstance(check, Fields)
+        fixed = isinstance(check, Fields) or id(value) in self._holding
         if isinstance(value, list) and access is not None and not fixed:
             made, items = self._visitor.listed(value, place)
             self._tracked.add(id(made))

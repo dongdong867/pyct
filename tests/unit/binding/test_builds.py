@@ -1,11 +1,12 @@
 """The object forms of a seed, listed innermost first, and the plan of the call that builds them."""
 
 import inspect
+import sys
 from collections.abc import Mapping
 
 import pytest
 
-from pyct.binding.builds import BuildError, SelfBuild, object_forms, plan_call
+from pyct.binding.builds import BuildError, SelfBuild, holding_forms, object_forms, plan_call
 from pyct.binding.call import positional_only
 from tests.unit.binding.named_classes import Holder, Pinned, Point
 
@@ -37,8 +38,57 @@ def test_the_dict_under_self_is_no_form_but_its_values_are() -> None:
     assert places(args) == ["self['owner']", "self", "c"]
 
 
-def test_a_form_inside_a_plain_dict_or_list_stays_a_dict() -> None:
-    assert places({"d": {"k": dict(POINT)}, "rows": [dict(POINT)]}) == []
+def test_forms_inside_plain_lists_and_dicts_are_listed_at_their_places() -> None:
+    args = {"rows": [{"c": dict(POINT)}, dict(POINT)], "d": {"ann": dict(POINT), 2.5: dict(POINT)}}
+
+    assert places(args) == ["rows[0]['c']", "rows[1]", "d['ann']", "d[2.5]"]
+
+
+def test_a_form_inside_a_tuple_or_a_list_subclass_stays_a_dict() -> None:
+    class Rows(list[object]):
+        pass
+
+    assert places({"t": ([dict(POINT)],), "s": Rows([dict(POINT)])}) == []
+
+
+def test_the_lists_and_dicts_on_the_way_to_a_form_are_copied_and_no_other() -> None:
+    rows = [{"c": dict(POINT)}, [1]]
+
+    forms = object_forms({"rows": rows}, None)
+
+    copied = forms.args["rows"]
+    assert copied == rows and copied is not rows
+    assert copied[0] is not rows[0]  # pyrefly: ignore[bad-index]
+    assert copied[1] is rows[1]  # pyrefly: ignore[bad-index]
+    assert forms.found[0].form is copied[0]["c"]  # pyrefly: ignore[bad-index]
+
+
+def test_a_list_reached_again_stays_as_it_came_so_a_cycle_ends() -> None:
+    rows: list[object] = [dict(POINT)]
+    rows.append(rows)
+
+    assert places({"rows": rows}) == ["rows[0]"]
+
+
+def test_the_plan_builds_an_object_into_its_list_or_dict() -> None:
+    args = {"rows": [{"c": dict(POINT)}], "d": {"ann": dict(POINT)}}
+
+    plan = plan_call(args, (), None, HOME)
+
+    in_row, in_dict = plan.builds
+    assert (in_row.place, in_row.slot) == ("rows[0]['c']", "c")
+    assert in_row.into is plan.keywords["rows"][0]  # pyrefly: ignore[bad-index]
+    assert (in_dict.into, in_dict.slot) == (plan.keywords["d"], "ann")
+
+
+def test_dropping_the_plan_lets_go_of_each_build_and_leaves_the_target_s_list() -> None:
+    plan = plan_call({"rows": [dict(POINT)]}, (), None, HOME)
+    rows = plan.keywords["rows"]
+
+    plan.drop()
+
+    assert plan.builds == []
+    assert rows == [POINT]
 
 
 def test_the_caller_s_seed_never_changes() -> None:
@@ -96,7 +146,7 @@ def test_a_value_under_self_other_than_a_dict_is_passed_as_given() -> None:
 
     plan = plan_call({"self": given}, (), SelfBuild(Holder, "self"), HOME)
 
-    assert plan.builds == ()
+    assert plan.builds == []
     assert plan.keywords == {"self": given}
 
 
@@ -130,3 +180,51 @@ def test_dropping_the_plan_lets_go_of_every_object() -> None:
 
     assert plan.keywords == {}
     assert all(not build.keywords and not build.positional for build in plan.builds)
+
+
+def test_a_list_or_dict_holds_a_form_at_any_depth_along_plain_lists_and_dicts() -> None:
+    rows = [{"c": dict(POINT)}, [1]]
+    d = {"x": [[dict(POINT)]], "y": {"k": 1}}
+
+    held = holding_forms({"rows": rows, "d": d, "plain": [1, [2]]})
+
+    assert held == {id(rows), id(rows[0]), id(d), id(d["x"]), id(d["x"][0])}
+
+
+def test_a_list_holds_a_form_through_another_form_and_through_self_s_dict() -> None:
+    inner = [dict(POINT)]
+    form = {"__class__": "Holder", "inner": inner}
+    fields = {"owners": [dict(POINT)]}
+
+    held = holding_forms({"o": form, "self": fields})
+
+    assert held == {id(inner), id(form), id(fields), id(fields["owners"])}
+
+
+def test_a_tuple_a_list_subclass_and_an_object_are_not_gone_into() -> None:
+    class Rows(list[object]):
+        pass
+
+    class Box:
+        def __init__(self) -> None:
+            self.rows = [dict(POINT)]
+
+    assert holding_forms({"t": ([dict(POINT)],), "s": Rows([dict(POINT)]), "o": Box()}) == set()
+
+
+def test_every_list_in_a_cycle_that_reaches_a_form_holds_it() -> None:
+    a: list[object] = [None, dict(POINT)]
+    b: list[object] = [a]
+    a[0] = b
+    itself: list[object] = [dict(POINT)]
+    itself.append(itself)
+
+    assert holding_forms({"b": b, "itself": itself}) == {id(a), id(b), id(itself)}
+
+
+def test_a_seed_nested_past_the_recursion_limit_is_gone_through() -> None:
+    nested: list[object] = [dict(POINT)]
+    for _ in range(sys.getrecursionlimit() * 2):
+        nested = [nested]
+
+    assert id(nested) in holding_forms({"n": nested})
