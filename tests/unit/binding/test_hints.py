@@ -1,3 +1,4 @@
+import array
 import collections
 import collections.abc
 import datetime
@@ -7,6 +8,7 @@ import operator
 import typing
 from typing import Any, Optional, TypedDict
 
+import pluggy
 import pytest
 
 from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass
@@ -54,7 +56,6 @@ class Odd(metaclass=Raising):
         (Point, Point),
         (Spot, Spot),
         (Pair, Pair),
-        (datetime.date, datetime.date),
         (Box[int], Box),
         (Point | None, Point),
         (Optional[Point], Point),  # noqa: UP045 - the old spelling is what it reads
@@ -160,14 +161,28 @@ def test_a_constructor_s_list_and_dict_of_a_class_keep_their_shape() -> None:
         collections.ChainMap,
         collections.Counter,
         collections.UserDict,
+        array.array,
+        datetime.date,
+        datetime.date | None,
         list[collections.deque],
+        list[array.array],
+        dict[str, datetime.date],
+        pluggy.PluginManager,
+        list[pluggy.PluginManager],
     ],
 )
-def test_a_class_from_collections_keeps_the_json_value(hint: object) -> None:
+def test_a_library_class_keeps_the_json_value(hint: object) -> None:
     check = hint_check(hint)
 
     assert not isinstance(check, Builds | NoOneClass), check
     assert not (isinstance(check, Items) and check.fixed), check
+
+
+def test_a_library_class_builds_under_a_hint_its_own_package_writes() -> None:
+    owner = pluggy.HookimplMarker
+
+    assert hint_check(pluggy.PluginManager, owner) == Builds(pluggy.PluginManager)
+    assert hint_check(pluggy.PluginManager, Line) is None
 
 
 def test_a_namedtuple_a_user_module_defines_still_builds() -> None:

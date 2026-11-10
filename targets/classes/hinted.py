@@ -44,10 +44,10 @@ def boxed(b: Box[int]):
     return "small"
 
 
-def is_a_date(d: date):
-    if not isinstance(d, date):
-        raise TypeError("not a date")
-    return d.year
+def kept_date(d: date):
+    if not isinstance(d, dict):
+        raise TypeError("not kept as JSON")
+    return d
 
 
 def placed(p: Point):

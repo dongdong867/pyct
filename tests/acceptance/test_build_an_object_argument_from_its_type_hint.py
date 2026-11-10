@@ -110,13 +110,15 @@ def test_builds_and_follows_an_object() -> None:
 def test_builds_any_kind_of_class() -> None:
     profile = pyct("older", seed(p={"age": 30}))
     box = pyct("boxed", seed(b={"value": 1}))
-    dated = pyct("is_a_date", seed(d={"year": 2024, "month": 1, "day": 1}))
+    dated = pyct("kept_date", seed(d={"year": 2024, "month": 1, "day": 1}))
 
     for code, _, stderr in (profile, box, dated):
         assert code == 0, stderr
     assert took_the_other_side(profile[1], [">", ["[]", "p", "'age'"], 60]), profile[1]
     assert took_the_other_side(box[1], [">", ["[]", "b", "'value'"], 5]), box[1]
-    assert input_lines(dated[1])[0]["failure"] is None, dated[1]
+    first = input_lines(dated[1])[0]
+    assert first["args"] == {"d": {"year": 2024, "month": 1, "day": 1}}, dated[1]
+    assert first["failure"] is None, dated[1]
 
 
 # build-an-object-argument-from-its-type-hint-writes-an-input-that-runs-again
