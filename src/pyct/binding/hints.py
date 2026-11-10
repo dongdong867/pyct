@@ -6,8 +6,8 @@ namedtuple, a C class, or a parameterized generic class, which builds its origin
 from ``builtins``, ``typing`` or ``collections``, a base of ``list`` or ``dict`` and a subclass
 of either keep the JSON value, and read as ``check_of`` reads them. A Protocol, an abstract
 class and a union of two classes name no one class. A ``list[X]`` or ``dict[str, X]`` whose
-``X`` builds, names no one class, or is such a list or dict itself, is a fixed ``Items``:
-each item or value is built, and the list keeps its length and the dict its keys.
+``X`` builds, names no one class, or is such a list or dict itself, is a fixed ``Items``: the
+list keeps its length and the dict its keys, and each item or value is read under ``X``.
 """
 
 from __future__ import annotations

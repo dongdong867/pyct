@@ -112,10 +112,9 @@ class Walk:
     one that holds an object form (``holding_forms``) is a plain copy of the
     seed's length or keys, its values named by index or key. For a tracked
     list the visitor makes its copy and says which items it takes, and every
-    value placed in it is a value inside a tracked list.
-    An object whose class passes the copy rule
-    (``objects.copies_by_default``), a subclass of dict or list among them,
-    is copied by deepcopy with a memo that reads the walk's copies, and its
+    value placed in it is a value inside a tracked list. An object whose
+    class passes the copy rule (``objects.copies_by_default``), a subclass of
+    dict or list among them, is copied by deepcopy with a memo that reads the walk's copies, and its
     attributes, or its items, are then followed into that copy, so the
     objects inside it are its copies from that one deepcopy. Only a faithful
     copy is gone into, at any depth (``copies.faithful_copies``); the walk
@@ -270,7 +269,7 @@ class Walk:
         elif access is not None and not fixed:
             made, items = self._visitor.mapped(keyed(value, check), place)
         else:
-            # a dict under no access, or under ``Fields``: a plain copy, its keys and length fixed
+            # a dict under no access, or of fixed shape: a plain copy, its keys and length fixed
             items = keyed(value, check)
             made = dict.fromkeys(items)
         if fixed:

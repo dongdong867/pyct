@@ -3,11 +3,11 @@ further in, and a dict's keys as an access and an annotation read them."""
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from enum import Enum
 from typing import Any, cast
 
-from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
+from pyct.binding.annotations import Check, Fields, int_keys, item_check, reads_as_int
 from pyct.binding.builds import ARGS_KEY, CLASS_KEY
 from pyct.binding.hints import Inside
 from pyct.binding.tuples import Holder, Slot
@@ -34,18 +34,18 @@ def items_to_place(
     its key when the key can be written as a literal (see ``key_access``), and by nothing otherwise.
     It goes in under the copy's own key, in the same order: a copy deepcopy made holds copies
     of the seed's keys, and a key equal only to itself would go in twice. The copy's keys are
-    read in C, since a tracked dict's own walk records forks. Under ``Fields``, each value takes
-    its own key's check, and each item its own index's.
+    read in C, since a tracked dict's own walk records forks. Each value takes what the
+    container's check asks of it (``item_check``).
     """
-    each = _each(check, list if isinstance(value, list) else dict)
-    fields: Mapping[Any, Check] = check.each if isinstance(check, Fields) else {}
+    kind = list if isinstance(value, list) else dict
     if isinstance(items, list):
         return (
-            (item, step(access, i), into, i, fields.get(i, each)) for i, item in enumerate(items)
+            (item, step(access, i), into, i, item_check(check, kind, i))
+            for i, item in enumerate(items)
         )
     pairs = zip(dict.items(items), dict.keys(cast(dict[Any, object], into)), strict=True)
     return (
-        (item, step(access, key_access(key)), into, slot, fields.get(key, each))
+        (item, step(access, key_access(key)), into, slot, item_check(check, kind, key))
         for (key, item), slot in pairs
     )
 
@@ -74,11 +74,6 @@ def form_items(
 def _is(key: object, name: str) -> bool:
     """Whether a key is the str ``name``, with no ``__eq__`` of a key's own class run."""
     return type(key) is str and key == name
-
-
-def _each(check: Check | None, kind: type) -> Check | None:
-    """What a list or dict annotation asks of each of its items, when it is that kind."""
-    return check.each if isinstance(check, Items) and check.kind is kind else None
 
 
 def keyed(value: dict[object, object], check: Check | None) -> dict[object, object]:

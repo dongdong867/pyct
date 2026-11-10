@@ -5,7 +5,8 @@ import pytest
 
 from pyct.binding.annotations import Builds, Fields, Items, NoOneClass, contradictions
 from pyct.binding.builds import BuildError, object_forms, plan_call
-from tests.unit.binding.hint_classes import Basket, Spot
+from pyct.binding.hints import hint_check
+from tests.unit.binding.hint_classes import Basket, Shape, Spot
 from tests.unit.binding.named_classes import Holder, Point
 
 HOME = "tests.unit.binding.hint_classes"
@@ -167,3 +168,16 @@ def test_an_empty_list_or_dict_of_a_class_plans_no_build() -> None:
 
     assert plan.builds == []
     assert plan.keywords == {"items": [], "by": {}}
+
+
+def test_an_item_under_a_hint_that_names_no_one_class_is_the_build_error() -> None:
+    reason = 'hint Shape is an abstract class; name the class to build with "__class__"'
+    check = hint_check(list[Shape])
+    assert isinstance(check, Items)
+    assert check == Items(list, NoOneClass(reason), fixed=True)
+    checks = {"ss": check}
+
+    with pytest.raises(BuildError) as raised:
+        plan_call({"ss": [{"side": 1}, None]}, (), None, HOME, checks)
+
+    assert (raised.value.place, raised.value.reason) == ("ss[0]", reason)

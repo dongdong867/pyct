@@ -445,9 +445,8 @@ def test_builds_each_item_and_value() -> None:
         assert code == 0, stderr
     for _, stdout, _ in (total, count):
         assert all(line["failure"] is None for line in input_lines(stdout)), stdout
-    # Buyer's own `age < 0` fork is flipped too, and that input fails building the owner, as
-    # reports-a-constructor-that-raises-inside says; the criterion's "no failure on any line"
-    # cannot hold for ship, so every other line has none, and no line fails on an item
+    # as the criterion was reworded: in ship, only Buyer's own negative age raise fails a line,
+    # building the owner, since the solver flips Buyer's `age < 0` fork too
     for line in input_lines(ship[1]):
         failure, age = line["failure"], arg(line, "order", "owner", "age")
         assert failure is None or (failure == OWNER_RAISED and not above(age, -1)), line

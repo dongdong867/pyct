@@ -15,7 +15,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
-from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass
+from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass, item_check
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from pyct.binding.hints import NOTHING, Inside, inside_of
@@ -51,7 +51,8 @@ def hinted_items(value: object, check: Check | None) -> TypeGuard[list[object] |
     """Whether a class hint fixes the shape of ``value``: exactly a ``list`` under a ``list[C]``
     hint, or exactly a ``dict`` under a ``dict[str, C]`` hint, at any level (a fixed ``Items``).
     Such a list keeps its length and such a dict its keys, and each value in it takes the
-    hint's ``C``. The walk, the traversal, the defaults and the plan read this one test."""
+    fixed ``Items``' ``each``: ``C``, or the fixed list or dict hint inside, as of
+    ``list[list[C]]``. The walk, the traversal, the defaults and the plan read this one test."""
     return isinstance(check, Items) and check.fixed and type(value) is check.kind
 
 
@@ -262,27 +263,18 @@ def _copied(
     value: object, holder: _Holder, slot: Any, place: str, ask: Check | None
 ) -> Iterator[_Spot]:
     """A list or dict on the way to a form, copied into its slot, and the values in it, each
-    with what ``ask`` asks of it (``_asked``)."""
+    with what ``ask`` asks of it (``item_check``)."""
     if type(value) is list:
         items = holder[slot] = list(cast(list[object], value))
         return (
-            (each, items, at, step_in(place, at), _asked(ask, list, at))
+            (each, items, at, step_in(place, at), item_check(ask, list, at))
             for at, each in enumerate(items)
         )
     copied = holder[slot] = dict(cast(dict[Any, object], value))
     return (
-        (each, copied, key, step_in(place, key), _asked(ask, dict, key))
+        (each, copied, key, step_in(place, key), item_check(ask, dict, key))
         for key, each in list(copied.items())
     )
-
-
-def _asked(ask: Check | None, kind: type, key: object) -> Check | None:
-    """What ``ask`` asks of the value at ``key`` in a list or dict of ``kind``: a constructor
-    parameter's hint by its index or key (``Fields``), or a list or dict hint's for each item
-    when the hint is of that kind (``Items``), as the walk reads them."""
-    if isinstance(ask, Fields):
-        return ask.each.get(key)
-    return ask.each if isinstance(ask, Items) and ask.kind is kind else None
 
 
 def _copy(form: dict[str, object] | list[object]) -> dict[str, object] | list[object]:
