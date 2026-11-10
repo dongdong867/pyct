@@ -5,7 +5,7 @@ from __future__ import annotations
 import abc
 import collections
 import dataclasses
-from typing import TYPE_CHECKING, Generic, Optional, Protocol, TypeVar
+from typing import TYPE_CHECKING, Generic, NamedTuple, Optional, Protocol, TypeVar
 
 from tests.unit.binding.named_classes import Point
 
@@ -104,3 +104,19 @@ class Quoted:
 
     def __init__(self, at: "Point") -> None:  # noqa: UP037 - the quoted form is what it reads
         self.at = at
+
+
+class Basket:
+    """A constructor whose hints ask for a list and a dict of a class, kept as text."""
+
+    def __init__(self, items: list[Point], by: dict[str, Point], tags: list[str]) -> None:
+        self.items = items
+        self.by = by
+        self.tags = tags
+
+
+class Coord(NamedTuple):
+    """A NamedTuple a user module defines, which builds."""
+
+    x: int
+    y: int

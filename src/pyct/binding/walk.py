@@ -15,7 +15,7 @@ from typing import Any, Protocol, TypeGuard, cast
 
 from pyct.binding import objects
 from pyct.binding.annotations import Check, Fields
-from pyct.binding.builds import hinted, holding_forms, inside, object_form
+from pyct.binding.builds import hinted, hinted_items, holding_forms, inside, object_form
 from pyct.binding.copies import Scratch, faithful_copies
 from pyct.binding.objects import Attributes, Held
 from pyct.binding.steps import FIXED, Pending, form_items, items_to_place, keyed, step
@@ -106,18 +106,20 @@ class Walk:
     no access can name is walked again, into the same copy, when a path that
     names it reaches it. Each is walked at most twice, so the walk ends.
 
-    A list first reached under a name is tracked whole, unless its shape is
-    fixed: one under ``Fields``, an object form's ``"__args__"``, or one that
-    holds an object form (``holding_forms``) is a plain copy of the seed's
-    length, its items named by index. For a tracked list the visitor makes
-    its copy and says which items it takes, and every value placed in it is
-    a value inside a tracked list. An object whose class passes the copy rule
-    (``objects.copies_by_default``), a subclass of dict or list among them,
-    is copied by deepcopy with a memo that reads the walk's copies, and its
-    attributes, or its items, are then followed into that copy, so the
-    objects inside it are its copies from that one deepcopy. Only a faithful
-    copy is gone into, at any depth (``copies.faithful_copies``); the walk
-    does not go into any other, which is handed on as deepcopy made it.
+    A list or dict first reached under a name is tracked whole, unless its
+    shape is fixed: one under ``Fields``, an object form's ``"__args__"``,
+    one under a ``list[C]`` or ``dict[str, C]`` hint (``hinted_items``), or
+    one that holds an object form (``holding_forms``) is a plain copy of the
+    seed's length or keys, its values named by index or key. For a tracked
+    list the visitor makes its copy and says which items it takes, and every
+    value placed in it is a value inside a tracked list. An object whose
+    class passes the copy rule (``objects.copies_by_default``), a subclass of
+    dict or list among them, is copied by deepcopy with a memo that reads
+    the walk's copies, and its attributes, or its items, are then followed
+    into that copy, so the objects inside it are its copies from that one
+    deepcopy. Only a faithful copy is gone into, at any depth
+    (``copies.faithful_copies``); the walk does not go into any other, which
+    is handed on as deepcopy made it.
 
     A tuple's items are placed by index in a list of their own. Once every
     path is walked, each tuple is built once from its items, of its own type,
@@ -249,14 +251,17 @@ class Walk:
         self, value: object, access: Expression | None, place: Place, check: Check | None
     ) -> tuple[object, _Insides | None]:
         """A container's or an object's copy, made the first time the walk reaches it, and what
-        it takes; None for a copy handed on as it is. A list or a dict under ``Fields``, or one
-        that holds an object form (``holding_forms``), is a plain copy of fixed shape, and its
-        own annotation still reads its items."""
+        it takes; None for a copy handed on as it is. A list or a dict under ``Fields``, one
+        under a ``list[C]`` or ``dict[str, C]`` hint (``hinted_items``), or one that holds an
+        object form (``holding_forms``), is a plain copy of fixed shape, and its own annotation
+        still reads its items."""
         if type(value) is not list and type(value) is not dict:
             made = self._copy_followed(value)
             return made, None if id(value) in self._whole else self._takes(value, made, check)
         items: list[object] | dict[object, object]
-        fixed = isinstance(check, Fields) or id(value) in self._holding
+        fixed = (
+            isinstance(check, Fields) or id(value) in self._holding or hinted_items(value, check)
+        )
         if isinstance(value, list) and access is not None and not fixed:
             made, items = self._visitor.listed(value, place)
             self._tracked.add(id(made))
@@ -265,7 +270,7 @@ class Walk:
         elif access is not None and not fixed:
             made, items = self._visitor.mapped(keyed(value, check), place)
         else:
-            # a dict under no access, or under ``Fields``: a plain copy, its keys and length fixed
+            # a dict under no access, or of fixed shape: a plain copy, its keys and length fixed
             items = keyed(value, check)
             made = dict.fromkeys(items)
         if fixed:

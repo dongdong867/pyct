@@ -9,6 +9,7 @@ import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
+from pyct.binding.libraries import LIBRARY_ROOTS
 from pyct.core.entry.substitutes import PASSING
 from pyct.core.foundation.branch import PYCT_DIR
 from pyct.core.foundation.values import raised_by_target
@@ -23,19 +24,8 @@ MOST_OWN_FRAMES = 40
 _PYCT = __name__.partition(".")[0]
 
 # where the standard library's and installed packages' code lives: a frame from there is no
-# frame of the target's own, unless it lies in the target's own package. Read off `os`'s file
-# and the path rather than `sysconfig`, which a target may ship a module of its own as
-_OUTSIDE = tuple(
-    os.path.join(path, "")
-    for path in (
-        os.path.dirname(os.__file__),
-        *(
-            entry
-            for entry in sys.path
-            if os.path.basename(entry) in ("site-packages", "dist-packages")
-        ),
-    )
-)
+# frame of the target's own, unless it lies in the target's own package
+_OUTSIDE = LIBRARY_ROOTS
 
 
 def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> Failure:

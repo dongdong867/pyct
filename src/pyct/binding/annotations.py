@@ -40,12 +40,26 @@ class Items:
     ``keys`` is a dict's key type as the annotation names it, ``str`` when it
     names none. A dict whose keys are not strs is not checked, since JSON
     keys are always strings; its keys are read back by it instead (see
-    ``walk``).
+    ``walk``). ``fixed`` marks a ``list[C]`` or ``dict[str, C]`` hint whose
+    ``each`` is a class to build, one that names no one class, or such a list
+    or dict itself (``hints``): such a list keeps its length and such a dict
+    its keys, and each value is named by its place and takes ``each``.
     """
 
     kind: type
     each: "Check | None"
     keys: object = str
+    fixed: bool = False
+
+
+def item_check(check: "Check | None", kind: type, key: object) -> "Check | None":
+    """What ``check`` asks of the value at ``key`` in a list or dict of ``kind``: a constructor
+    parameter's check by its index or key (``Fields``), or a list or dict annotation's check of
+    each item when the annotation is of that kind (``Items``). The walk and the traversal of
+    the objects a call builds read this one rule."""
+    if isinstance(check, Fields):
+        return check.each.get(key)
+    return check.each if isinstance(check, Items) and check.kind is kind else None
 
 
 @dataclass(frozen=True)

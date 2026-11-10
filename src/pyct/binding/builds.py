@@ -15,7 +15,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
-from pyct.binding.annotations import Builds, Check, Fields, NoOneClass
+from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass, item_check
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from pyct.binding.hints import NOTHING, Inside, inside_of
@@ -45,6 +45,15 @@ def hinted(value: object, check: Check | None) -> TypeGuard[dict[str, object] | 
     names a class or names no one class. A dict holding ``"__class__"`` builds the class it
     names, and every other value passes as it is."""
     return isinstance(check, Builds | NoOneClass) and (type(value) is dict or type(value) is list)
+
+
+def hinted_items(value: object, check: Check | None) -> TypeGuard[list[object] | dict[Any, object]]:
+    """Whether a class hint fixes the shape of ``value``: exactly a ``list`` under a ``list[C]``
+    hint, or exactly a ``dict`` under a ``dict[str, C]`` hint, at any level (a fixed ``Items``).
+    Such a list keeps its length and such a dict its keys, and each value in it takes the
+    fixed ``Items``' ``each``: ``C``, or the fixed list or dict hint inside, as of
+    ``list[list[C]]``. The walk, the traversal, the defaults and the plan read this one test."""
+    return isinstance(check, Items) and check.fixed and type(value) is check.kind
 
 
 def form_class(form: object, check: Check | None, home: str) -> type:
@@ -204,7 +213,10 @@ def object_forms(
 
     With ``checks``, what each parameter's hint asks, a dict a class hint
     builds is a form too (``hinted``), and each value in a form takes its
-    constructor's hint (``inside``), a bare class name read in ``home``.
+    constructor's hint (``inside``), a bare class name read in ``home``. A
+    list or dict under a ``list[C]`` or ``dict[str, C]`` hint is gone into
+    and copied too (``hinted_items``), and each list or dict gone into gives
+    each value in it what its hint asks of its items.
     """
     holding = holding_forms(args)
     top = dict(args)
@@ -215,7 +227,7 @@ def object_forms(
     while pending:
         value, holder, slot, place, check = pending.pop()
         form = object_form(value) or hinted(value, check)
-        if not (form or id(value) in holding) or id(value) in seen:
+        if not (form or id(value) in holding or hinted_items(value, check)) or id(value) in seen:
             continue
         seen.add(id(value))
         if form:
@@ -223,7 +235,7 @@ def object_forms(
             found.append(Found(place, copied, holder, slot, check))
             pending.extend(_inside(copied, place, inside(copied, check, home)))
         else:
-            pending.extend(_copied(value, holder, slot, place))
+            pending.extend(_copied(value, holder, slot, place, check))
     return Forms(top, tuple(reversed(found)))
 
 
@@ -248,18 +260,19 @@ def _parameters(
 
 
 def _copied(
-    value: object, holder: _Holder, slot: Any, place: str, ask: Fields = NOTHING.items
+    value: object, holder: _Holder, slot: Any, place: str, ask: Check | None
 ) -> Iterator[_Spot]:
     """A list or dict on the way to a form, copied into its slot, and the values in it, each
-    with what ``ask`` asks of it by its index or key."""
+    with what ``ask`` asks of it (``item_check``)."""
     if type(value) is list:
         items = holder[slot] = list(cast(list[object], value))
         return (
-            (each, items, at, step_in(place, at), ask.each.get(at)) for at, each in enumerate(items)
+            (each, items, at, step_in(place, at), item_check(ask, list, at))
+            for at, each in enumerate(items)
         )
     copied = holder[slot] = dict(cast(dict[Any, object], value))
     return (
-        (each, copied, key, step_in(place, key), ask.each.get(key))
+        (each, copied, key, step_in(place, key), item_check(ask, dict, key))
         for key, each in list(copied.items())
     )
 

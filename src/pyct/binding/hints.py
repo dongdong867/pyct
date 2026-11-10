@@ -1,11 +1,15 @@
 """A class hint, read as the class each input builds the value under it as, and what the values
 inside such an object ask: its constructor's own hints, read where they were written.
 
-A hint builds when it names one class pyct can call: a plain class, a dataclass, a
-namedtuple, a C class, or a parameterized generic class, which builds its origin. A class
-from ``builtins`` or ``typing``, a base of ``list`` or ``dict`` and a subclass of either keep
-the JSON value, and read as ``check_of`` reads them. A Protocol, an abstract class and a union
-of two classes name no one class.
+A hint builds when it names one of the user's own classes pyct can call: a plain class, a
+dataclass, a namedtuple, or a parameterized generic class, which builds its origin. A library's
+class, from Python's standard library or from an installed distribution other than the package
+of the code the hint is written on (``libraries``), keeps the JSON value, and so do a base of
+``list`` or ``dict`` and a subclass of either, a ``TypedDict`` among them: each reads as
+``check_of`` reads it. A Protocol, an abstract class and a union of two classes name no one
+class. A ``list[X]`` or ``dict[str, X]`` whose ``X`` builds, names no one class, or is such a
+list or dict itself, is a fixed ``Items``: the list keeps its length and the dict its keys, and
+each item or value is read under ``X``.
 """
 
 from __future__ import annotations
@@ -17,13 +21,20 @@ import typing
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from pyct.binding.annotations import NONE, PLAIN, Builds, Check, Fields, NoOneClass, check_of
+from pyct.binding.annotations import (
+    NONE,
+    PLAIN,
+    Builds,
+    Check,
+    Fields,
+    Items,
+    NoOneClass,
+    check_of,
+)
 from pyct.binding.call import by_position
 from pyct.binding.classes import is_a_class, signature_of
+from pyct.binding.libraries import from_a_library
 from pyct.binding.resolve import as_text, checked_annotations, resolved
-
-# the modules whose classes keep the JSON value: the types JSON gives, and typing's own forms
-_KEPT_MODULES = frozenset({"builtins", "typing"})
 
 # what every reason a hint builds no one class ends with
 _NAME_IT = 'name the class to build with "__class__"'
@@ -80,9 +91,29 @@ def _read(annotation: object, owner: object) -> Check | None:
     origin = typing.get_origin(annotation)
     if origin is typing.Union or origin is types.UnionType:
         members = tuple(_member(member, owner) for member in typing.get_args(annotation))
-        return _union(annotation, members)
-    named = _named(annotation)
-    return check_of(annotation) if named is None else named
+        return _union(annotation, members, owner)
+    named = _named(annotation, owner)
+    if named is not None:
+        return named
+    fixed = _fixed(annotation, owner)
+    return check_of(annotation) if fixed is None else fixed
+
+
+def _fixed(annotation: object, owner: object) -> Items | None:
+    """A ``list[X]`` or ``dict[str, X]`` whose ``X`` reads as a class to build, as one that
+    names no one class, or as such a list or dict itself; None for any other hint."""
+    origin = typing.get_origin(annotation)
+    arguments = typing.get_args(annotation)
+    if origin is list and len(arguments) == 1:
+        kind, item = list, arguments[0]
+    elif origin is dict and len(arguments) == 2 and arguments[0] is str:
+        kind, item = dict, arguments[1]
+    else:
+        return None
+    each = _read(item, owner)
+    if isinstance(each, Builds | NoOneClass) or (isinstance(each, Items) and each.fixed):
+        return Items(kind, each, fixed=True)
+    return None
 
 
 def _read_named(annotation: object, owner: object) -> Check | None:
@@ -102,11 +133,11 @@ def _same(value: object) -> object:
     return value
 
 
-def _named(annotation: object) -> Builds | NoOneClass | None:
-    """The class a hint builds or why it names no one class, or None for a hint that is no
-    class, or a class that keeps the JSON value."""
+def _named(annotation: object, owner: object) -> Builds | NoOneClass | None:
+    """The class a hint written on ``owner`` builds or why it names no one class, or None for a
+    hint that is no class, or a class that keeps the JSON value."""
     cls = annotation if is_a_class(annotation) else typing.get_origin(annotation)
-    if not is_a_class(cls) or cls.__module__ in _KEPT_MODULES:
+    if not is_a_class(cls) or from_a_library(cls, owner):
         return None
     # the mark typing sets on a Protocol, which typing.is_protocol reads on 3.13 and later;
     # tested first, since a subclass test of a Protocol raises
@@ -119,7 +150,7 @@ def _named(annotation: object) -> Builds | NoOneClass | None:
     return Builds(cls)
 
 
-def _union(annotation: object, members: tuple[object, ...]) -> Check | None:
+def _union(annotation: object, members: tuple[object, ...], owner: object) -> Check | None:
     """A union: its one class when only None and plain types stand beside it, why it names no
     one class when it names two or more, and what ``check_of`` makes of it otherwise."""
     classes: list[Builds | NoOneClass] = []
@@ -127,26 +158,26 @@ def _union(annotation: object, members: tuple[object, ...]) -> Check | None:
     for member in members:
         if member is NONE or any(member is plain for plain in PLAIN):
             continue
-        named = _named(member)
+        named = _named(member, owner)
         if named is None:
             others = True
         else:
             classes.append(named)
     if len(classes) > 1:
         count = _COUNTS[len(classes) - 2] if len(classes) < 10 else str(len(classes))
-        written = " | ".join(_written(member) for member in members)
+        written = " | ".join(_written(member, owner) for member in members)
         return NoOneClass(f"hint {written} names {count} classes; {_NAME_IT}")
     if classes and not others:
         return classes[0]
     return check_of(annotation)
 
 
-def _written(member: object) -> str:
+def _written(member: object, owner: object) -> str:
     """A union's member as a reason writes it: a class by its qualified name, the origin's for
     a parameterized one, None as None, any other as Python formats an annotation."""
     if member is NONE:
         return "None"
-    if _named(member) is not None:
+    if _named(member, owner) is not None:
         cls = member if is_a_class(member) else typing.get_origin(member)
         return typing.cast(type, cls).__qualname__
     return inspect.formatannotation(member)

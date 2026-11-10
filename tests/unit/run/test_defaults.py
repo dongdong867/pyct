@@ -263,3 +263,44 @@ def test_an_object_a_hint_builds_inside_a_named_object_takes_its_defaults() -> N
     filled = with_defaults(HINTED, seed)
 
     assert filled["b"] == {"__class__": "Holding", "member": {"name": "ann", **MEMBER_DEFAULTS}}
+
+
+class Line:
+    """An item with a simple default, under a list and a dict hint."""
+
+    def __init__(self, sku: str, qty: int = 1) -> None:
+        self.sku = sku
+
+
+class Cart:
+    def __init__(self, lines: list[Line], note: str = "") -> None:
+        self.lines = lines
+
+
+def holds(items: list[Line], by: dict[str, Line]) -> None:
+    """A target whose list and dict hints build each item and value."""
+
+
+HOLDS = Target(
+    spec=f"{__name__}::holds", fn=holds, file=__file__, signature=inspect.signature(holds)
+)
+
+
+def test_each_item_and_value_a_list_or_dict_hint_builds_takes_its_defaults() -> None:
+    seed: dict[str, object] = {"items": [{"sku": "a"}, None], "by": {"k": {"sku": "b"}}}
+
+    filled = with_defaults(HOLDS, seed)
+
+    assert filled == {
+        "items": [{"sku": "a", "qty": 1}, None],
+        "by": {"k": {"sku": "b", "qty": 1}},
+    }
+    assert seed == {"items": [{"sku": "a"}, None], "by": {"k": {"sku": "b"}}}
+
+
+def test_a_list_hint_s_items_under_a_named_object_take_their_defaults() -> None:
+    seed: dict[str, object] = {"a": {"__class__": "Cart", "lines": [{"sku": "a"}]}}
+
+    filled = with_defaults(TAKES, seed)
+
+    assert filled == {"a": {"__class__": "Cart", "lines": [{"sku": "a", "qty": 1}], "note": ""}}

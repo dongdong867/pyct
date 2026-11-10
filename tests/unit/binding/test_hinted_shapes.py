@@ -8,7 +8,7 @@ from pyct.binding.bind import Seed, bind, leaves
 from pyct.binding.model import apply
 from pyct.core.foundation.branch import Expression, SinkItem
 from pyct.core.numbers.ints import ConcolicInt
-from tests.unit.binding.hint_classes import Spot
+from tests.unit.binding.hint_classes import Basket, Spot
 from tests.unit.binding.named_classes import Point
 
 POINT = {"p": Builds(Point)}
@@ -166,3 +166,112 @@ def test_a_named_object_s_hints_read_int_keys_and_say_an_added_item_s_kind() -> 
 
     assert seed.args == {"o": {"__class__": "Counts", "by": {3: 1}, "tags": []}}
     assert seed.lists[named("o", "tags")].fill == "str"
+
+
+ITEMS = {"items": Items(list, Builds(Point), fixed=True)}
+BY = {"by": Items(dict, Builds(Point), fixed=True)}
+
+
+def test_a_list_of_a_class_keeps_its_length_and_its_items_values_are_leaves() -> None:
+    seed = Seed.of({"items": [{"x": 1, "y": 2}, [3, 4]]}, ITEMS)
+
+    assert seed.args == {"items": [{"x": 1, "y": 2}, [3, 4]]}
+    assert type(seed.args["items"]) is list
+    assert seed.lists == {} and seed.dicts == {}
+    assert seed.leaves == {
+        named("items", 0, "x"): int,
+        named("items", 0, "y"): int,
+        named("items", 1, 0): int,
+        named("items", 1, 1): int,
+    }
+
+
+def test_a_dict_of_a_class_keeps_its_keys_and_its_values_values_are_leaves() -> None:
+    seed = Seed.of({"by": {"a": {"x": 1, "y": 2}}}, BY)
+
+    assert seed.args == {"by": {"a": {"x": 1, "y": 2}}}
+    assert seed.lists == {} and seed.dicts == {}
+    assert seed.leaves == {named("by", "a", "x"): int, named("by", "a", "y"): int}
+
+
+def test_an_empty_list_or_dict_of_a_class_stays_empty_and_untracked() -> None:
+    seed = Seed.of({"items": [], "by": {}}, {**ITEMS, **BY})
+
+    assert seed.args == {"items": [], "by": {}}
+    assert seed.leaves == {} and seed.lists == {} and seed.dicts == {}
+
+
+def test_null_and_a_scalar_in_a_list_of_a_class_pass_and_a_scalar_is_a_leaf() -> None:
+    seed = Seed.of({"items": [None, 5, "s"]}, ITEMS)
+
+    assert seed.args == {"items": [None, 5, "s"]}
+    assert seed.leaves == {named("items", 1): int, named("items", 2): str}
+
+
+def test_a_list_of_lists_of_a_class_is_fixed_at_every_level() -> None:
+    inner = Items(list, Builds(Point), fixed=True)
+    seed = Seed.of({"rows": [[{"x": 1, "y": 2}], []]}, {"rows": Items(list, inner, fixed=True)})
+
+    assert seed.lists == {} and seed.dicts == {}
+    assert seed.leaves == {named("rows", 0, 0, "x"): int, named("rows", 0, 0, "y"): int}
+
+
+def test_a_list_of_a_class_under_a_constructor_s_hint_is_fixed() -> None:
+    seed = Seed.of(
+        {"b": {"items": [{"x": 1, "y": 2}], "by": {}, "tags": []}}, {"b": Builds(Basket)}
+    )
+
+    assert seed.dicts == {}
+    assert list(seed.lists) == [named("b", "tags")]
+    assert seed.leaves == {named("b", "items", 0, "x"): int, named("b", "items", 0, "y"): int}
+
+
+def test_a_list_of_a_class_inside_a_named_object_is_fixed() -> None:
+    args = {"o": {"__class__": "Basket", "items": [{"x": 1, "y": 2}], "by": {}, "tags": []}}
+
+    seed = Seed.of(args, {}, HOME)
+
+    assert list(seed.lists) == [named("o", "tags")]
+    assert list(seed.leaves) == [named("o", "items", 0, "x"), named("o", "items", 0, "y")]
+
+
+def test_an_answer_keeps_a_list_and_dict_of_a_class_in_the_seed_s_shape() -> None:
+    origin = Seed.of({"items": [{"x": 1, "y": 2}], "by": {"a": [1, 2]}}, {**ITEMS, **BY})
+
+    answered = apply(origin, {named("items", 0, "x"): 9, named("by", "a", 1): 7})
+
+    assert answered.args == {"items": [{"x": 9, "y": 2}], "by": {"a": [1, 7]}}
+    assert answered.leaves == origin.leaves
+    assert answered.lists == {} and answered.dicts == {}
+
+
+def test_bind_copies_a_list_and_dict_of_a_class_plain_and_tracks_their_values() -> None:
+    sink: list[SinkItem] = []
+
+    args = bind({"items": [{"x": 1, "y": 2}], "by": {"a": [3, 4]}}, sink, {**ITEMS, **BY})
+
+    items, by = args["items"], args["by"]
+    assert type(items) is list and type(by) is dict
+    assert type(items[0]) is dict and type(by["a"]) is list  # pyrefly: ignore[bad-index]
+    x, at = items[0]["x"], by["a"][1]  # pyrefly: ignore[bad-index]
+    assert isinstance(x, ConcolicInt) and x.expression == ["[]", ["[]", "items", 0], "'x'"]
+    assert isinstance(at, ConcolicInt) and at.expression == ["[]", ["[]", "by", "'a'"], 1]
+
+
+def test_leaves_name_a_list_of_a_class_s_values_by_the_same_access() -> None:
+    seed = Seed.of({"items": [{"x": 1, "y": 2}], "by": {"a": [3, 4]}}, {**ITEMS, **BY})
+
+    assert set(seed.leaves) <= set(leaves(seed.args))
+
+
+def test_instances_in_a_list_of_a_class_are_followed_by_their_attributes() -> None:
+    caller = Point(1, 2)
+    seed = Seed.of({"items": [caller]}, ITEMS)
+
+    copied = seed.args["items"][0]  # pyrefly: ignore[bad-index]
+    assert type(copied) is Point and copied is not caller
+    assert seed.lists == {}
+    assert list(seed.leaves) == [
+        json.dumps(["getattr", ["[]", "items", 0], "'x'"]),
+        json.dumps(["getattr", ["[]", "items", 0], "'y'"]),
+    ]

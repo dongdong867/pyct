@@ -7,6 +7,7 @@ from pyct.results.failure import FailureKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
+from targets.classes.orders import Item
 
 HINTED = "targets.classes.hinted"
 NAME_IT = 'name the class to build with "__class__"'
@@ -57,3 +58,23 @@ def test_a_quoted_class_in_a_union_builds_at_the_top_and_inside(spec: str, name:
         for record in result.records[1:]
         if record.args[name]["next"] is not None  # pyrefly: ignore[bad-index]
     )
+
+
+def test_instances_a_caller_hands_in_a_list_of_a_class_are_followed() -> None:
+    caller = Item("a", 1)
+
+    result = run(
+        load_target(f"{HINTED}::total"), {"items": [caller]}, isolation=Isolation.IN_PROCESS
+    )
+
+    assert all(record.failure is None for record in result.records), result.records
+    qty = [">", ["getattr", ["[]", "items", 0], "'qty'"], 3]
+    assert qty in [branch.expression for branch in result.records[0].forks]
+    assert caller.qty == 1
+
+
+def test_a_library_class_hint_passes_the_json_list() -> None:
+    result = run(load_target(f"{HINTED}::queued"), {"q": [1, 2, 3]}, isolation=Isolation.IN_PROCESS)
+
+    assert all(record.failure is None for record in result.records), result.records
+    assert any(record.args["q"][0] > 5 for record in result.records[1:])  # pyrefly: ignore
