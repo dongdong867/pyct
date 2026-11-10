@@ -19,6 +19,7 @@ def target_for(fn: object) -> Target:
 
 
 CLASSIFY = target_for(classify)
+RESERVED = "pyct reserves keys that start and end with __"
 
 
 @pytest.mark.parametrize("text", ["[1]", "1", '"x"', "null", "not json", ""])
@@ -206,3 +207,76 @@ def test_args_that_are_not_a_list_skip_the_fit_and_keep_the_other_lines() -> Non
         "c cannot hold '__calls__': pyct reserves keys that start and end with __",
         "c['age'] must be an int, got \"30\"",
     ]
+
+
+class Line:
+    def __init__(self, sku: str, qty: int) -> None:
+        self.sku, self.qty = sku, qty
+
+
+class Basket:
+    def __init__(self, owner: Guest, lines: list[Line]) -> None:
+        self.owner, self.lines = owner, lines
+
+
+class Sealed:
+    """A class whose constructor signature Python cannot read."""
+
+    __signature__ = 0
+
+    def __init__(self, at: int, inner: Guest) -> None:
+        self.at, self.inner = at, inner
+
+
+class Desk:
+    def __init__(self, owner: Guest) -> None:
+        self.owner = owner
+
+    def serve(self) -> int:
+        return self.owner.age
+
+
+def ships(basket: Basket) -> None:
+    pass
+
+
+def seals(s: Sealed) -> None:
+    pass
+
+
+GUEST_AGED_TEXT = {"name": "ann", "age": "30", "tags": []}
+
+
+def test_hinted_objects_at_every_level_give_each_line_once() -> None:
+    seed = {"basket": {"owner": GUEST_AGED_TEXT, "lines": [{"sku": "a", "qty": "1"}]}}
+
+    assert seed_refusals(target_for(ships), seed) == [
+        "basket['owner']['age'] must be an int, got \"30\"",
+        "basket['lines'][0]['qty'] must be an int, got \"1\"",
+    ]
+
+
+def test_a_class_python_cannot_read_still_refuses_reserved_keys_and_checks_objects_inside() -> None:
+    inner = {"__class__": "Guest", **GUEST_AGED_TEXT}
+    seed = {"s": {"at": "x", "nothing": 1, "__calls__": [], "inner": inner}}
+
+    assert seed_refusals(target_for(seals), seed) == [
+        f"s cannot hold '__calls__': {RESERVED}",
+        "s['inner']['age'] must be an int, got \"30\"",
+    ]
+
+
+def test_a_hinted_object_under_self_s_fields_is_checked() -> None:
+    target = Target(
+        spec="m::Desk.serve",
+        fn=Desk.serve,
+        file="m.py",
+        signature=inspect.signature(Desk.serve),
+        self_class=Desk,
+        self_name="self",
+        constructor=inspect.signature(Desk),
+    )
+
+    lines = seed_refusals(target, {"self": {"owner": GUEST_AGED_TEXT}})
+
+    assert lines == ["self['owner']['age'] must be an int, got \"30\""]

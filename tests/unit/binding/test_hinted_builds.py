@@ -70,13 +70,17 @@ def test_a_named_class_wins_over_the_hint() -> None:
 
 def test_a_hint_that_names_no_one_class_is_the_build_error() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"s": {"side": 1}}, (), None, HOME, {"s": NoOneClass("the reason")})
+        plan_call({"s": {"side": 1}}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
 
     assert (raised.value.place, raised.value.reason) == ("s", "the reason")
 
 
 def test_a_hinted_value_gives_no_type_line() -> None:
-    checks = {"p": Builds(Point), "s": NoOneClass("r"), "self": Fields({"o": Builds(Point)})}
+    checks = {
+        "p": Builds(Point),
+        "s": NoOneClass("r", (Shape,)),
+        "self": Fields({"o": Builds(Point)}),
+    }
     seed = {"p": {"x": "1"}, "s": [1], "self": {"o": "x"}}
 
     assert contradictions(checks, seed) == []
@@ -94,7 +98,7 @@ def test_a_list_a_hint_builds_passes_its_items_by_position() -> None:
 
 def test_a_list_under_a_hint_that_names_no_one_class_is_the_build_error() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason")})
+        plan_call({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
 
     assert raised.value.place == "s"
 
@@ -174,7 +178,7 @@ def test_an_item_under_a_hint_that_names_no_one_class_is_the_build_error() -> No
     reason = 'hint Shape is an abstract class; name the class to build with "__class__"'
     check = hint_check(list[Shape])
     assert isinstance(check, Items)
-    assert check == Items(list, NoOneClass(reason), fixed=True)
+    assert check == Items(list, NoOneClass(reason, (Shape,)), fixed=True)
     checks = {"ss": check}
 
     with pytest.raises(BuildError) as raised:

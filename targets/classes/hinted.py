@@ -18,6 +18,7 @@ from targets.classes.orders import (
     Shape,
     Spec,
     Square,
+    Stamp,
 )
 
 if TYPE_CHECKING:
@@ -180,6 +181,16 @@ def either(c: Customer | Guest):
 
 def render(d: Drawable):
     return d
+
+
+def draw_all(shapes: list[Shape]):
+    return len(shapes)
+
+
+def stamped(s: Stamp):
+    if s.at > 5:
+        return "late"
+    return "early"
 
 
 def chain(n: "Node"):  # noqa: UP037 - the quoted form is what it tests

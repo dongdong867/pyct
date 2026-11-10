@@ -8,7 +8,7 @@ from pyct.binding.bind import Seed, bind, leaves
 from pyct.binding.model import apply
 from pyct.core.foundation.branch import Expression, SinkItem
 from pyct.core.numbers.ints import ConcolicInt
-from tests.unit.binding.hint_classes import Basket, Spot
+from tests.unit.binding.hint_classes import Basket, Shape, Spot
 from tests.unit.binding.named_classes import Point
 
 POINT = {"p": Builds(Point)}
@@ -80,7 +80,10 @@ def test_a_class_dict_under_a_class_hint_keeps_its_shape_and_class_is_no_leaf() 
 
 
 def test_an_object_under_a_hint_that_names_no_one_class_keeps_its_shape() -> None:
-    seed = Seed.of({"s": {"side": 1}, "t": [1]}, {"s": NoOneClass("r"), "t": NoOneClass("r")})
+    seed = Seed.of(
+        {"s": {"side": 1}, "t": [1]},
+        {"s": NoOneClass("r", (Shape,)), "t": NoOneClass("r", (Shape,))},
+    )
 
     assert seed.leaves == {named("s", "side"): int, named("t", 0): int}
     assert seed.dicts == {}

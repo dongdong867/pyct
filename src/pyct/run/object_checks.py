@@ -1,4 +1,5 @@
-"""The checks on one JSON object of a seed that a class is built from, at any place in the seed."""
+"""The checks on one JSON object or list of a seed that a class is built from, at any place in
+the seed."""
 
 from __future__ import annotations
 
@@ -7,10 +8,18 @@ from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
 
-from pyct.binding.annotations import Check, as_typed, contradictions, refused
-from pyct.binding.builds import ARGS_KEY, CLASS_KEY, Found, args_problem
+from pyct.binding.annotations import Builds, Check, NoOneClass, as_typed, contradictions, refused
+from pyct.binding.builds import ARGS_KEY, CLASS_KEY, Found, args_problem, object_form
 from pyct.binding.call import by_position, call_arguments, positional_only
-from pyct.binding.classes import ClassFormError, ClassNameError, load_class, signature_of
+from pyct.binding.classes import (
+    ClassFormError,
+    ClassNameError,
+    fits_hint,
+    hinted_classes,
+    load_class,
+    signature_of,
+    written,
+)
 from pyct.binding.places import step_in
 from pyct.binding.resolve import checked_annotations
 
@@ -78,20 +87,32 @@ class ObjectCheck:
             parameters = ", ".join(self.signature.parameters)
             given = _bound_keys(value, positional or ())
             lines.append(f"{place} ({given}) does not fit {self._name}({parameters}): {reason}")
-        lines += self._item_lines(by_position(self.signature), place, positional or (), built)
+        lines += self._item_lines(step_in(place, ARGS_KEY), positional or (), built)
         return lines + contradictions(self.checks, fields, place, built)
 
-    def _item_lines(
-        self,
-        parameters: Sequence[inspect.Parameter],
-        place: str,
-        items: Sequence[object],
-        built: Collection[int],
+    def list_lines(
+        self, place: str, items: Sequence[object], built: Collection[int] = frozenset()
     ) -> list[str]:
-        """The lines for the items passed by position, item i checked against the i-th of the
-        ``parameters`` that take a position and named ``place['__args__'][i]``. An item past
-        those parameters fills ``*args``, and is not checked."""
-        written = step_in(place, ARGS_KEY)
+        """Every refusal line for the JSON list at ``place``, whose items the class is called
+        with by position: its fit, then each item's type, item i named ``place[i]``. With no
+        signature, nothing is checked."""
+        if self.signature is None:
+            return []
+        lines: list[str] = []
+        reason = fit_failure(self.signature, {}, items)
+        if reason is not None:
+            parameters = ", ".join(self.signature.parameters)
+            count = f"{len(items)} item" if len(items) == 1 else f"{len(items)} items"
+            lines.append(f"{place} ({count}) does not fit {self._name}({parameters}): {reason}")
+        return lines + self._item_lines(place, items, built)
+
+    def _item_lines(
+        self, written: str, items: Sequence[object], built: Collection[int]
+    ) -> list[str]:
+        """The lines for the items passed by position, item i checked against the parameter at
+        position i and named ``written[i]``. An item past the parameters that take a position
+        fills ``*args``, and is not checked."""
+        parameters = by_position(cast(inspect.Signature, self.signature))
         return [
             line
             for index, (parameter, item) in enumerate(zip(parameters, items, strict=False))
@@ -105,28 +126,66 @@ class ObjectCheck:
 
 
 def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
-    """Every refusal line for the object a seed names at ``found.place``, its class read as
-    the build reads it, a bare name in the module ``home``.
+    """Every refusal line for the object built at ``found.place``: one the seed names, its
+    class read as the build reads it, a bare name in the module ``home``, or one its hint
+    builds (``hinted_lines``).
 
     A ``"__class__"`` that names no class gives its one line: with no class,
-    nothing else of the object can be checked. An ``"__args__"`` that is not
-    a list gives its line, then the object's other lines but the fit. Each
-    object inside this one has lines of its own, so a value in ``built`` gives
-    none here.
+    nothing else of the object can be checked. One that names a class its
+    hint does not fit (``fits_hint``) gives that line, then the object's lines
+    against the class it names. Each object inside this one has lines of its
+    own, so a value in ``built`` gives none here.
     """
-    # the seed checks list only the dicts that name their class (``object_forms`` with no checks)
-    form = cast(dict[str, object], found.form)
+    if not object_form(found.form):
+        return hinted_lines(found, built)
+    form = found.form
     try:
         built_class = load_class(form[CLASS_KEY], home)
     except ClassNameError as error:
         return [_class_line(found.place, error)]
     check = ObjectCheck.of(built_class, signature_of(built_class))
+    return _misfit_lines(found, built_class) + _dict_lines(check, found.place, form, built)
+
+
+def hinted_lines(found: Found, built: Collection[int]) -> list[str]:
+    """Every refusal line for the JSON object or list a hint builds at ``found.place``.
+
+    A hint that names no one class gives its one line, its reason. A list
+    takes ``list_lines``, and an object the lines of an object the seed
+    names, as its ``"__args__"`` is read the same way.
+    """
+    hint = found.check
+    if isinstance(hint, NoOneClass):
+        return [f"{found.place}: {hint.reason}"]
+    cls = cast(Builds, hint).cls
+    check = ObjectCheck.of(cls, signature_of(cls))
+    if isinstance(found.form, list):
+        return check.list_lines(found.place, found.form, built)
+    return _dict_lines(check, found.place, found.form, built)
+
+
+def _dict_lines(
+    check: ObjectCheck, place: str, form: dict[str, object], built: Collection[int]
+) -> list[str]:
+    """The lines of a JSON object a class is built from. An ``"__args__"`` that is not a list
+    gives its line, then the object's other lines but the fit."""
     problem = args_problem(form)
     if problem is not None:
-        rest = check.lines(found.place, form, _FORM_KEYS, None, built)
-        return [f"{step_in(found.place, ARGS_KEY)} {problem}", *rest]
+        rest = check.lines(place, form, _FORM_KEYS, None, built)
+        return [f"{step_in(place, ARGS_KEY)} {problem}", *rest]
     items = cast(list[object], form.get(ARGS_KEY, []))
-    return check.lines(found.place, form, _FORM_KEYS, items, built)
+    return check.lines(place, form, _FORM_KEYS, items, built)
+
+
+def _misfit_lines(found: Found, named: type) -> list[str]:
+    """The line for a ``"__class__"`` whose class its place's class hint does not fit, the
+    hint written as the classes it names; none when it fits or no class hint is there."""
+    hint = found.check
+    if not isinstance(hint, Builds | NoOneClass) or fits_hint(named, hint):
+        return []
+    names = " | ".join(each.__qualname__ for each in hinted_classes(hint))
+    given = written(cast(dict[str, object], found.form)[CLASS_KEY])
+    return [f"{step_in(found.place, CLASS_KEY)} must name {names} or a subclass of it, got {given}"]
 
 
 def _class_line(place: str, error: ClassNameError) -> str:

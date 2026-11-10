@@ -107,23 +107,42 @@ def test_a_hint_that_names_no_class_to_build_reads_as_before(
 
 
 @pytest.mark.parametrize(
-    ("hint", "reason"),
+    ("hint", "reason", "classes"),
     [
-        (Shape, f"hint Shape is an abstract class; {NAME_IT}"),
-        (Shape | None, f"hint Shape is an abstract class; {NAME_IT}"),
-        (Drawable, f"hint Drawable is a Protocol; {NAME_IT}"),
-        (Abstract, f"hint Abstract is a Protocol; {NAME_IT}"),
-        (Point | Box[int], f"hint Point | Box names two classes; {NAME_IT}"),
-        (Point | None | Shape, f"hint Point | None | Shape names two classes; {NAME_IT}"),
-        (Point | Box | Spot | str, f"hint Point | Box | Spot | str names three classes; {NAME_IT}"),
-        (Point | Box | list[int], f"hint Point | Box | list[int] names two classes; {NAME_IT}"),
+        (Shape, f"hint Shape is an abstract class; {NAME_IT}", (Shape,)),
+        (Shape | None, f"hint Shape is an abstract class; {NAME_IT}", (Shape,)),
+        (Drawable, f"hint Drawable is a Protocol; {NAME_IT}", (Drawable,)),
+        (Abstract, f"hint Abstract is a Protocol; {NAME_IT}", (Abstract,)),
+        (Point | Box[int], f"hint Point | Box names two classes; {NAME_IT}", (Point, Box)),
+        (
+            Point | None | Shape,
+            f"hint Point | None | Shape names two classes; {NAME_IT}",
+            (Point, Shape),
+        ),
+        (
+            Point | Box | Spot | str,
+            f"hint Point | Box | Spot | str names three classes; {NAME_IT}",
+            (Point, Box, Spot),
+        ),
+        (
+            Point | Box | list[int],
+            f"hint Point | Box | list[int] names two classes; {NAME_IT}",
+            (Point, Box),
+        ),
+        (
+            Point | Drawable,
+            f"hint Point | Drawable names two classes; {NAME_IT}",
+            (Point, Drawable),
+        ),
     ],
 )
-def test_a_hint_that_names_no_one_class_says_why(hint: object, reason: str) -> None:
-    assert hint_check(hint) == NoOneClass(reason)
+def test_a_hint_that_names_no_one_class_says_why_and_names_its_classes(
+    hint: object, reason: str, classes: tuple[type, ...]
+) -> None:
+    assert hint_check(hint) == NoOneClass(reason, classes)
 
 
-SHAPE = NoOneClass(f"hint Shape is an abstract class; {NAME_IT}")
+SHAPE = NoOneClass(f"hint Shape is an abstract class; {NAME_IT}", (Shape,))
 
 
 @pytest.mark.parametrize(
@@ -195,7 +214,9 @@ def test_a_union_of_ten_classes_counts_them_in_digits() -> None:
     classes = [type(f"C{at}", (), {}) for at in range(10)]
     hint = functools.reduce(operator.or_, classes)
     named = " | ".join(f"C{at}" for at in range(10))
-    assert hint_check(hint) == NoOneClass(f"hint {named} names 10 classes; {NAME_IT}")
+    assert hint_check(hint) == NoOneClass(
+        f"hint {named} names 10 classes; {NAME_IT}", tuple(classes)
+    )
 
 
 def test_a_protocol_is_told_by_the_mark_typing_sets() -> None:
@@ -248,7 +269,7 @@ def test_checked_annotations_reads_with_the_hint_reader() -> None:
     assert checks == {
         "order": Builds(Line),
         "n": int,
-        "s": NoOneClass(f"hint Shape is an abstract class; {NAME_IT}"),
+        "s": SHAPE,
     }
 
 

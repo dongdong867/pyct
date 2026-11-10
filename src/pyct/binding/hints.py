@@ -32,7 +32,7 @@ from pyct.binding.annotations import (
     check_of,
 )
 from pyct.binding.call import by_position
-from pyct.binding.classes import is_a_class, signature_of
+from pyct.binding.classes import hinted_classes, is_a_class, is_a_protocol, signature_of
 from pyct.binding.libraries import from_a_library
 from pyct.binding.resolve import as_text, checked_annotations, resolved
 
@@ -139,14 +139,13 @@ def _named(annotation: object, owner: object) -> Builds | NoOneClass | None:
     cls = annotation if is_a_class(annotation) else typing.get_origin(annotation)
     if not is_a_class(cls) or from_a_library(cls, owner):
         return None
-    # the mark typing sets on a Protocol, which typing.is_protocol reads on 3.13 and later;
     # tested first, since a subclass test of a Protocol raises
-    if getattr(cls, "_is_protocol", False) is True:
-        return NoOneClass(f"hint {cls.__qualname__} is a Protocol; {_NAME_IT}")
+    if is_a_protocol(cls):
+        return NoOneClass(f"hint {cls.__qualname__} is a Protocol; {_NAME_IT}", (cls,))
     if issubclass(cls, (list, dict)) or issubclass(list, cls) or issubclass(dict, cls):
         return None
     if inspect.isabstract(cls):
-        return NoOneClass(f"hint {cls.__qualname__} is an abstract class; {_NAME_IT}")
+        return NoOneClass(f"hint {cls.__qualname__} is an abstract class; {_NAME_IT}", (cls,))
     return Builds(cls)
 
 
@@ -166,7 +165,8 @@ def _union(annotation: object, members: tuple[object, ...], owner: object) -> Ch
     if len(classes) > 1:
         count = _COUNTS[len(classes) - 2] if len(classes) < 10 else str(len(classes))
         written = " | ".join(_written(member, owner) for member in members)
-        return NoOneClass(f"hint {written} names {count} classes; {_NAME_IT}")
+        named = tuple(cls for each in classes for cls in hinted_classes(each))
+        return NoOneClass(f"hint {written} names {count} classes; {_NAME_IT}", named)
     if classes and not others:
         return classes[0]
     return check_of(annotation)

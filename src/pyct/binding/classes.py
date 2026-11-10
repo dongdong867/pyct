@@ -12,7 +12,7 @@ import importlib
 import inspect
 from typing import TypeGuard
 
-from pyct.binding.annotations import as_typed
+from pyct.binding.annotations import Builds, NoOneClass, as_typed
 
 # the types a JSON value is read as
 _JSON_TYPES: frozenset[type] = frozenset({dict, list, str, int, float, bool, type(None)})
@@ -118,3 +118,36 @@ def constructor(cls: type) -> inspect.Signature | None:
         return inspect.signature(cls)
     except (Exception, SystemExit):
         return None
+
+
+def is_a_protocol(cls: type) -> bool:
+    """Whether ``cls`` is a Protocol, by the mark typing sets on one, which
+    ``typing.is_protocol`` reads on 3.13 and later."""
+    return getattr(cls, "_is_protocol", False) is True
+
+
+def hinted_classes(check: Builds | NoOneClass) -> tuple[type, ...]:
+    """The classes a class hint names: the one it builds, or those of one that names no one
+    class."""
+    return (check.cls,) if isinstance(check, Builds) else check.classes
+
+
+def fits_hint(named: type, check: Builds | NoOneClass) -> bool:
+    """Whether a class a ``"__class__"`` names fits a class hint: it is one of the classes the
+    hint names, or a subclass of one, as ``issubclass`` says, so a class an ABC registers fits.
+
+    Any class fits a Protocol, which a class usually satisfies by its methods without
+    inheriting from it, and pyct cannot tell that fit. A subclass test that raises, as a
+    metaclass's own may, counts as a fit too: pyct refuses only what it can show.
+    """
+    return any(
+        is_a_protocol(each) or each is named or _subclass(named, each)
+        for each in hinted_classes(check)
+    )
+
+
+def _subclass(named: type, cls: type) -> bool:
+    try:
+        return issubclass(named, cls)
+    except Exception:
+        return True

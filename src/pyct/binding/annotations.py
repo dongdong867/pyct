@@ -93,9 +93,11 @@ class Builds:
 
 @dataclass(frozen=True)
 class NoOneClass:
-    """A class hint that names no one class to build, an abstract class say, and why."""
+    """A class hint that names no one class to build, an abstract class say, why, and the
+    classes it names: the one class of an abstract class or a Protocol, or a union's."""
 
     reason: str
+    classes: tuple[type, ...]
 
 
 # what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union;
