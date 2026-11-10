@@ -75,6 +75,11 @@ class Classwide:
     @classmethod
     def __call__(cls, v):
         return bin(v).count('1') > 1
+
+class Kinds:
+    @functools.singledispatchmethod
+    def is_big(self, v):
+        return bin(v).count('1') > 1
 """
 
 
@@ -124,6 +129,9 @@ class _Answers:
         pytest.param(lambda: _in_the_package(HELPER, "Child")(), id="an inherited __call__"),
         pytest.param(lambda: _in_the_package(HELPER, "Static")(), id="a static __call__"),
         pytest.param(lambda: _in_the_package(HELPER, "Classwide")(), id="a class's __call__"),
+        pytest.param(
+            lambda: _in_the_package(HELPER, "Kinds")().is_big, id="a singledispatchmethod"
+        ),
         pytest.param(lambda: _chained(watch._MOST_WRAPPED), id="the most wrappers read"),
     ],
 )
@@ -134,6 +142,21 @@ def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any
     answer(called(function)(given(tracked(3, sink))), "is_big")
 
     assert lost(sink) == []
+
+
+class _Dispatching(functools.singledispatchmethod):
+    """A subclass of the target's, whose namespace the watch does not read."""
+
+
+def test_a_singledispatchmethod_s_method_is_read_from_what_functools_writes() -> None:
+    method = _in_the_package(HELPER, "is_big")
+
+    held = types.SimpleNamespace(_unbound=functools.singledispatchmethod(method))
+    subclassed = types.SimpleNamespace(_unbound=_Dispatching(method))
+
+    assert watch._dispatched(held) is method
+    assert watch._dispatched(subclassed) is None
+    assert watch._dispatched(types.SimpleNamespace()) is None
 
 
 class _Guarded:
@@ -198,6 +221,23 @@ def test_a_dict_argument_is_read_while_dict_is_replaced() -> None:
         builtins.dict = python_dict
 
     assert [name for name, _ in lost(sink)] == ["str"]
+
+
+def _counted(value: object) -> dict[str, str]:
+    """A function outside the target's package that answers a plain dict."""
+    return {"bits": bin(value)}  # pyrefly: ignore[bad-argument-type]
+
+
+def test_a_dict_answer_is_plain_while_dict_is_replaced() -> None:
+    sink: list[SinkItem] = []
+    python_dict = builtins.dict
+    builtins.dict = list  # pyrefly: ignore[bad-assignment]
+    try:
+        answer(called(_counted)(given(tracked(3, sink))), "counted")
+    finally:
+        builtins.dict = python_dict
+
+    assert [name for name, _ in lost(sink)] == ["counted"]
 
 
 class _Disguised(dict[str, object]):

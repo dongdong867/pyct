@@ -9,17 +9,18 @@ call's answer. The callee runs from the target's own frame, with no frame of
 pyct's above it, and every function here hands back what it was given.
 
 pyct sees inside a function of the target's package, whose module runs with
-the builtins pyct binds, so a call of one, reached directly or through a
-bound method, a `functools.partial`, a function or `functools.lru_cache`
-wrapper that holds it in its own ``__wrapped__``, as `functools.wraps`
-writes it, or its class's `__call__`, is not judged: the calls and
-operations inside it are, so a cached answer of `functools.lru_cache`
-records nothing. Any other callee is, as one
-written in C or one outside the target's package (run-quiet-loss-downgrade).
-Its answer is a loss when an argument is a tracked value, or a list, tuple
-or dict holding one among its first `MOST_ITEMS` items, no fork or downgrade
-was recorded once the last argument was in hand, which is one the call made
-inside itself, and the answer is a plain int, float, bool, str or bytes, or
+the builtins pyct binds, so a call of one, reached directly or through at
+most `_MOST_WRAPPED` of a bound method, a `functools.partial`, a function or
+`functools.lru_cache` wrapper that holds it in its own ``__wrapped__``, as
+`functools.wraps` writes it, a `functools.singledispatchmethod`'s method, or
+its class's `__call__`, is not judged: the calls and operations inside it
+are, so a cached answer of `functools.lru_cache` records nothing. Any other
+callee is, as one written in C or one outside the target's package
+(run-quiet-loss-downgrade). Its answer is a loss when an argument is a
+tracked value, or a list or tuple holding one among its first `MOST_ITEMS`
+items, or a dict among its first `MOST_ITEMS` entries, key or value, no fork
+or downgrade was recorded once the last argument was in hand, which is one
+the call made inside itself, and the answer is a plain int, float, bool, str or bytes, or
 a list, tuple, set, frozenset or dict holding only those. The loss is a
 downgrade named by the callee as the call writes it, at the call's site, in
 the sink of the call's first tracked value.
@@ -66,6 +67,10 @@ _MRO_OF = type.__dict__["__mro__"].__get__
 _NAMESPACE_OF = type.__dict__["__dict__"].__get__
 # the type of a `functools.lru_cache` wrapper, which holds what it wraps as a function does
 _LRU_WRAPPER = functools._lru_cache_wrapper  # pyrefly: ignore[missing-attribute]
+# what a `functools.singledispatchmethod` gives an instance from Python 3.14 on, which holds the
+# method in its own ``_unbound``; before 3.14 it gives a function that holds it in ``__wrapped__``
+_DISPATCH_BOUND = getattr(functools, "_singledispatchmethod_get", None)
+_DISPATCH_METHOD = functools.singledispatchmethod
 _chain, _islice = itertools.chain, itertools.islice
 
 # the types a plain answer is made of, and the containers that may hold them
@@ -213,7 +218,8 @@ def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:
 def _judged(callee: object) -> bool:
     """Whether a callee is one pyct cannot see inside: anything but a function of the target's
     package, reached through a bound method, a `functools.partial`, a wrapper that holds it in
-    its own ``__wrapped__`` (`_wrapped`), or an object's own `__call__` (`_class_call`)."""
+    its own ``__wrapped__`` (`_wrapped`), a `functools.singledispatchmethod`'s method
+    (`_dispatched`), or an object's own `__call__` (`_class_call`)."""
     function: object = callee
     for _ in _range(_MOST_WRAPPED + 1):
         kind = _type(function)
@@ -227,6 +233,8 @@ def _judged(callee: object) -> bool:
             function = function.__func__  # pyrefly: ignore[missing-attribute]
         elif kind is _PARTIAL:
             function = function.func  # pyrefly: ignore[missing-attribute]
+        elif kind is _DISPATCH_BOUND:
+            function = _dispatched(function)
         else:
             function = _class_call(kind)
             if _type(function) is not types.FunctionType and _type(function) is not _LRU_WRAPPER:
@@ -247,6 +255,16 @@ def _class_call(kind: type) -> object:
     return None
 
 
+def _dispatched(bound: object) -> object:
+    """The method a `functools.singledispatchmethod` gives an instance holds, read from the
+    ``__dict__`` functools writes, else None: a subclass of `functools.singledispatchmethod`
+    is not read."""
+    unbound = _dict_get(bound.__dict__, "_unbound")  # pyrefly: ignore[missing-attribute]
+    if _type(unbound) is not _DISPATCH_METHOD:
+        return None
+    return _dict_get(unbound.__dict__, "func")  # pyrefly: ignore[missing-attribute]
+
+
 def _wrapped(wrapper: object) -> object:
     """What a function or a `functools.lru_cache` wrapper holds in its own ``__wrapped__``, as
     `functools.wraps`, `functools.update_wrapper` and `functools.lru_cache` write it, else
@@ -255,8 +273,9 @@ def _wrapped(wrapper: object) -> object:
 
 
 def _tracked_in(value: object) -> object:
-    """The tracked value an argument is, or the first one a list, tuple or dict holds among its
-    first `MOST_ITEMS` items, else None."""
+    """The tracked value an argument is, or the first one a list or tuple holds among its first
+    `MOST_ITEMS` items, or a dict among the keys and values of its first `MOST_ITEMS` entries,
+    else None."""
     kind = _type(value)
     if kind in TRACKED_CLASSES:
         return value
@@ -279,7 +298,7 @@ def _plain(value: object) -> bool:
         kind = _type(part)
         if kind in _PLAIN:
             continue
-        if kind not in _CONTAINERS and kind is not dict:
+        if kind not in _CONTAINERS and kind is not _dict:
             return False
         if _id(part) in read:
             continue
