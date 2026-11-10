@@ -137,14 +137,14 @@ def test_checked_gives_a_reason_with_a_line_break_one_prefix() -> None:
 
 
 def count_reads(monkeypatch: pytest.MonkeyPatch, module: ModuleType, calls: list[object]) -> None:
-    """Record in ``calls`` the function each ``checked_annotations`` call in ``module`` reads."""
-    real = module.checked_annotations
+    """Record in ``calls`` the function each ``seed_annotations`` call in ``module`` reads."""
+    real = module.seed_annotations
 
     def counted(signature: inspect.Signature, fn: Callable[..., object]) -> dict[str, Check]:
         calls.append(fn)
         return real(signature, fn)
 
-    monkeypatch.setattr(module, "checked_annotations", counted)
+    monkeypatch.setattr(module, "seed_annotations", counted)
 
 
 def test_checked_reads_the_target_s_annotations_once_for_every_line(
