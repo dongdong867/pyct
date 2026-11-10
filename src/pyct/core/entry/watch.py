@@ -238,7 +238,8 @@ def _judged(callee: object) -> bool:
         elif kind is _DISPATCH_BOUND:
             function = _dispatched(function)
         elif kind is _staticmethod or kind is _classmethod:
-            # what a `functools.singledispatchmethod` written over one holds
+            # Python's own static or class method, as a `functools.singledispatchmethod` written
+            # over one holds: its function
             function = function.__func__  # pyrefly: ignore[missing-attribute]
         else:
             function = _class_call(kind)
