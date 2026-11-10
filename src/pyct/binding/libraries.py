@@ -6,9 +6,21 @@ from __future__ import annotations
 
 import functools
 import os
-import site
 import sys
-import sysconfig
+
+# where the standard library's and installed distributions' code lives. Read off `os`'s file and
+# the path rather than `sysconfig`, which a target may ship a module of its own as
+LIBRARY_ROOTS = tuple(
+    os.path.join(path, "")
+    for path in (
+        os.path.dirname(os.__file__),
+        *(
+            entry
+            for entry in sys.path
+            if os.path.basename(entry) in ("site-packages", "dist-packages")
+        ),
+    )
+)
 
 
 def from_a_library(cls: type, owner: object = None) -> bool:
@@ -18,9 +30,9 @@ def from_a_library(cls: type, owner: object = None) -> bool:
     module is never a library's, so a target inside an installed library
     builds that library's own classes. Any other class is a library's when
     its module's file lies under Python's standard library or a folder of
-    installed distributions (``site-packages``), or, for a module with no
-    file, when its top-level name is a standard library module's
-    (``sys.stdlib_module_names``), ``builtins`` among them. A class whose
+    installed distributions on the path (``LIBRARY_ROOTS``), or, for a
+    module with no file, when its top-level name is a standard library
+    module's (``sys.stdlib_module_names``), ``builtins`` among them. A class whose
     module is not loaded is read by that name alone.
     """
     name = cls.__module__ if isinstance(cls.__module__, str) else ""
@@ -42,14 +54,4 @@ def _library_module(name: str) -> bool:
     file = getattr(sys.modules.get(name), "__file__", None)
     if not isinstance(file, str):
         return name.partition(".")[0] in sys.stdlib_module_names
-    path = os.path.realpath(file)
-    return any(path.startswith(root + os.sep) for root in _library_roots())
-
-
-@functools.cache
-def _library_roots() -> tuple[str, ...]:
-    """The folders Python's standard library and installed distributions live in."""
-    paths = sysconfig.get_paths()
-    found = [paths.get(key) for key in ("stdlib", "platstdlib", "purelib", "platlib")]
-    found += [*site.getsitepackages(), site.getusersitepackages()]
-    return tuple(sorted({os.path.realpath(path) for path in found if path}))
+    return file.startswith(LIBRARY_ROOTS)
