@@ -10,6 +10,7 @@ got past names the cause (``README.md › Rules › the summary line``).
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import itertools
 import logging
@@ -17,71 +18,20 @@ import time
 import types
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
 
 from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 from pyct.results.blocks import owners
+from pyct.results.causes import Condition, Reason, Tries, WhyEntry
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError
 from pyct.results.senses import At, against_the_forks, agreements_of, heads_of
+from pyct.results.sources import Origins
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
 
 # what pyct logs for a line no cause explains; a run should never say it
 UNEXPLAINED = "no cause explains line %d of %s; it is put down as ended before"
-
-
-class Reason(StrEnum):
-    """Why a line was not run. The values are the words on the summary line."""
-
-    IMPORT = "import"
-    NOT_CALLED = "not called"
-    NOT_TAKEN = "not taken"
-    NO_FORK = "no fork"
-    HANDLER = "handler"
-    ENDED_BEFORE = "ended before"
-    SUSPENDED = "suspended"
-    NOT_WORKED_OUT = "not worked out"
-
-
-@dataclass(frozen=True)
-class Tries:
-    """What happened each time the run could have flipped the forks at one site, and how many
-    inputs ran a check there whose answer pyct's own values already knew (``decided``)."""
-
-    not_tried: int = 0
-    unsat: int = 0
-    unknown: int = 0
-    timeout: int = 0
-    left_the_plan: int = 0
-    decided: int = 0
-
-
-@dataclass(frozen=True)
-class Condition:
-    """A condition on a line's way, by its site, and the side the line needs."""
-
-    site: Site
-    side: bool
-
-
-@dataclass(frozen=True)
-class WhyEntry:
-    """One cause, and the lines of one file it accounts for, ascending.
-
-    ``function`` is set for ``not called``, ``condition`` for ``not taken``
-    and ``no fork``, ``tries`` for ``not taken``, and ``at_yield``, the line
-    of the ``yield`` the function was left at, for ``suspended``.
-    """
-
-    file: str
-    lines: tuple[int, ...]
-    reason: Reason
-    function: str | None = None
-    condition: Condition | None = None
-    tries: Tries | None = None
-    at_yield: int | None = None
 
 
 @dataclass(frozen=True)
@@ -112,11 +62,14 @@ class Run:
 
     ``stop_at`` is the monotonic instant past which no more causes are
     worked out, or None for a run with no deadline, which works out every line.
+    ``lost`` names the downgrades the inputs recorded at each site, in the
+    order first recorded.
     """
 
     walked: Sequence[Walked]
     tries: Mapping[ForkSite, Tries]
     stop_at: float | None = None
+    lost: Mapping[Site, tuple[str, ...]] = field(default_factory=dict)
 
     def late(self, ahead: float = 0.0) -> bool:
         """Whether the stop comes within ``ahead`` seconds, or has come."""
@@ -143,7 +96,9 @@ def explain(
     left = [line for line in lines if line not in placed]
     if left:
         by_cause[WhyEntry(file, (), Reason.NOT_WORKED_OUT)] = left
-    entries = [_with_lines(cause, held) for cause, held in by_cause.items() if held]
+    entries = [
+        dataclasses.replace(cause, lines=tuple(held)) for cause, held in by_cause.items() if held
+    ]
     return tuple(sorted(entries, key=lambda entry: entry.lines[0]))
 
 
@@ -171,18 +126,6 @@ def _work_out(
         cause = seen.cause(line)
         if cause is not None:
             by_cause.setdefault(cause, []).append(line)
-
-
-def _with_lines(cause: WhyEntry, lines: list[int]) -> WhyEntry:
-    return WhyEntry(
-        file=cause.file,
-        lines=tuple(lines),
-        reason=cause.reason,
-        function=cause.function,
-        condition=cause.condition,
-        tries=cause.tries,
-        at_yield=cause.at_yield,
-    )
 
 
 @dataclass(frozen=True)
@@ -241,6 +184,16 @@ class _Seen:
         return cls(file, covered, inputs, run, _owners(file), heads, _own(file, run, pace))
 
     @functools.cached_property
+    def origins(self) -> Origins:
+        """Where the values the file's conditions read came from, read when first asked."""
+        lost = {
+            (site.line, site.col): names
+            for site, names in self.run.lost.items()
+            if site.file == self.file
+        }
+        return Origins(self.file, lost, Pace(self.run.late).step)
+
+    @functools.cached_property
     def _called(self) -> frozenset[int]:
         """The ids of the functions a covered line of which ran."""
         return frozenset(id(self.owners.get(line)) for line in self.covered)
@@ -287,6 +240,7 @@ class _Walk:
     """One function's flow, and the nodes the run's lines and forks prove some input passed."""
 
     seen: _Seen
+    code: types.CodeType
     flow: Flow
     passed: frozenset[int]
     forked: frozenset[tuple[int, int, bool]]
@@ -304,7 +258,7 @@ class _Walk:
         flow.swap(against_the_forks(flow, seen.heads, inputs, seen.own))
         passed = flow.marked(seen.covered, forks)
         forked = frozenset((line, col, is_raising) for line, col, _, is_raising in each(forks))
-        return cls(seen, flow, passed, forked)
+        return cls(seen, code, flow, passed, forked)
 
     def cause_of(self, line: int) -> WhyEntry:
         """The line's cause, found once for every line along one straight run."""
@@ -473,7 +427,10 @@ class _Walk:
         site = Site(file=self.seen.file, line=step.line, col=step.col)
         condition = Condition(site=site, side=step.side)
         if not self._forks_at(step):
-            return WhyEntry(self.seen.file, (), Reason.NO_FORK, condition=condition)
+            sources = self.seen.origins.of(self.code, step.line, step.col)
+            return WhyEntry(
+                self.seen.file, (), Reason.NO_FORK, condition=condition, sources=sources
+            )
         tries = self.seen.run.tries.get(ForkSite(site, step.raising), Tries())
         return WhyEntry(self.seen.file, (), Reason.NOT_TAKEN, condition=condition, tries=tries)
 

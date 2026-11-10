@@ -17,9 +17,30 @@ BINDING = "from pyct.core.entry.substitutes import "
 
 
 def substituted(source: str) -> str:
-    """The source as the transform leaves it, written back as Python, less its binding import."""
-    lines = ast.unparse(substitute(ast.parse(source))).splitlines()
+    """The source as the transform leaves it, written back as Python, less its binding import
+    and the watch on its calls (`test_substitute_watch`)."""
+    lines = ast.unparse(unwatched(substitute(ast.parse(source)))).splitlines()
     return "\n".join(line for line in lines if not line.startswith(BINDING))
+
+
+# the names the watch on a call calls, each around one node of the call as written
+WATCH_NAMES = frozenset({"__pyct_answer__", "__pyct_called__", "__pyct_given__"})
+
+
+class _Unwatched(ast.NodeTransformer):
+    """Each watched call as the other rules leave it: the watch's calls give way to the node each
+    holds."""
+
+    def visit_Call(self, node: ast.Call) -> ast.AST:
+        self.generic_visit(node)
+        if isinstance(node.func, ast.Name) and node.func.id in WATCH_NAMES:
+            return node.args[0]
+        return node
+
+
+def unwatched[Tree: ast.AST](tree: Tree) -> Tree:
+    """The tree with the watch on its calls taken off, in place, its binding import kept."""
+    return _Unwatched().visit(tree)
 
 
 def statements(source: str) -> list[ast.stmt]:
@@ -309,6 +330,9 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_truth__": "truth",
         "__pyct_unpack__": "unpack",
         "__pyct_unpack_starred__": "unpack_starred",
+        "__pyct_called__": "called",
+        "__pyct_given__": "given",
+        "__pyct_answer__": "answer",
     }
     assert all(hasattr(substitutes, function) for function in BOUND.values())
 

@@ -185,7 +185,9 @@ def test_leaves_a_separator_read_at_run_time_to_python() -> None:
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     assert joins_of(seed) == [], seed
-    assert downgrade_names(seed) == [], seed
+    # Python's own join of a list holding the tracked a answers a plain str, a quiet loss
+    # (sort-stuck-lines-by-cause)
+    assert downgrade_names(seed) == ["sep.join"], seed
     # plain Python joins "q-b", which is not "x-b", so the function returns "other"
     covered = seed["covered"]
     assert isinstance(covered, dict), seed

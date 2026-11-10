@@ -73,13 +73,13 @@ def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
     """The call that replaces a conversion, `range`, a `math` function, `len`, `ord` or `chr`
     through `builtins`, a str literal's method or a range or dict view method called through the
     type, or None for any other."""
-    if not isinstance(node, ast.Call) or not _written_out(node):
+    if not isinstance(node, ast.Call) or not written_out(node):
         return None
     if _asks_for_its_callee(node) or parts.constants.routed_function(node.func):
         return _curried(node, parts)
     if _text_method(node.func, parts):
         # a join has a router of its own, which reads the items it joins
-        router = "__pyct_join__" if _spelled(node.func) == "join" else "__pyct_method__"
+        router = "__pyct_join__" if spelled(node.func) == "join" else "__pyct_method__"
         callee = parts.named(router, node)
         call = ast.Call(func=callee, args=[node.func, *node.args], keywords=node.keywords)
         return ast.copy_location(call, node)
@@ -97,7 +97,7 @@ def _curried(node: ast.Call, parts: Parts) -> ast.Call:
     return ast.copy_location(call, node)
 
 
-def _written_out(call: ast.Call) -> bool:
+def written_out(call: ast.Call) -> bool:
     """Whether a call's arguments are written out, few, and its callee ends where it starts."""
     unpacked = any(isinstance(arg, ast.Starred) for arg in call.args) or any(
         keyword.arg is None for keyword in call.keywords
@@ -124,10 +124,10 @@ def _through_a_type(callee: ast.expr) -> bool:
         return False
     receiver = callee.value
     if isinstance(receiver, ast.Call):
-        return _spelled(receiver.func) == "type" and _one_argument(receiver)
+        return spelled(receiver.func) == "type" and _one_argument(receiver)
     if isinstance(receiver, ast.Attribute) and receiver.attr == "__class__":
         return True
-    return _spelled(receiver) in _TYPE_NAMES
+    return spelled(receiver) in _TYPE_NAMES
 
 
 def _one_argument(call: ast.Call) -> bool:
@@ -135,7 +135,7 @@ def _one_argument(call: ast.Call) -> bool:
     return len(call.args) == 1 and not call.keywords and not isinstance(call.args[0], ast.Starred)
 
 
-def _spelled(node: ast.expr) -> str | None:
+def spelled(node: ast.expr) -> str | None:
     """The name a callee is written with, bare or after a dot."""
     if isinstance(node, ast.Name):
         return node.id
@@ -145,15 +145,15 @@ def _spelled(node: ast.expr) -> str | None:
 def _asks_for_its_callee(call: ast.Call) -> bool:
     """Whether a call is a conversion, `range` with an argument that is not an int literal, a
     `map` of a conversion or a one-argument `type`, whose callee pyct asks for first."""
-    spelled = _spelled(call.func)
-    if spelled == "range":
+    callee = spelled(call.func)
+    if callee == "range":
         return not all(_int_literal(arg) for arg in call.args)
-    if spelled in _CONVERSIONS:
+    if callee in _CONVERSIONS:
         return True
-    if spelled == "type":
+    if callee == "type":
         # `type` with three arguments builds a class, which pyct leaves to Python
         return len(call.args) == 1 and not call.keywords
-    return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS
+    return callee == "map" and bool(call.args) and spelled(call.args[0]) in _CONVERSIONS
 
 
 def _int_literal(node: ast.expr) -> bool:

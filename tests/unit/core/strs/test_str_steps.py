@@ -467,4 +467,8 @@ def test_a_split_through_the_hook_takes_python_s_side(split: str) -> None:
         answer = outcome(hooked["f"], **bind(args, sink))
 
         assert answer == outcome(plain["f"], **args), (split, args)
-        agrees(sink, [], args)
+        # the program's own plain copy of each piece is a loss the call's watch names
+        copied = [
+            item for item in sink if isinstance(item, Downgrade) and item.name == "str.__str__"
+        ]
+        agrees([item for item in sink if item not in copied], [], args)

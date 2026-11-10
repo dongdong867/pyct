@@ -3,6 +3,7 @@
 import pytest
 
 from pyct.core.foundation.branch import Site
+from pyct.results.causes import Source, SourceKind
 from pyct.results.why import Condition, Reason, Tries, WhyEntry
 from pyct.results.why_render import why_json, why_line
 
@@ -99,3 +100,40 @@ def test_a_suspended_entry_names_the_yield_it_stopped_at() -> None:
         "yield": {"file": "m.py", "line": 2},
     }
     assert why_line(entry) == "why 3, 4 in m.py: suspended at the yield on m.py:2"
+
+
+LOOP = Source(SourceKind.LOOP, "t", Site(file="m.py", line=40, col=4))
+BIN = Source(SourceKind.LOST, "x", Site(file="m.py", line=24, col=7), "bin")
+
+
+def test_a_no_fork_entry_writes_its_sources_after_its_condition() -> None:
+    entry = WhyEntry("m.py", (5,), Reason.NO_FORK, condition=AT, sources=(LOOP, BIN))
+
+    assert why_json(entry)["sources"] == [
+        {"kind": "loop", "name": "t", "file": "m.py", "line": 40, "col": 4},
+        {"kind": "lost", "name": "x", "call": "bin", "file": "m.py", "line": 24, "col": 7},
+    ]
+    assert (
+        why_json(WhyEntry("m.py", (5,), Reason.NO_FORK, condition=AT, sources=()))["sources"] == []
+    )
+
+
+@pytest.mark.parametrize(
+    ("sources", "ending"),
+    [
+        pytest.param((LOOP,), "; t came from the loop at m.py:40", id="a loop"),
+        pytest.param((BIN,), "; x lost in bin at m.py:24:7", id="a lost value"),
+        pytest.param(
+            (LOOP, BIN),
+            "; t came from the loop at m.py:40; x lost in bin at m.py:24:7",
+            id="each in code order",
+        ),
+        pytest.param((), "; no source found", id="none"),
+    ],
+)
+def test_a_no_fork_line_on_stderr_ends_with_where_its_value_came_from(
+    sources: tuple[Source, ...], ending: str
+) -> None:
+    entry = WhyEntry("m.py", (5,), Reason.NO_FORK, condition=AT, sources=sources)
+
+    assert why_line(entry) == f"why 5 in m.py: m.py:3:7 never true, no fork{ending}"

@@ -7,10 +7,13 @@ import pytest
 
 from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 from pyct.results import record, why
+from pyct.results.causes import Source as CauseSource
+from pyct.results.causes import SourceKind
 from pyct.results.coverage import Coverage
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.record import (
     Aim,
+    DowngradeCount,
     Environment,
     InputRecord,
     Miss,
@@ -222,3 +225,39 @@ def test_a_function_only_the_import_called_is_one_no_input_called(tmp_path: Path
     assert result.why_uncovered == (
         WhyEntry(file=str(file), lines=(3,), reason=Reason.NOT_CALLED, function="helper"),
     )
+
+
+LOST = """\
+def ones(x):
+    if bin(x).count("1") == 7:
+        return "seven"
+    return "other"
+"""
+
+
+def test_a_no_fork_entry_reads_the_inputs_downgrades_for_where_its_value_was_lost(
+    tmp_path: Path,
+) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(LOST)
+    at = Site(file=str(file), line=2, col=7)
+    seed = InputRecord(
+        args={"x": 3},
+        forks=(),
+        covered_lines=frozenset({2, 4}),
+        downgrades=(DowngradeCount(name="bin", count=1, site=at),),
+    )
+    result = RunResult(
+        entry="m::ones",
+        records=(seed,),
+        coverage=Coverage(
+            covered={str(file): frozenset({2, 4})}, lines={str(file): frozenset({2, 3, 4})}
+        ),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    (entry,) = result.why_uncovered
+
+    assert entry.reason is Reason.NO_FORK
+    assert entry.sources == (CauseSource(SourceKind.LOST, "x", at, "bin"),)
