@@ -1,5 +1,6 @@
 """What an annotation asks of a seed value, and every value in a seed that contradicts it."""
 
+import dataclasses
 import json
 import re
 import types
@@ -44,12 +45,14 @@ class Items:
     ``each`` is a class to build, one that names no one class, or such a list
     or dict itself (``hints``): such a list keeps its length and such a dict
     its keys, and each value is named by its place and takes ``each``.
+    ``none`` lets ``null`` stand for the list or dict (``or_null``).
     """
 
     kind: type
     each: "Check | None"
     keys: object = str
     fixed: bool = False
+    none: bool = False
 
 
 def item_check(check: "Check | None", kind: type, key: object) -> "Check | None":
@@ -64,7 +67,8 @@ def item_check(check: "Check | None", kind: type, key: object) -> "Check | None"
 
 @dataclass(frozen=True)
 class OneOf:
-    """A union of plain types, and of None, as the items of a list or dict: any one of them."""
+    """A union of plain types, and of None, as the items of a list or dict, or a parameter's
+    plain type with None added for a None default (``or_null``): any one of them."""
 
     kinds: tuple[type, ...]
 
@@ -93,12 +97,15 @@ class Builds:
 
 @dataclass(frozen=True)
 class NoOneClass:
-    """A class hint that names no one class to build, an abstract class say, and why."""
+    """A class hint that names no one class to build, an abstract class say, why, and the
+    classes it names: the one class of an abstract class or a Protocol, or a union's."""
 
     reason: str
+    classes: tuple[type, ...]
 
 
-# what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union;
+# what an annotation asks of a value: a plain type, a list or dict, or a union, for an item or
+# for a parameter whose default is None;
 # what the arguments a method's instance is built from ask; and a class a hint builds
 type Check = type | Items | OneOf | Fields | Builds | NoOneClass
 
@@ -149,6 +156,19 @@ def _of_items(item: object) -> Check | None:
     if all(any(kind is plain for plain in (*PLAIN, NONE)) for kind in kinds):
         return OneOf(kinds)
     return None
+
+
+def or_null(check: Check) -> Check:
+    """``check`` that also accepts ``null``: a plain type or a union of them with None beside
+    it, and a list or dict annotation that ``null`` may stand for. Every other check, which
+    ``null`` passes already, is as it was."""
+    if isinstance(check, type):
+        return OneOf((check, NONE))
+    if isinstance(check, OneOf):
+        return check if NONE in check.kinds else OneOf((*check.kinds, NONE))
+    if isinstance(check, Items):
+        return dataclasses.replace(check, none=True)
+    return check
 
 
 def contradictions(
@@ -203,9 +223,11 @@ def refused(
         if any(_accepts(kind, value) for kind in check.kinds):
             return []
         return [_refusal(written, check.kinds, value)]
+    if check.none and value is None:
+        return []
     entries = _entries(check.kind, value)
     if entries is None:
-        return [_refusal(written, (check.kind,), value)]
+        return [_refusal(written, (check.kind, NONE) if check.none else (check.kind,), value)]
     if check.each is None:
         return []
     each = check.each

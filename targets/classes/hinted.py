@@ -14,10 +14,12 @@ from targets.classes.orders import (
     Drawable,
     Item,
     Node,
+    Note,
     Order,
     Shape,
     Spec,
     Square,
+    Stamp,
 )
 
 if TYPE_CHECKING:
@@ -180,6 +182,28 @@ def either(c: Customer | Guest):
 
 def render(d: Drawable):
     return d
+
+
+def draw_all(shapes: list[Shape]):
+    return len(shapes)
+
+
+def noted(c: Note):
+    if c.note is None:
+        return "bare"
+    return "noted"
+
+
+def jot(name: str, note: str = None):  # noqa: RUF013 - the implicit Optional is what it tests
+    if note is None:
+        return name
+    return note
+
+
+def stamped(s: Stamp):
+    if s.at > 5:
+        return "late"
+    return "early"
 
 
 def chain(n: "Node"):  # noqa: UP037 - the quoted form is what it tests

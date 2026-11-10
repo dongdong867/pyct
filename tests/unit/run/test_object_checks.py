@@ -1,5 +1,9 @@
 import inspect
+from collections.abc import Mapping
 
+import pytest
+
+from pyct.binding.annotations import Builds, Check, NoOneClass
 from pyct.binding.builds import object_forms
 from pyct.run.object_checks import ObjectCheck, form_lines
 
@@ -264,3 +268,63 @@ def test_form_lines_check_an_object_inside_an_object_by_its_own_class() -> None:
     assert form_lines_of({"p": {"__class__": "Point", "__args__": [inner, 2]}}) == [
         "p['__args__'][0]['owner'] must be a str, got 5"
     ]
+
+
+def test_list_lines_name_each_item_by_its_index() -> None:
+    assert check_for(Point).list_lines("p", [1, "2"]) == ['p[1] must be an int, got "2"']
+
+
+@pytest.mark.parametrize("items", [[1], [1, 2, "a", 4]], ids=["one", "four"])
+def test_list_lines_give_the_fit_by_position_and_count_the_items(items: list[object]) -> None:
+    count = "1 item" if len(items) == 1 else f"{len(items)} items"
+
+    lines = check_for(Point).list_lines("p", items)
+
+    assert lines == [f"p ({count}) does not fit Point(x, y, name): {reason(Point, *items)}"]
+
+
+def test_list_lines_check_nothing_without_a_signature() -> None:
+    assert ObjectCheck.of(Point, None).list_lines("p", ["a"]) == []
+
+
+def hinted_lines_of(seed: Mapping[str, object], checks: Mapping[str, Check]) -> list[str]:
+    """Every object's lines for ``seed`` under the hints ``checks``, its bare class names read
+    in this module."""
+    forms = object_forms(seed, None, checks, __name__)
+    built = frozenset(id(found.form) for found in forms.found)
+    return [line for found in forms.outer_first() for line in form_lines(found, __name__, built)]
+
+
+def test_a_hint_that_names_no_one_class_gives_its_reason_alone() -> None:
+    seed = {"s": {"side": "1", "__calls__": []}}
+
+    assert hinted_lines_of(seed, {"s": NoOneClass("the reason", (Cart,))}) == ["s: the reason"]
+
+
+def test_a_hinted_object_refuses_a_reserved_key_and_reads_args_by_position() -> None:
+    seed = {"c": {"__args__": [5], "__calls__": []}, "p": {"__args__": 5}}
+
+    lines = hinted_lines_of(seed, {"c": Builds(Cart), "p": Builds(Point)})
+
+    assert lines == [
+        f"c cannot hold '__calls__': {RESERVED}",
+        "c['__args__'][0] must be a str, got 5",
+        "p['__args__'] must be a list, got 5",
+    ]
+
+
+def test_a_named_class_the_hint_does_not_fit_is_named_then_checked_as_itself() -> None:
+    seed = {"c": {"__class__": "Point", "__args__": [1, "2"]}}
+
+    lines = hinted_lines_of(seed, {"c": NoOneClass("two classes", (Cart, Empty))})
+
+    assert lines == [
+        "c['__class__'] must name Cart, Empty or a subclass of one of them, got \"Point\"",
+        "c['__args__'][1] must be an int, got \"2\"",
+    ]
+
+
+def test_a_named_class_that_does_not_load_under_a_hint_gives_its_class_line_alone() -> None:
+    lines = hinted_lines_of({"c": {"__class__": "Nowhere", "owner": 5}}, {"c": Builds(Cart)})
+
+    assert lines == [f"c['__class__']: {__name__} has no class Nowhere"]

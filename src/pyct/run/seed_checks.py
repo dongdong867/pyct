@@ -1,5 +1,5 @@
 """The checks a seed passes before a run: its shape as JSON, its names, its types, then each
-object it names with ``"__class__"``.
+object it names with ``"__class__"`` or a class hint builds.
 
 Each refusal is a UsageError naming what is wrong, as the command line reports it.
 """
@@ -13,10 +13,10 @@ from dataclasses import dataclass
 
 from pyct.binding.annotations import Check, contradictions
 from pyct.binding.builds import object_forms
-from pyct.binding.resolve import checked_annotations
+from pyct.binding.resolve import seed_annotations
 from pyct.config.command_line import UsageError
 from pyct.run.object_checks import ObjectCheck, fit_failure, form_lines
-from pyct.run.target import Target
+from pyct.run.target import Target, argument_checks
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
 # fork, its condition, and a few operations the target applies to the value
@@ -101,8 +101,9 @@ def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
 @dataclass(frozen=True)
 class SeedCheck:
     """A target's seed checks, read once for every seed it is given: its signature, what its
-    parameters' annotations ask, and, for a method whose instance each input builds, the
-    parameter that holds the constructor's arguments with the check on that object.
+    parameters' annotations ask, what their hints build (``argument_checks``), and, for a
+    method whose instance each input builds, the parameter that holds the constructor's
+    arguments with the check on that object.
 
     ``refusals`` is the one place every check on a parsed seed runs, for
     ``--args`` and for each line of ``--seeds``, so a new one belongs there.
@@ -111,19 +112,21 @@ class SeedCheck:
     signature: inspect.Signature
     checks: Mapping[str, Check]
     home: str
+    hints: Mapping[str, Check]
     under_self: tuple[str, ObjectCheck] | None = None
 
     @classmethod
     def of(cls, target: Target) -> SeedCheck:
         """The checks for ``target``. The object under ``self`` is checked against the
         constructor, and the annotation on ``self`` itself is not checked."""
-        checks = checked_annotations(target.signature, target.fn)
+        checks = seed_annotations(target.signature, target.fn)
+        hints = argument_checks(target)
         name = target.self_name
         if target.self_class is None or name is None:
-            return cls(target.signature, checks, target.home)
+            return cls(target.signature, checks, target.home, hints)
         others = {key: check for key, check in checks.items() if key != name}
         under_self = (name, ObjectCheck.of(target.self_class, target.constructor))
-        return cls(target.signature, others, target.home, under_self)
+        return cls(target.signature, others, target.home, hints, under_self)
 
     def refusals(self, seed: Mapping[str, object]) -> list[str]:
         """Every reason to refuse ``seed``.
@@ -132,15 +135,16 @@ class SeedCheck:
         Otherwise the lines for the object under ``self`` come first, when the
         seed gives one, then each other value that contradicts its
         annotation, in signature order, then the lines of each object the seed
-        names with ``"__class__"`` (``form_lines``), outer before inner in seed
-        order. No annotation checks such an object itself: each input builds
-        it, and its class checks what it is built from.
+        names with ``"__class__"`` or a class hint builds (``form_lines``), at
+        every level, outer before inner in seed order. No annotation checks
+        such an object itself: each input builds it, and its class checks what
+        it is built from.
         """
         fit = _fit_line(self.signature, seed)
         if fit is not None:
             return [fit]
         name = None if self.under_self is None else self.under_self[0]
-        forms = object_forms(seed, name)
+        forms = object_forms(seed, name, self.hints, self.home)
         built = frozenset(id(found.form) for found in forms.found)
         lines: list[str] = []
         if self.under_self is not None and name in seed:

@@ -1,13 +1,16 @@
 """Reading a ``"__class__"`` text into the class it names, and why one names none."""
 
+import abc
 import datetime
 import importlib
 import inspect
+from typing import Protocol
 
 import pytest
 
 from pyct.binding import classes
-from pyct.binding.classes import ClassNameError, load_class, signature_of, written
+from pyct.binding.annotations import Builds, NoOneClass
+from pyct.binding.classes import ClassNameError, fits_hint, load_class, signature_of, written
 from tests.unit.binding import named_classes
 
 HOME = "tests.unit.binding.named_classes"
@@ -151,3 +154,62 @@ def test_a_name_that_reaches_no_class_is_no_form_error() -> None:
         load_class("Missing", HOME)
 
     assert not isinstance(raised.value, classes.ClassFormError)
+
+
+class Base(abc.ABC):
+    @abc.abstractmethod
+    def area(self) -> int: ...
+
+
+class Kind(Base):
+    def area(self) -> int:
+        return 1
+
+
+class Registered:
+    pass
+
+
+Base.register(Registered)
+
+
+class Drawn(Protocol):
+    def draw(self) -> None: ...
+
+
+class Refusing(type):
+    def __subclasscheck__(cls, subclass: type) -> bool:
+        raise RuntimeError("no subclass test")
+
+
+class Guarded(metaclass=Refusing):
+    pass
+
+
+ABSTRACT = NoOneClass("abstract", (Base,))
+
+
+@pytest.mark.parametrize(
+    ("named", "hint"),
+    [
+        (Kind, ABSTRACT),
+        (Registered, ABSTRACT),
+        (Kind, Builds(Kind)),
+        (Kind, NoOneClass("two classes", (int, Base))),
+        (Kind, NoOneClass("a Protocol", (Drawn,))),
+        (Kind, NoOneClass("two classes", (int, Drawn))),
+        (Kind, Builds(Guarded)),
+    ],
+    ids=["subclass", "registered", "same", "union", "protocol", "protocol-in-union", "raises"],
+)
+def test_a_named_class_fits_a_hint_it_is_or_derives_from(
+    named: type, hint: Builds | NoOneClass
+) -> None:
+    assert fits_hint(named, hint)
+
+
+@pytest.mark.parametrize(
+    "hint", [Builds(Registered), ABSTRACT, NoOneClass("two", (str, bytes))], ids=str
+)
+def test_a_named_class_outside_the_hint_does_not_fit(hint: Builds | NoOneClass) -> None:
+    assert not fits_hint(int, hint)

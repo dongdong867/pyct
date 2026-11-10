@@ -70,6 +70,24 @@ class Spec(TypedDict):
     size: int
 
 
+class Stamp:
+    """A class whose constructor signature Python cannot read: ``inspect.signature`` raises
+    TypeError on an ``__signature__`` that is no Signature."""
+
+    __signature__ = 0
+
+    def __init__(self, at: int) -> None:
+        self.at = at
+
+
+class Note:
+    """A constructor whose ``str`` parameter defaults to None, as untyped code often writes it."""
+
+    def __init__(self, name: str, note: str = None) -> None:  # noqa: RUF013 - what it tests
+        self.name = name
+        self.note = note
+
+
 class Node:
     def __init__(self, value: int, next: Optional["Node"] = None) -> None:  # noqa: UP037, UP045
         self.value = value
