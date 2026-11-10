@@ -30,9 +30,10 @@ def apply(origin: Seed, model: Mapping[str, object]) -> Seed:
         named = ", ".join(unknown)
         raise ValueError(f"the model names values the input does not hold: {named}")
     applied = _Applied(origin, model)
-    args = Walk(applied).rebuilt(origin.args, origin.checks)
+    args = Walk(applied, origin.home).rebuilt(origin.args, origin.checks)
+    shapes = applied.shapes()
     return Seed(
-        args, applied.leaves, applied.shapes(), origin.checks, applied.values, applied.dicts
+        args, applied.leaves, shapes, origin.checks, applied.values, applied.dicts, origin.home
     )
 
 

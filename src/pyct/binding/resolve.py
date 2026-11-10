@@ -15,12 +15,15 @@ from pyct.binding.annotations import Check, check_of
 
 
 def checked_annotations(
-    signature: inspect.Signature, fn: Callable[..., object]
+    signature: inspect.Signature,
+    fn: object,
+    read: Callable[[object], Check | None] = check_of,
 ) -> dict[str, Check]:
     """The parameters whose annotation asks something of the seed, and what it asks.
 
     What an annotation asks, and which annotations ask nothing, is
-    ``check_of``'s to say.
+    ``read``'s to say: ``check_of`` for the seed checks, and the hint reader
+    (``hints.hint_check``) for what each input builds.
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
@@ -42,7 +45,7 @@ def checked_annotations(
     for name, parameter in signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        check = resolved(parameter.annotation, fn, check_of)
+        check = resolved(parameter.annotation, fn, read)
         if check is not None:
             hints[name] = check
     return hints

@@ -96,9 +96,9 @@ def execute(
     """
     tally = Tally(watch)
     tally.go_live()
-    bound = bind(args, tally, ctx.checks)
+    bound = bind(args, tally, ctx.checks, ctx.home)
     try:
-        plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home)
+        plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home, ctx.checks)
     except BuildError as error:
         return _unbuilt(tally, error)
     tracer = _LineTracer(ctx.file, tally)

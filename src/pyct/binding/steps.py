@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from pyct.binding.annotations import Check, Fields, Items, int_keys, reads_as_int
 from pyct.binding.builds import ARGS_KEY, CLASS_KEY
+from pyct.binding.hints import Inside
 from pyct.binding.tuples import Holder, Slot
 from pyct.core.foundation.branch import Expression
 
@@ -34,13 +35,15 @@ def items_to_place(
     It goes in under the copy's own key, in the same order: a copy deepcopy made holds copies
     of the seed's keys, and a key equal only to itself would go in twice. The copy's keys are
     read in C, since a tracked dict's own walk records forks. Under ``Fields``, each value takes
-    its own key's check.
+    its own key's check, and each item its own index's.
     """
     each = _each(check, list if isinstance(value, list) else dict)
-    if isinstance(items, list):
-        return ((item, step(access, i), into, i, each) for i, item in enumerate(items))
-    pairs = zip(dict.items(items), dict.keys(cast(dict[Any, object], into)), strict=True)
     fields: Mapping[Any, Check] = check.each if isinstance(check, Fields) else {}
+    if isinstance(items, list):
+        return (
+            (item, step(access, i), into, i, fields.get(i, each)) for i, item in enumerate(items)
+        )
+    pairs = zip(dict.items(items), dict.keys(cast(dict[Any, object], into)), strict=True)
     return (
         (item, step(access, key_access(key)), into, slot, fields.get(key, each))
         for (key, item), slot in pairs
@@ -48,22 +51,24 @@ def items_to_place(
 
 
 def form_items(
-    items: dict[object, object], access: Expression | None, into: dict[Any, object]
+    items: dict[object, object], access: Expression | None, into: dict[Any, object], ask: Inside
 ) -> Iterable[Pending]:
     """An object form's values to place into its copy, each under its own key.
 
     ``"__class__"`` goes under no access, so it is never tracked or named,
     and so does an ``"__args__"`` that is not a list. A list under
-    ``"__args__"`` keeps its length, and its items are named by index. Every
-    other value is named by its key and takes no check: the constructor's
-    annotations are not read here.
+    ``"__args__"`` keeps its length, and its items are named by index, each
+    taking the check of the constructor's parameter at its position. Every
+    other value is named by its key and takes its parameter's check.
     """
     for key, item in dict.items(items):
         at = step(access, key_access(key))
         if _is(key, CLASS_KEY) or (_is(key, ARGS_KEY) and type(item) is not list):
             yield item, None, into, key, None
+        elif _is(key, ARGS_KEY):
+            yield item, at, into, key, ask.items
         else:
-            yield item, at, into, key, FIXED if _is(key, ARGS_KEY) else None
+            yield item, at, into, key, ask.keys.each.get(key)
 
 
 def _is(key: object, name: str) -> bool:

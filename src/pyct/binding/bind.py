@@ -19,7 +19,10 @@ from pyct.core.strs.strs import ConcolicStr
 
 
 def bind(
-    seed: Mapping[str, object], sink: BranchSink, checks: Mapping[str, Check] | None = None
+    seed: Mapping[str, object],
+    sink: BranchSink,
+    checks: Mapping[str, Check] | None = None,
+    home: str | None = None,
 ) -> dict[str, object]:
     """Give every int, str, float and bool in the seed, at any depth, its access and the sink,
     and every list the walk names its form.
@@ -50,10 +53,12 @@ def bind(
     ``"__args__"`` a plain list of fixed length, and ``"__class__"`` is never
     tracked; the values in it are tracked by their places. A list or dict
     that holds one at any depth is a plain copy whose length or keys stay
-    fixed too, its values tracked by their places.
+    fixed too, its values tracked by their places. So is a dict or list a
+    class hint builds, and each value in an object form takes its
+    constructor's hint, the class a bare name names read in ``home``.
     """
     tracker = _Tracker(sink)
-    args = Walk(tracker).rebuilt(seed, checks)
+    args = Walk(tracker, home).rebuilt(seed, checks)
     # each list's items are placed after the list is made, so what pyct saw of them is noted
     # once the walk is done, before the target can touch any. Each refuses a set, as a plain
     # one does, so the fields go straight into its `__dict__`
@@ -121,13 +126,22 @@ class Seed:
     # each leaf's value in this input, which settles how a list the path changed was cut
     values: Mapping[str, object] = field(default_factory=dict)
     dicts: Mapping[str, DictShape] = field(default_factory=dict)
+    # the module a bare class name under "__class__" is read in, for every walk of this input
+    home: str | None = None
 
     @classmethod
-    def of(cls, args: Mapping[str, object], checks: Mapping[str, Check] | None = None) -> "Seed":
+    def of(
+        cls,
+        args: Mapping[str, object],
+        checks: Mapping[str, Check] | None = None,
+        home: str | None = None,
+    ) -> "Seed":
         """The arguments copied, and their leaves, lists and dicts noted, in one walk."""
         noted = Noted()
-        copied = Walk(noted).rebuilt(args, checks)
-        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values, noted.dicts)
+        copied = Walk(noted, home).rebuilt(args, checks)
+        return cls(
+            copied, noted.leaves, noted.shapes(), checks or {}, noted.values, noted.dicts, home
+        )
 
     def containers(self) -> dict[str, ListShape | DictShape]:
         """Each tracked list and dict with its shape, by name: what the solver declares."""
