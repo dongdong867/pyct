@@ -15,7 +15,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
-from pyct.binding.annotations import Builds, Check, Fields, NoOneClass
+from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from pyct.binding.hints import NOTHING, Inside, inside_of
@@ -45,6 +45,14 @@ def hinted(value: object, check: Check | None) -> TypeGuard[dict[str, object] | 
     names a class or names no one class. A dict holding ``"__class__"`` builds the class it
     names, and every other value passes as it is."""
     return isinstance(check, Builds | NoOneClass) and (type(value) is dict or type(value) is list)
+
+
+def hinted_items(value: object, check: Check | None) -> TypeGuard[list[object] | dict[Any, object]]:
+    """Whether a class hint fixes the shape of ``value``: exactly a ``list`` under a ``list[C]``
+    hint, or exactly a ``dict`` under a ``dict[str, C]`` hint, at any level (a fixed ``Items``).
+    Such a list keeps its length and such a dict its keys, and each value in it takes the
+    hint's ``C``. The walk, the traversal, the defaults and the plan read this one test."""
+    return isinstance(check, Items) and check.fixed and type(value) is check.kind
 
 
 def form_class(form: object, check: Check | None, home: str) -> type:
