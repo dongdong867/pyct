@@ -114,11 +114,12 @@ class Walk:
     list the visitor makes its copy and says which items it takes, and every
     value placed in it is a value inside a tracked list. An object whose
     class passes the copy rule (``objects.copies_by_default``), a subclass of
-    dict or list among them, is copied by deepcopy with a memo that reads the walk's copies, and its
-    attributes, or its items, are then followed into that copy, so the
-    objects inside it are its copies from that one deepcopy. Only a faithful
-    copy is gone into, at any depth (``copies.faithful_copies``); the walk
-    does not go into any other, which is handed on as deepcopy made it.
+    dict or list among them, is copied by deepcopy with a memo that reads
+    the walk's copies, and its attributes, or its items, are then followed
+    into that copy, so the objects inside it are its copies from that one
+    deepcopy. Only a faithful copy is gone into, at any depth
+    (``copies.faithful_copies``); the walk does not go into any other, which
+    is handed on as deepcopy made it.
 
     A tuple's items are placed by index in a list of their own. Once every
     path is walked, each tuple is built once from its items, of its own type,

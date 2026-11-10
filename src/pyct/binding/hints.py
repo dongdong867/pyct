@@ -2,14 +2,14 @@
 inside such an object ask: its constructor's own hints, read where they were written.
 
 A hint builds when it names one of the user's own classes pyct can call: a plain class, a
-dataclass, a namedtuple, a C class, or a parameterized generic class, which builds its origin.
-A library's class, from Python's standard library or from an installed distribution other than
-the package of the code the hint is written on (``libraries``), keeps the JSON value, and so
-do a base of ``list`` or ``dict`` and a subclass of either, a ``TypedDict`` among them: each
-reads as ``check_of`` reads it. A Protocol, an abstract class and a union of two classes name no
-one class. A ``list[X]`` or ``dict[str, X]`` whose
-``X`` builds, names no one class, or is such a list or dict itself, is a fixed ``Items``: the
-list keeps its length and the dict its keys, and each item or value is read under ``X``.
+dataclass, a namedtuple, or a parameterized generic class, which builds its origin. A library's
+class, from Python's standard library or from an installed distribution other than the package
+of the code the hint is written on (``libraries``), keeps the JSON value, and so do a base of
+``list`` or ``dict`` and a subclass of either, a ``TypedDict`` among them: each reads as
+``check_of`` reads it. A Protocol, an abstract class and a union of two classes name no one
+class. A ``list[X]`` or ``dict[str, X]`` whose ``X`` builds, names no one class, or is such a
+list or dict itself, is a fixed ``Items``: the list keeps its length and the dict its keys, and
+each item or value is read under ``X``.
 """
 
 from __future__ import annotations

@@ -8,17 +8,21 @@ import functools
 import os
 import sys
 
-# where the standard library's and installed distributions' code lives. Read off `os`'s file and
-# the path rather than `sysconfig`, which a target may ship a module of its own as
+# where the standard library's and installed distributions' code lives, each folder both as the
+# path spells it and as its links lead, with a separator on its end. Read off `os`'s file and the
+# path rather than `sysconfig`, which a target may ship a module of its own as
 LIBRARY_ROOTS = tuple(
-    os.path.join(path, "")
-    for path in (
-        os.path.dirname(os.__file__),
-        *(
-            entry
-            for entry in sys.path
-            if os.path.basename(entry) in ("site-packages", "dist-packages")
-        ),
+    dict.fromkeys(
+        os.path.join(spelled, "")
+        for path in (
+            os.path.dirname(os.__file__),
+            *(
+                entry
+                for entry in sys.path
+                if os.path.basename(entry) in ("site-packages", "dist-packages")
+            ),
+        )
+        for spelled in (path, os.path.realpath(path))
     )
 )
 
@@ -26,26 +30,34 @@ LIBRARY_ROOTS = tuple(
 def from_a_library(cls: type, owner: object = None) -> bool:
     """Whether ``cls`` comes from a library, for a hint written on ``owner``.
 
-    A class whose module shares its top-level package with ``owner``'s
-    module is never a library's, so a target inside an installed library
-    builds that library's own classes. Any other class is a library's when
-    its module's file lies under Python's standard library or a folder of
-    installed distributions on the path (``LIBRARY_ROOTS``), or, for a
-    module with no file, when its top-level name is a standard library
-    module's (``sys.stdlib_module_names``), ``builtins`` among them. A class whose
+    A class of the same package as ``owner``'s module is never a library's,
+    so a target inside an installed library builds that library's own
+    classes. A package here is the shortest dotted prefix of the module's
+    name whose module has a file (``package_of``), so the portions of a
+    namespace package, each its own distribution, are packages of their own. Any other class
+    is a library's when its module's file, as written or as its links lead,
+    lies under Python's standard library or a folder of installed
+    distributions on the path (``LIBRARY_ROOTS``), or, for a module with no
+    file, when its top-level name is a standard library module's
+    (``sys.stdlib_module_names``), ``builtins`` among them. A class whose
     module is not loaded is read by that name alone.
     """
     name = cls.__module__ if isinstance(cls.__module__, str) else ""
-    top = name.partition(".")[0]
-    if top and top == _top_of(owner):
+    owned = getattr(owner, "__module__", None)
+    if name and isinstance(owned, str) and package_of(name) == package_of(owned):
         return False
     return _library_module(name)
 
 
-def _top_of(owner: object) -> str | None:
-    """The top-level package of the module ``owner`` was written in, when it says one."""
-    name = getattr(owner, "__module__", None)
-    return name.partition(".")[0] if isinstance(name, str) else None
+def package_of(name: str) -> str:
+    """The package a module belongs to: the shortest dotted prefix of its name whose module has
+    a file, which a namespace package has none of, or the whole name when none has one."""
+    parts = name.split(".")
+    for end in range(1, len(parts)):
+        prefix = ".".join(parts[:end])
+        if isinstance(getattr(sys.modules.get(prefix), "__file__", None), str):
+            return prefix
+    return name
 
 
 @functools.cache
@@ -54,4 +66,4 @@ def _library_module(name: str) -> bool:
     file = getattr(sys.modules.get(name), "__file__", None)
     if not isinstance(file, str):
         return name.partition(".")[0] in sys.stdlib_module_names
-    return file.startswith(LIBRARY_ROOTS)
+    return file.startswith(LIBRARY_ROOTS) or os.path.realpath(file).startswith(LIBRARY_ROOTS)
