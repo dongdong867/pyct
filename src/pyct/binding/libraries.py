@@ -31,16 +31,18 @@ def from_a_library(cls: type, owner: object = None) -> bool:
     """Whether ``cls`` comes from a library, for a hint written on ``owner``.
 
     A class of the same package as ``owner``'s module is never a library's,
-    so a target inside an installed library builds that library's own
-    classes. A package here is the shortest dotted prefix of the module's
-    name whose module has a file (``package_of``), so the portions of a
-    namespace package, each its own distribution, are packages of their own. Any other class
-    is a library's when its module's file, as written or as its links lead,
-    lies under Python's standard library or a folder of installed
-    distributions on the path (``LIBRARY_ROOTS``), or, for a module with no
-    file, when its top-level name is a standard library module's
-    (``sys.stdlib_module_names``), ``builtins`` among them. A class whose
-    module is not loaded is read by that name alone.
+    so a target inside an installed library builds the classes of its own
+    regular package, the nearest one with an ``__init__.py``. A package
+    here is the shortest dotted prefix of the module's name whose module
+    has a file (``package_of``), so the portions of a namespace package,
+    each its own distribution, are packages of their own, and a module
+    placed directly in a namespace package is a package of its own too. Any
+    other class is a library's when its module's file, as written or as its
+    links lead, lies under Python's standard library or a folder of
+    installed distributions on the path (``LIBRARY_ROOTS``), or, for a
+    module with no file, when its top-level name is a standard library
+    module's (``sys.stdlib_module_names``), ``builtins`` among them. A class
+    whose module is not loaded is read by that name alone.
     """
     name = cls.__module__ if isinstance(cls.__module__, str) else ""
     owned = getattr(owner, "__module__", None)
@@ -51,7 +53,9 @@ def from_a_library(cls: type, owner: object = None) -> bool:
 
 def package_of(name: str) -> str:
     """The package a module belongs to: the shortest dotted prefix of its name whose module has
-    a file, which a namespace package has none of, or the whole name when none has one."""
+    a file, which a namespace package has none of, or the whole name when none has one. So a
+    module placed directly in a namespace package, as ``google/cloud/*.py``, is a package of
+    its own, apart from its sibling modules."""
     parts = name.split(".")
     for end in range(1, len(parts)):
         prefix = ".".join(parts[:end])
