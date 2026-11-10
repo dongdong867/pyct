@@ -3,9 +3,9 @@ hints reach, and planned as the call builds them."""
 
 import pytest
 
-from pyct.binding.annotations import Builds, Fields, NoOneClass, contradictions
+from pyct.binding.annotations import Builds, Fields, Items, NoOneClass, contradictions
 from pyct.binding.builds import BuildError, object_forms, plan_call
-from tests.unit.binding.hint_classes import Spot
+from tests.unit.binding.hint_classes import Basket, Spot
 from tests.unit.binding.named_classes import Holder, Point
 
 HOME = "tests.unit.binding.hint_classes"
@@ -96,3 +96,74 @@ def test_a_list_under_a_hint_that_names_no_one_class_is_the_build_error() -> Non
         plan_call({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason")})
 
     assert raised.value.place == "s"
+
+
+ITEMS = {"items": Items(list, Builds(Point), fixed=True)}
+BY = {"by": Items(dict, Builds(Point), fixed=True)}
+
+
+def test_each_item_and_value_of_a_class_is_listed_by_its_place() -> None:
+    args = {"items": [{"x": 1, "y": 2}, None, [3, 4]], "by": {"a": {"x": 5, "y": 6}, "b": 7}}
+
+    found = object_forms(args, None, {**ITEMS, **BY}, HOME).found
+
+    assert sorted(each.place for each in found) == ["by['a']", "items[0]", "items[2]"]
+    assert all(each.check == Builds(Point) for each in found)
+    assert args == {
+        "items": [{"x": 1, "y": 2}, None, [3, 4]],
+        "by": {"a": {"x": 5, "y": 6}, "b": 7},
+    }
+
+
+def test_a_list_of_lists_of_a_class_lists_the_inner_items() -> None:
+    inner = Items(list, Builds(Point), fixed=True)
+    args = {"rows": [[{"x": 1, "y": 2}]]}
+
+    found = object_forms(args, None, {"rows": Items(list, inner, fixed=True)}, HOME).found
+
+    assert [each.place for each in found] == ["rows[0][0]"]
+
+
+def test_a_list_of_a_class_inside_a_hinted_and_a_named_object_is_listed() -> None:
+    hinted = {"b": {"items": [{"x": 1, "y": 2}], "by": {}, "tags": []}}
+    named = {"o": {"__class__": "Basket", "items": [{"x": 1, "y": 2}], "by": {}, "tags": []}}
+
+    from_hint = object_forms(hinted, None, {"b": Builds(Basket)}, HOME).found
+    from_name = object_forms(named, None, {}, HOME).found
+
+    assert [each.place for each in from_hint] == ["b['items'][0]", "b"]
+    assert [each.place for each in from_name] == ["o['items'][0]", "o"]
+
+
+def test_a_named_object_inside_a_list_of_a_class_gives_its_siblings_their_hint() -> None:
+    named = {"__class__": "tests.unit.binding.named_classes::Holder", "inner": 1}
+    args = {"items": [named, {"x": 1, "y": 2}]}
+
+    found = object_forms(args, None, ITEMS, HOME).found
+
+    assert sorted((each.place, each.check) for each in found) == [
+        ("items[0]", Builds(Point)),
+        ("items[1]", Builds(Point)),
+    ]
+
+
+def test_the_plan_builds_each_item_into_a_copy_of_the_list() -> None:
+    args = {"items": [{"x": 1, "y": 2}, None], "by": {"a": [3, 4]}}
+
+    plan = plan_call(args, (), None, HOME, {**ITEMS, **BY})
+
+    assert sorted(build.place for build in plan.builds) == ["by['a']", "items[0]"]
+    items, by = plan.keywords["items"], plan.keywords["by"]
+    assert items is not args["items"] and by is not args["by"]
+    for build in plan.builds:
+        build.into[build.slot] = build.cls(*build.positional, **build.keywords)
+    assert isinstance(items[0], Point) and items[1] is None  # pyrefly: ignore[bad-index]
+    assert isinstance(by["a"], Point)  # pyrefly: ignore[bad-index]
+    assert args == {"items": [{"x": 1, "y": 2}, None], "by": {"a": [3, 4]}}
+
+
+def test_an_empty_list_or_dict_of_a_class_plans_no_build() -> None:
+    plan = plan_call({"items": [], "by": {}}, (), None, HOME, {**ITEMS, **BY})
+
+    assert plan.builds == []
+    assert plan.keywords == {"items": [], "by": {}}

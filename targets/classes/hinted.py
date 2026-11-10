@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import TYPE_CHECKING, Optional
@@ -69,6 +70,22 @@ def ship(order: Order):
     if order.items and order.items[0].qty > 3:
         return "many"
     return "standard"
+
+
+def total(items: list[Item]):
+    if len(items) > 1:
+        return "bulk"
+    if items and items[0].qty > 3:
+        return "many"
+    return "few"
+
+
+def count(by_sku: dict[str, Item]):
+    if "b" in by_sku:
+        return "two"
+    if "a" in by_sku and by_sku["a"].qty > 3:
+        return "many"
+    return "few"
 
 
 def deliver(order: Order):
@@ -167,5 +184,13 @@ def render(d: Drawable):
 
 def chain(n: "Node"):  # noqa: UP037 - the quoted form is what it tests
     if n.next is not None and n.next.value > 5:
+        return "big"
+    return "small"
+
+
+def queued(q: deque):
+    if not isinstance(q, list):
+        raise TypeError("not kept as JSON")
+    if q and q[0] > 5:
         return "big"
     return "small"

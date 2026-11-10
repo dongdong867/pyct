@@ -426,3 +426,47 @@ def test_builds_a_named_class_through_run_unchecked(monkeypatch: pytest.MonkeyPa
         for record in result.records
     )
     assert all(arg({"args": record.args}, "c", "__class__") == "Guest" for record in result.records)
+
+
+ITEM = {"sku": "a", "qty": 1}
+OWNER_RAISED = {
+    "kind": "target_raised",
+    "detail": "building order['owner']: ValueError: negative age",
+}
+
+
+# build-an-object-argument-from-its-type-hint-builds-each-item-and-value
+def test_builds_each_item_and_value() -> None:
+    total = pyct("total", seed(items=[ITEM]))
+    ship = pyct("ship", seed(order={"owner": ann(), "items": [ITEM]}))
+    count = pyct("count", seed(by_sku={"a": ITEM}))
+
+    for code, _, stderr in (total, ship, count):
+        assert code == 0, stderr
+    for _, stdout, _ in (total, count):
+        assert all(line["failure"] is None for line in input_lines(stdout)), stdout
+    # Buyer's own `age < 0` fork is flipped too, and that input fails building the owner, as
+    # reports-a-constructor-that-raises-inside says; the criterion's "no failure on any line"
+    # cannot hold for ship, so every other line has none, and no line fails on an item
+    for line in input_lines(ship[1]):
+        failure, age = line["failure"], arg(line, "order", "owner", "age")
+        assert failure is None or (failure == OWNER_RAISED and not above(age, -1)), line
+    assert any(above(arg(line, "items", 0, "qty"), 3) for line in solved(total[1])), total[1]
+    assert all(len(held(line, "items")) == 1 for line in input_lines(total[1])), total[1]
+    qty = ["[]", ["[]", ["[]", "order", "'items'"], 0], "'qty'"]
+    assert [">", qty, 3] in [each for line in input_lines(ship[1]) for each in expressions(line)]
+    assert any(above(arg(line, "order", "items", 0, "qty"), 3) for line in solved(ship[1]))
+    assert all(len(held(line, "order", "items")) == 1 for line in input_lines(ship[1]))
+    assert any(above(arg(line, "by_sku", "a", "qty"), 3) for line in solved(count[1])), count[1]
+    assert all(list(held(line, "by_sku")) == ["a"] for line in input_lines(count[1])), count[1]
+
+
+# build-an-object-argument-from-its-type-hint-keeps-an-empty-list-or-dict-empty
+def test_keeps_an_empty_list_or_dict_empty() -> None:
+    total = pyct("total", seed(items=[]))
+    count = pyct("count", seed(by_sku={}))
+
+    for code, _, stderr in (total, count):
+        assert code == 0, stderr
+    assert all(line["args"] == {"items": []} for line in input_lines(total[1])), total[1]
+    assert all(line["args"] == {"by_sku": {}} for line in input_lines(count[1])), count[1]
