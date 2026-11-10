@@ -5,8 +5,8 @@ from typing import ForwardRef, NamedTuple
 
 import pytest
 
-from pyct.binding.annotations import Check, Items
-from pyct.binding.resolve import checked_annotations
+from pyct.binding.annotations import NONE, Check, Items, OneOf, contradictions
+from pyct.binding.resolve import checked_annotations, seed_annotations
 from tests.unit.binding.declaring_decorator import declares_its_signature
 from tests.unit.binding.inherited import (
     AgreeingBase,
@@ -400,3 +400,32 @@ def test_checked_annotations_reads_a_named_tuple_s_own_types_as_before() -> None
     signature = inspect.signature(NowPoint)
 
     assert checked_annotations(signature, NowPoint) == {"x": int, "tags": Items(list, str)}
+
+
+def none_defaults(
+    note: str = None,  # noqa: RUF013  # pyrefly: ignore[bad-function-definition]
+    tags: list[str] = None,  # noqa: RUF013  # pyrefly: ignore[bad-function-definition]
+    n: int = 0,
+    name: str = "",
+    plain: int | None = None,
+) -> None:
+    pass
+
+
+def test_a_none_default_lets_the_seed_check_accept_null() -> None:
+    checks = seed_annotations(inspect.signature(none_defaults), none_defaults)
+
+    assert checks == {
+        "note": OneOf((str, NONE)),
+        "tags": Items(list, str, none=True),
+        "n": int,
+        "name": str,
+    }
+    assert contradictions(checks, {"note": None, "tags": None, "n": 0, "name": ""}) == []
+    assert contradictions(checks, {"note": 5, "tags": 5, "n": None, "name": None}) == [
+        "note must be a str or null, got 5",
+        "tags must be a list or null, got 5",
+        "n must be an int, got null",
+        "name must be a str, got null",
+    ]
+    assert contradictions(checks, {"tags": [None]}) == ["tags[0] must be a str, got null"]

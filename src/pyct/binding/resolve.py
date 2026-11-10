@@ -11,7 +11,7 @@ import sys
 import typing
 from collections.abc import Callable
 
-from pyct.binding.annotations import Check, check_of
+from pyct.binding.annotations import Check, check_of, or_null
 
 
 def checked_annotations(
@@ -49,6 +49,17 @@ def checked_annotations(
         if check is not None:
             hints[name] = check
     return hints
+
+
+def seed_annotations(signature: inspect.Signature, fn: object) -> dict[str, Check]:
+    """What the seed checks ask of each parameter: ``checked_annotations``, and a parameter
+    whose default is None also accepts ``null`` (``or_null``), whatever its annotation says, as
+    ``note: str = None`` is written for ``str | None``. Any other default changes nothing."""
+    parameters = signature.parameters
+    return {
+        name: or_null(check) if parameters[name].default is None else check
+        for name, check in checked_annotations(signature, fn).items()
+    }
 
 
 def resolved[T](annotation: object, fn: object, read: Callable[[object], T]) -> T | None:

@@ -1,5 +1,6 @@
 """What an annotation asks of a seed value, and every value in a seed that contradicts it."""
 
+import dataclasses
 import json
 import re
 import types
@@ -44,12 +45,14 @@ class Items:
     ``each`` is a class to build, one that names no one class, or such a list
     or dict itself (``hints``): such a list keeps its length and such a dict
     its keys, and each value is named by its place and takes ``each``.
+    ``none`` lets ``null`` stand for the list or dict (``or_null``).
     """
 
     kind: type
     each: "Check | None"
     keys: object = str
     fixed: bool = False
+    none: bool = False
 
 
 def item_check(check: "Check | None", kind: type, key: object) -> "Check | None":
@@ -153,6 +156,19 @@ def _of_items(item: object) -> Check | None:
     return None
 
 
+def or_null(check: Check) -> Check:
+    """``check`` that also accepts ``null``: a plain type or a union of them with None beside
+    it, and a list or dict annotation that ``null`` may stand for. Every other check, which
+    ``null`` passes already, is as it was."""
+    if isinstance(check, type):
+        return OneOf((check, NONE))
+    if isinstance(check, OneOf):
+        return check if NONE in check.kinds else OneOf((*check.kinds, NONE))
+    if isinstance(check, Items):
+        return dataclasses.replace(check, none=True)
+    return check
+
+
 def contradictions(
     checks: Mapping[str, Check],
     seed: Mapping[str, object],
@@ -205,9 +221,11 @@ def refused(
         if any(_accepts(kind, value) for kind in check.kinds):
             return []
         return [_refusal(written, check.kinds, value)]
+    if check.none and value is None:
+        return []
     entries = _entries(check.kind, value)
     if entries is None:
-        return [_refusal(written, (check.kind,), value)]
+        return [_refusal(written, (check.kind, NONE) if check.none else (check.kind,), value)]
     if check.each is None:
         return []
     each = check.each

@@ -119,3 +119,15 @@ def test_refuses_a_named_class_that_does_not_fit() -> None:
         "order['owner']['__class__'] must name Buyer or a subclass of it,"
         ' got "targets.classes.customers::Customer"'
     ]
+
+
+# a parameter whose default is None accepts null, whatever its hint says (decision
+# seed-check-a-none-default-accepts-null)
+def test_a_none_default_accepts_null_in_a_hinted_object_and_at_the_top() -> None:
+    hinted = run_pyct(f"{HINTED}::noted", "--args", json.dumps({"c": {"name": "a", "note": None}}))
+    top = run_pyct(f"{HINTED}::jot", "--args", json.dumps({"name": "a", "note": None}))
+
+    for result in (hinted, top):
+        assert result.returncode == 0, result.stderr
+        assert input_lines(result.stdout)[0]["failure"] is None, result.stdout
+    assert refused("jot", {"name": "a", "note": 5}) == ["note must be a str or null, got 5"]

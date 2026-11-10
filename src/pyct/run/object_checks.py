@@ -21,7 +21,7 @@ from pyct.binding.classes import (
     written,
 )
 from pyct.binding.places import step_in
-from pyct.binding.resolve import checked_annotations
+from pyct.binding.resolve import seed_annotations
 
 # the keys that start and end with __ an object the seed names may hold
 _FORM_KEYS = frozenset({CLASS_KEY, ARGS_KEY})
@@ -30,7 +30,7 @@ _FORM_KEYS = frozenset({CLASS_KEY, ARGS_KEY})
 @dataclass(frozen=True)
 class ObjectCheck:
     """A class, its constructor's signature as the caller read it or None, and what the
-    constructor's annotations ask of the values under their keys: ``checked_annotations``
+    constructor's annotations ask of the values under their keys: ``seed_annotations``
     less the ``*args`` parameter's."""
 
     built: type
@@ -47,7 +47,7 @@ class ObjectCheck:
         if signature is None:
             return cls(owner, None, {})
         starred = _star_args(signature)
-        checks = checked_annotations(signature, owner)
+        checks = seed_annotations(signature, owner)
         return cls(owner, signature, {key: each for key, each in checks.items() if key != starred})
 
     def lines(

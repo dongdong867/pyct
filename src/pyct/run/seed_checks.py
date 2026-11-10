@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from pyct.binding.annotations import Check, contradictions
 from pyct.binding.builds import object_forms
-from pyct.binding.resolve import checked_annotations
+from pyct.binding.resolve import seed_annotations
 from pyct.config.command_line import UsageError
 from pyct.run.object_checks import ObjectCheck, fit_failure, form_lines
 from pyct.run.target import Target, argument_checks
@@ -119,7 +119,7 @@ class SeedCheck:
     def of(cls, target: Target) -> SeedCheck:
         """The checks for ``target``. The object under ``self`` is checked against the
         constructor, and the annotation on ``self`` itself is not checked."""
-        checks = checked_annotations(target.signature, target.fn)
+        checks = seed_annotations(target.signature, target.fn)
         hints = argument_checks(target)
         name = target.self_name
         if target.self_class is None or name is None:

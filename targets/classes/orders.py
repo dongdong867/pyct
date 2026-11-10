@@ -80,6 +80,14 @@ class Stamp:
         self.at = at
 
 
+class Note:
+    """A constructor whose ``str`` parameter defaults to None, as untyped code often writes it."""
+
+    def __init__(self, name: str, note: str = None) -> None:  # noqa: RUF013 - what it tests
+        self.name = name
+        self.note = note
+
+
 class Node:
     def __init__(self, value: int, next: Optional["Node"] = None) -> None:  # noqa: UP037, UP045
         self.value = value
