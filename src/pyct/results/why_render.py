@@ -2,7 +2,7 @@
 
 import dataclasses
 
-from pyct.results.why import Condition, Reason, Tries, WhyEntry
+from pyct.results.causes import Condition, Reason, Source, SourceKind, Tries, WhyEntry
 
 # what each reason says after the lines on stderr, for the reasons that name nothing more
 _SAID = {
@@ -14,7 +14,8 @@ _SAID = {
 
 
 def why_json(entry: WhyEntry) -> dict[str, object]:
-    """``{"file", "lines", "reason"}``, then what the reason names: function, condition, tries."""
+    """``{"file", "lines", "reason"}``, then what the reason names: function, condition, tries,
+    sources."""
     payload: dict[str, object] = {
         "file": entry.file,
         "lines": list(entry.lines),
@@ -26,6 +27,8 @@ def why_json(entry: WhyEntry) -> dict[str, object]:
         payload["condition"] = _condition(entry.condition)
     if entry.tries is not None:
         payload["tries"] = dataclasses.asdict(entry.tries)
+    if entry.sources is not None:
+        payload["sources"] = [_source(source) for source in entry.sources]
     if entry.at_yield is not None:
         payload["yield"] = {"file": entry.file, "line": entry.at_yield}
     return payload
@@ -46,7 +49,7 @@ def _cause(entry: WhyEntry) -> str:
         return _SAID[entry.reason]
     never = _never(entry.condition)
     if entry.reason is Reason.NO_FORK:
-        return f"{never}, no fork"
+        return f"{never}, no fork{_from(entry.sources)}"
     counted = _counted(entry.tries or Tries())
     return f"{never}: {counted}" if counted else never
 
@@ -54,6 +57,31 @@ def _cause(entry: WhyEntry) -> str:
 def _condition(condition: Condition) -> dict[str, object]:
     site = condition.site
     return {"file": site.file, "line": site.line, "col": site.col, "side": condition.side}
+
+
+def _source(source: Source) -> dict[str, object]:
+    """``{"kind", "name"}``, a lost one's ``"call"``, then the site."""
+    payload: dict[str, object] = {"kind": source.kind.value, "name": source.name}
+    if source.call is not None:
+        payload["call"] = source.call
+    site = source.site
+    return {**payload, "file": site.file, "line": site.line, "col": site.col}
+
+
+def _from(sources: tuple[Source, ...] | None) -> str:
+    """Where the value came from, after the cause: each source, or that none was found."""
+    if sources is None:
+        return ""
+    if not sources:
+        return "; no source found"
+    return "".join(f"; {_said(source)}" for source in sources)
+
+
+def _said(source: Source) -> str:
+    site = source.site
+    if source.kind is SourceKind.LOOP:
+        return f"{source.name} came from the loop at {site.file}:{site.line}"
+    return f"{source.name} lost in {source.call} at {site.file}:{site.line}:{site.col}"
 
 
 def _never(condition: Condition) -> str:

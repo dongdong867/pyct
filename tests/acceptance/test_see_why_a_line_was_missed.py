@@ -61,6 +61,10 @@ def entry_for(stdout: str, line: int) -> dict[str, object]:
     return holding[0]
 
 
+def lost_at(file: str, name: str, call: str, line: int, col: int) -> dict[str, object]:
+    return {"kind": "lost", "name": name, "call": call, "file": file, "line": line, "col": col}
+
+
 def condition(file: str, line: int, col: int, side: bool) -> dict[str, object]:
     return {"file": file, "line": line, "col": col, "side": side}
 
@@ -155,8 +159,13 @@ def test_says_a_plain_condition_recorded_no_fork() -> None:
         "lines": [4],
         "reason": "no fork",
         "condition": condition(PLAIN_FILE, 3, 7, True),
+        # c's value was lost at `x ^ 0` (sort-stuck-lines-by-cause)
+        "sources": [lost_at(PLAIN_FILE, "x", "__xor__", 2, 8)],
     } in why_uncovered(result.stdout)
-    why = f"why 4 in {PLAIN_FILE}: {PLAIN_FILE}:3:7 never true, no fork"
+    why = (
+        f"why 4 in {PLAIN_FILE}: {PLAIN_FILE}:3:7 never true, no fork;"
+        f" x lost in __xor__ at {PLAIN_FILE}:2:8"
+    )
     assert why in result.stderr.splitlines()
 
 

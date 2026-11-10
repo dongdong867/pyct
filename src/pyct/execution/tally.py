@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
+from pyct.core.entry import watch
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.results.coverage import Reach
@@ -112,23 +113,32 @@ class Tally:
             if live is not None and live is not self and not placed:
                 name = item.name if isinstance(item, Downgrade) else item.lost_as
                 live.append(Downgrade(name=name, site=item.site))
-            return
-        if self.past_bound and not isinstance(item, Downgrade):
+                escapes.RECORDED[0] += 1
             return
         if isinstance(item, Branch):
-            if len(self.branches) == MOST_FORKS:
-                self.past_bound = True
-                if self.watch is not None:
-                    self.watch.bound(too_long().detail)
-                return
-            self.branches.append(item)
-            if self.watch is not None:
-                self.watch.fork(item)
+            self._fork(item)
             return
         if isinstance(item, Fact):
-            self._fact(item)
+            if not self.past_bound:
+                self._fact(item)
             return
         self._downgrade(item.name, item.site)
+
+    def _fork(self, fork: Branch) -> None:
+        """Keep a fork, up to `MOST_FORKS`, and tell the watch. Past the bound, the fork is
+        counted alone."""
+        # a watched call around the one that forked saw inside it (`pyct.core.entry.watch`)
+        escapes.RECORDED[0] += 1
+        if self.past_bound:
+            return
+        if len(self.branches) == MOST_FORKS:
+            self.past_bound = True
+            if self.watch is not None:
+                self.watch.bound(too_long().detail)
+            return
+        self.branches.append(fork)
+        if self.watch is not None:
+            self.watch.fork(fork)
 
     def _fact(self, fact: Fact) -> None:
         """Keep a fact, placed after the forks recorded so far, and tell the watch."""
@@ -175,6 +185,7 @@ class Tally:
         names its loss to. The walk keys an earlier call handed out are no keys of its path."""
         _LIVE[0] = self
         escapes.forget()
+        watch.forget()
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""

@@ -1,13 +1,17 @@
 """Substituted code kept between runs: where, for which source, and what a failure costs."""
 
+import ast
+import importlib
+import importlib.util
 import os
 import types
 from pathlib import Path
 
 import pytest
 
-from pyct.intercept import cache
+from pyct.intercept import cache, compiled, substitute, watch
 from pyct.intercept.cache import CACHE_VARIABLE, cache_folder, cached
+from pyct.results import sources
 
 
 class Module:
@@ -237,3 +241,63 @@ def test_a_folder_that_fails_each_write_is_named_once(
         Module(tmp_path / folder, "x = 1").code(tmp_path / "cache")
 
     assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1
+
+
+def test_the_transform_s_version_reads_each_rule_the_transform_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read: list[str] = []
+    real = Path.read_bytes
+
+    def reads(path: Path) -> bytes:
+        read.append(str(path))
+        return real(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reads)
+    cache._version.__wrapped__()
+
+    # a rule changed alone makes a new version, so no older rule's code is read again: each module
+    # of the transform, and each module of pyct's one of them imports from
+    files = _transform_files()
+    assert {substitute.__file__, watch.__file__, sources.__file__} <= set(files)
+    assert set(files) <= set(read)
+
+
+# the modules the transform imports that decide nothing an entry holds: `own` runs the parse and
+# the compile, and marks a raise out of them as the target's
+_RUN_ONLY = {"pyct.core.foundation.values"}
+
+
+def _transform_files() -> list[str]:
+    """The files of the transform's modules, and of each pyct module one of them imports from."""
+    files: list[str] = []
+    pending = [compiled.__name__]
+    while pending:
+        name = pending.pop()
+        file = str(importlib.import_module(name).__file__)
+        if file in files or name in _RUN_ONLY:
+            continue
+        files.append(file)
+        if name.startswith("pyct.intercept."):
+            pending.extend(_imported(name, file))
+    return files
+
+
+def _imported(name: str, file: str) -> list[str]:
+    """The pyct modules a module imports, anywhere in it: each module named, or the module a
+    name is taken from."""
+    found: list[str] = []
+    for node in ast.walk(ast.parse(Path(file).read_text())):
+        if isinstance(node, ast.Import):
+            found += [alias.name for alias in node.names if alias.name.startswith("pyct.")]
+        elif isinstance(node, ast.ImportFrom):
+            module = importlib.util.resolve_name("." * node.level + (node.module or ""), name)
+            if module.startswith("pyct."):
+                found += [_taken(module, alias.name) for alias in node.names]
+    return found
+
+
+def _taken(module: str, name: str) -> str:
+    """The module a ``from module import name`` reads: ``name`` itself when it is a module."""
+    taken = vars(importlib.import_module(module)).get(name)
+    return taken.__name__ if isinstance(taken, types.ModuleType) else module

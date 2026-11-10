@@ -205,6 +205,7 @@ def test_a_plain_first_operand_of_an_and_is_named_not_the_second_that_never_ran(
     assert cause(entry_for(result.stdout, 6)) == {
         "reason": "no fork",
         "condition": {"file": file, "line": 5, "col": 7, "side": True},
+        "sources": [],
     }
 
 
@@ -283,6 +284,7 @@ def test_a_test_with_no_fork_reads_in_the_sense_of_its_is_or_in(
     assert cause(entry_for(result.stdout, line)) == {
         "reason": "no fork",
         "condition": {"file": file, "line": site[0], "col": site[1], "side": True},
+        "sources": [],
     }
     check_printed(function, result)
 
@@ -383,6 +385,7 @@ def test_the_line_after_an_async_for_waits_on_the_loop_running_out() -> None:
     assert cause(entry_for(result.stdout, 12)) == {
         "reason": "no fork",
         "condition": {"file": file, "line": 10, "col": 19, "side": False},
+        "sources": [],
     }
 
 

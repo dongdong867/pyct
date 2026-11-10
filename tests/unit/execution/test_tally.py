@@ -209,6 +209,44 @@ def test_a_fact_from_a_call_that_is_over_names_its_operation_in_the_live_call() 
     assert live.counted() == (DowngradeCount(name="__iter__", count=1, site=SITE),)
 
 
+def test_a_fork_counts_as_recorded() -> None:
+    tally = Tally()
+    before = escapes.RECORDED[0]
+
+    tally.append(FORK)
+
+    # a watched call around the call that forked then adds no downgrade
+    assert escapes.RECORDED[0] == before + 1
+
+
+def test_a_fork_past_the_bound_counts_as_recorded() -> None:
+    tally = Tally()
+    tally.past_bound = True
+    before = escapes.RECORDED[0]
+
+    tally.append(FORK)
+
+    # the fork is not kept, and the call still forked
+    assert tally.branches == []
+    assert escapes.RECORDED[0] == before + 1
+
+
+def test_a_loss_named_in_the_live_call_counts_as_a_recorded_downgrade() -> None:
+    over = Tally()
+    over.seal()
+    live = Tally()
+    live.go_live()
+    before = escapes.RECORDED[0]
+
+    try:
+        over.append(FORK)
+    finally:
+        live.seal()
+
+    # a watched call around the call that took it then adds no second downgrade
+    assert escapes.RECORDED[0] == before + 1
+
+
 def test_a_dict_kept_from_a_call_that_is_over_names_each_check_once_in_the_live_call() -> None:
     over = Tally()
     kept = ConcolicDict.made({"a": 1, "b": 2}, "d", over)

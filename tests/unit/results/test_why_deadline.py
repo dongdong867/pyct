@@ -8,6 +8,8 @@ from pathlib import Path
 import pytest
 
 from pyct.results import why as why_module
+from pyct.results.graphs import OutOfTimeError
+from pyct.results.sources import Origins
 from pyct.results.why import Reason, Run, Walked, WhyEntry, explain
 from pyct.results.why_render import why_json, why_line
 
@@ -183,3 +185,27 @@ def test_a_run_past_its_stop_at_the_start_reads_no_input(
     entries = explained(file, stop_at=5.0)
 
     assert entries == (WhyEntry(file=file, lines=(1, 3, 4, 5, 8, 9), reason=Reason.NOT_WORKED_OUT),)
+
+
+PLAIN = """\
+def big(x):
+    c = x ^ 0
+    if c > 10:
+        return "big"
+    return "small"
+"""
+
+
+def test_a_stop_while_a_no_fork_s_source_is_read_leaves_its_lines_not_worked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "plain.py"
+    file.write_text(PLAIN)
+
+    def stopped(*_: object) -> tuple[()]:
+        raise OutOfTimeError
+
+    monkeypatch.setattr(Origins, "of", stopped)
+    entries = explain(str(file), frozenset({4}), frozenset({2, 3, 5}), Run((), {}))
+
+    assert entries == (WhyEntry(str(file), (4,), Reason.NOT_WORKED_OUT),)
