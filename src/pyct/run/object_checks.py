@@ -106,16 +106,20 @@ class ObjectCheck:
             lines.append(f"{place} ({count}) does not fit {self._name}({parameters}): {reason}")
         return lines + self._item_lines(place, items, built)
 
-    def _item_lines(self, at: str, items: Sequence[object], built: Collection[int]) -> list[str]:
+    def _item_lines(
+        self, items_place: str, items: Sequence[object], built: Collection[int]
+    ) -> list[str]:
         """The lines for the items passed by position, item i checked against the parameter at
-        position i and named ``at[i]``. An item past the parameters that take a position
+        position i and named ``items_place[i]``. An item past the parameters that take a position
         fills ``*args``, and is not checked."""
         parameters = by_position(cast(inspect.Signature, self.signature))
         return [
             line
             for index, (parameter, item) in enumerate(zip(parameters, items, strict=False))
             if parameter.name in self.checks
-            for line in refused(self.checks[parameter.name], item, step_in(at, index), built)
+            for line in refused(
+                self.checks[parameter.name], item, step_in(items_place, index), built
+            )
         ]
 
     @property
@@ -177,13 +181,17 @@ def _dict_lines(
 
 def _misfit_lines(found: Found, named: type) -> list[str]:
     """The line for a ``"__class__"`` whose class its place's class hint does not fit, the
-    hint written as the classes it names; none when it fits or no class hint is there."""
+    hint written as the classes it names, joined by commas; none when it fits or no class hint
+    is there."""
     hint = found.check
     if not isinstance(hint, Builds | NoOneClass) or fits_hint(named, hint):
         return []
-    names = " | ".join(each.__qualname__ for each in hinted_classes(hint))
+    names = [each.__qualname__ for each in hinted_classes(hint)]
+    wanted = names[0] if len(names) == 1 else ", ".join(names)
+    of = "it" if len(names) == 1 else "one of them"
     given = written(cast(dict[str, object], found.form)[CLASS_KEY])
-    return [f"{step_in(found.place, CLASS_KEY)} must name {names} or a subclass of it, got {given}"]
+    place = step_in(found.place, CLASS_KEY)
+    return [f"{place} must name {wanted} or a subclass of {of}, got {given}"]
 
 
 def _class_line(place: str, error: ClassNameError) -> str:

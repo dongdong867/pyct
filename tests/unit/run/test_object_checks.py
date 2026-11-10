@@ -319,7 +319,7 @@ def test_a_named_class_the_hint_does_not_fit_is_named_then_checked_as_itself() -
     lines = hinted_lines_of(seed, {"c": NoOneClass("two classes", (Cart, Empty))})
 
     assert lines == [
-        "c['__class__'] must name Cart | Empty or a subclass of it, got \"Point\"",
+        "c['__class__'] must name Cart, Empty or a subclass of one of them, got \"Point\"",
         "c['__args__'][1] must be an int, got \"2\"",
     ]
 

@@ -1,4 +1,5 @@
 import inspect
+from fractions import Fraction
 
 import pytest
 
@@ -280,3 +281,13 @@ def test_a_hinted_object_under_self_s_fields_is_checked() -> None:
     lines = seed_refusals(target, {"self": {"owner": GUEST_AGED_TEXT}})
 
     assert lines == ["self['owner']['age'] must be an int, got \"30\""]
+
+
+def takes_a_fraction(f: Fraction) -> None:
+    pass
+
+
+def test_a_library_class_hint_checks_nothing_of_a_list_its_constructor_does_not_fit() -> None:
+    assert inspect.signature(Fraction).parameters
+
+    assert seed_refusals(target_for(takes_a_fraction), {"f": [1, 2, 3]}) == []
