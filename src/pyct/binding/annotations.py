@@ -67,7 +67,8 @@ def item_check(check: "Check | None", kind: type, key: object) -> "Check | None"
 
 @dataclass(frozen=True)
 class OneOf:
-    """A union of plain types, and of None, as the items of a list or dict: any one of them."""
+    """A union of plain types, and of None, as the items of a list or dict, or a parameter's
+    plain type with None added for a None default (``or_null``): any one of them."""
 
     kinds: tuple[type, ...]
 
@@ -103,7 +104,8 @@ class NoOneClass:
     classes: tuple[type, ...]
 
 
-# what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union;
+# what an annotation asks of a value: a plain type, a list or dict, or a union, for an item or
+# for a parameter whose default is None;
 # what the arguments a method's instance is built from ask; and a class a hint builds
 type Check = type | Items | OneOf | Fields | Builds | NoOneClass
 
