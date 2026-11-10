@@ -106,18 +106,16 @@ class ObjectCheck:
             lines.append(f"{place} ({count}) does not fit {self._name}({parameters}): {reason}")
         return lines + self._item_lines(place, items, built)
 
-    def _item_lines(
-        self, written: str, items: Sequence[object], built: Collection[int]
-    ) -> list[str]:
+    def _item_lines(self, at: str, items: Sequence[object], built: Collection[int]) -> list[str]:
         """The lines for the items passed by position, item i checked against the parameter at
-        position i and named ``written[i]``. An item past the parameters that take a position
+        position i and named ``at[i]``. An item past the parameters that take a position
         fills ``*args``, and is not checked."""
         parameters = by_position(cast(inspect.Signature, self.signature))
         return [
             line
             for index, (parameter, item) in enumerate(zip(parameters, items, strict=False))
             if parameter.name in self.checks
-            for line in refused(self.checks[parameter.name], item, step_in(written, index), built)
+            for line in refused(self.checks[parameter.name], item, step_in(at, index), built)
         ]
 
     @property
@@ -128,7 +126,7 @@ class ObjectCheck:
 def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
     """Every refusal line for the object built at ``found.place``: one the seed names, its
     class read as the build reads it, a bare name in the module ``home``, or one its hint
-    builds (``hinted_lines``).
+    builds (``_hinted_lines``).
 
     A ``"__class__"`` that names no class gives its one line: with no class,
     nothing else of the object can be checked. One that names a class its
@@ -137,7 +135,7 @@ def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
     own, so a value in ``built`` gives none here.
     """
     if not object_form(found.form):
-        return hinted_lines(found, built)
+        return _hinted_lines(found, built)
     form = found.form
     try:
         built_class = load_class(form[CLASS_KEY], home)
@@ -147,7 +145,7 @@ def form_lines(found: Found, home: str, built: Collection[int]) -> list[str]:
     return _misfit_lines(found, built_class) + _dict_lines(check, found.place, form, built)
 
 
-def hinted_lines(found: Found, built: Collection[int]) -> list[str]:
+def _hinted_lines(found: Found, built: Collection[int]) -> list[str]:
     """Every refusal line for the JSON object or list a hint builds at ``found.place``.
 
     A hint that names no one class gives its one line, its reason. A list
