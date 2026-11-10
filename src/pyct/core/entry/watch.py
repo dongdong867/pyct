@@ -67,8 +67,9 @@ _MRO_OF = type.__dict__["__mro__"].__get__
 _NAMESPACE_OF = type.__dict__["__dict__"].__get__
 # the type of a `functools.lru_cache` wrapper, which holds what it wraps as a function does
 _LRU_WRAPPER = functools._lru_cache_wrapper  # pyrefly: ignore[missing-attribute]
-# what a `functools.singledispatchmethod` gives an instance from Python 3.14 on, which holds the
-# method in its own ``_unbound``; before 3.14 it gives a function that holds it in ``__wrapped__``
+# what a `functools.singledispatchmethod` read off a class or an instance gives from Python 3.14
+# on: its own ``_unbound`` holds the descriptor, whose ``func`` is the method; before 3.14 it
+# gives a function that holds the method in ``__wrapped__``
 _DISPATCH_BOUND = getattr(functools, "_singledispatchmethod_get", None)
 _DISPATCH_METHOD = functools.singledispatchmethod
 _chain, _islice = itertools.chain, itertools.islice
@@ -219,7 +220,8 @@ def _judged(callee: object) -> bool:
     """Whether a callee is one pyct cannot see inside: anything but a function of the target's
     package, reached through a bound method, a `functools.partial`, a wrapper that holds it in
     its own ``__wrapped__`` (`_wrapped`), a `functools.singledispatchmethod`'s method
-    (`_dispatched`), or an object's own `__call__` (`_class_call`)."""
+    (`_dispatched`), a static or class method's function, or an object's own `__call__`
+    (`_class_call`)."""
     function: object = callee
     for _ in _range(_MOST_WRAPPED + 1):
         kind = _type(function)
@@ -235,6 +237,9 @@ def _judged(callee: object) -> bool:
             function = function.func  # pyrefly: ignore[missing-attribute]
         elif kind is _DISPATCH_BOUND:
             function = _dispatched(function)
+        elif kind is _staticmethod or kind is _classmethod:
+            # what a `functools.singledispatchmethod` written over one holds
+            function = function.__func__  # pyrefly: ignore[missing-attribute]
         else:
             function = _class_call(kind)
             if _type(function) is not types.FunctionType and _type(function) is not _LRU_WRAPPER:
@@ -256,9 +261,9 @@ def _class_call(kind: type) -> object:
 
 
 def _dispatched(bound: object) -> object:
-    """The method a `functools.singledispatchmethod` gives an instance holds, read from the
-    ``__dict__`` functools writes, else None: a subclass of `functools.singledispatchmethod`
-    is not read."""
+    """The method held by what a `functools.singledispatchmethod` gives from Python 3.14 on,
+    read from the ``__dict__`` functools writes, else None: a subclass of
+    `functools.singledispatchmethod` is not read."""
     unbound = _dict_get(bound.__dict__, "_unbound")  # pyrefly: ignore[missing-attribute]
     if _type(unbound) is not _DISPATCH_METHOD:
         return None

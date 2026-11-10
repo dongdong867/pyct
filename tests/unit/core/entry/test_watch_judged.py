@@ -80,6 +80,16 @@ class Kinds:
     @functools.singledispatchmethod
     def is_big(self, v):
         return bin(v).count('1') > 1
+
+    @functools.singledispatchmethod
+    @classmethod
+    def is_big_here(cls, v):
+        return bin(v).count('1') > 1
+
+    @functools.singledispatchmethod
+    @staticmethod
+    def is_big_anywhere(v):
+        return bin(v).count('1') > 1
 """
 
 
@@ -132,6 +142,14 @@ class _Answers:
         pytest.param(
             lambda: _in_the_package(HELPER, "Kinds")().is_big, id="a singledispatchmethod"
         ),
+        pytest.param(
+            lambda: _in_the_package(HELPER, "Kinds").is_big_here,
+            id="a singledispatchmethod over a classmethod",
+        ),
+        pytest.param(
+            lambda: _in_the_package(HELPER, "Kinds")().is_big_anywhere,
+            id="a singledispatchmethod over a staticmethod",
+        ),
         pytest.param(lambda: _chained(watch._MOST_WRAPPED), id="the most wrappers read"),
     ],
 )
@@ -157,6 +175,30 @@ def test_a_singledispatchmethod_s_method_is_read_from_what_functools_writes() ->
     assert watch._dispatched(held) is method
     assert watch._dispatched(subclassed) is None
     assert watch._dispatched(types.SimpleNamespace()) is None
+
+
+class _Bound:
+    """What Python 3.14's functools gives for a singledispatchmethod read off an instance: an
+    object that holds the descriptor in its own ``_unbound``."""
+
+    def __init__(self, unbound: functools.singledispatchmethod) -> None:
+        self._unbound = unbound
+
+    def __call__(self, value: object) -> object:
+        return self._unbound.func(value)
+
+
+def test_what_a_singledispatchmethod_gives_from_python_3_14_on_is_followed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sink: list[SinkItem] = []
+    bound = _Bound(functools.singledispatchmethod(_in_the_package(HELPER, "is_big")))
+    # the type stands in on every release for the one 3.14 has and earlier releases do not
+    monkeypatch.setattr(watch, "_DISPATCH_BOUND", _Bound)
+
+    answer(called(bound)(given(tracked(3, sink))), "kind")
+
+    assert lost(sink) == []
 
 
 class _Guarded:
