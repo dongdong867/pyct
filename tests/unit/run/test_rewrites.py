@@ -185,7 +185,7 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
     spent = types.SimpleNamespace(
         bounds=types.SimpleNamespace(until=time.monotonic() - 1, solver_timeout=5.0)
     )
-    file = load_target(TEXT).file
+    file = loaded(TEXT).file
     around = _Around(spent, Told(Scope.of_module(file), Tell()))  # pyrefly: ignore[bad-argument-type]
     site = Site(file, 2, 7)
     wanted = plan((Branch([">", "n", 0], False, site),))

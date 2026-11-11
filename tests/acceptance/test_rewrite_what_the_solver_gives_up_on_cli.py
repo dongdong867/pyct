@@ -139,6 +139,11 @@ def test_a_rewrite_s_ask_is_dumped_beside_the_run_s_own(stub: Stub, tmp_path: Pa
     )
 
     assert result.returncode == 0, result.stderr
-    programs = [path.read_text() for path in sorted(dumped.iterdir())]
+    files = sorted(dumped.iterdir())
+    numbers = {int(path.stem.split("-")[1]) for path in files}
+    # each ask numbered once among the run's, from 1, with no gap
+    assert numbers == set(range(1, len(numbers) + 1))
+    programs = [path.read_text() for path in files]
     # the run's own ask reads float(s); the rewrite's compares s to the string itself
     assert any('"1e-30"' in program for program in programs)
+    assert any('"1e-30"' not in program for program in programs)

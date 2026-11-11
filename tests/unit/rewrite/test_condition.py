@@ -162,3 +162,12 @@ def test_a_reply_over_several_lines_or_with_a_control_character_is_read_as_one_l
 
 def test_the_form_says_every_operand_runs() -> None:
     assert "Each operand of and, or and not runs on every input" in FORM
+
+
+def test_a_deep_reply_over_several_lines_is_read_and_then_refused_for_its_depth() -> None:
+    reply = "```\n(" + "n + " * 400 + "n\n) > 0\n```"
+
+    expression = expression_in(reply, PARAMETERS)
+
+    assert expression is not None
+    assert refusal(expression) == f"the rewrite nests more than {MOST_DEPTH} deep"

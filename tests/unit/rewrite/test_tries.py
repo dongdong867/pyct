@@ -15,7 +15,7 @@ from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, MissWhy, Stop, StopKind
 from pyct.rewrite import tries
 from pyct.rewrite.ask import GivenUp
-from pyct.rewrite.condition import HELD_COL, HELD_LINE
+from pyct.rewrite.condition import HELD_COL, HELD_LINE, rewrite_code
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteSkipped
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
@@ -42,9 +42,8 @@ class Fake:
     """A provider answering ``reply`` and the run around the tries, each part as given."""
 
     reply: str | Unanswered = 's == "1e-30"'
-    ran: ExecutionResult | str = field(
-        default_factory=lambda: ExecutionResult(frozenset(), (own(False),))
-    )
+    # None runs each rewrite as recording its own fork, in its own file, on the other side
+    ran: ExecutionResult | str | None = None
     record: InputRecord | Stop = field(
         default_factory=lambda: InputRecord(
             {"s": "1e-30"}, (Branch(FORK.expression, True, SITE),), frozenset()
@@ -78,6 +77,11 @@ class Fake:
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
     ) -> ExecutionResult | str:
+        if self.ran is None:
+            fork = Branch(
+                ["==", "s", "'1e-30'"], False, Site(code.co_filename, HELD_LINE, HELD_COL)
+            )
+            return ExecutionResult(frozenset(), (fork,))
         return self.ran
 
     def run_input(self, seed: Seed, plan: Plan) -> InputRecord | Stop:
@@ -205,3 +209,22 @@ def test_the_try_s_ask_holds_the_rewrite_s_own_fork_in_the_condition_s_place() -
     [asked] = fake.asks
     assert asked[-1] == Branch(["==", "s", "'1e-30'"], True, Site(FILE, HELD_LINE, HELD_COL))
     assert FORK not in asked
+
+
+def test_a_try_s_ask_holds_the_kept_rewrite_of_an_earlier_condition_in_its_place() -> None:
+    earlier = Branch(["==", ["float", "t"], 2.5], True, Site("m.py", 1, 7))
+    wanted = plan((earlier, FORK))
+    assert wanted is not None
+    given = GivenUp(CONDITION, wanted, Seed.of({"s": "0", "t": "2.5"}), MissWhy.TIMEOUT)
+    kept = Kept()
+    code = rewrite_code('t == "2.5"', ("s", "t"), "<rewrite m:1:7>")
+    assert isinstance(code, types.CodeType)
+    kept.keep(Condition(earlier.site, True), code, ("s", "t"))
+    fake = Fake()
+
+    Asking(fake, given, ABOUT, ("s", "t"), kept).tries(fake)
+
+    [asked] = fake.asks
+    assert earlier not in asked
+    sites = [item.site for item in asked if isinstance(item, Branch)]
+    assert Site("<rewrite m:1:7>", HELD_LINE, HELD_COL) in sites

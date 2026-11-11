@@ -39,7 +39,8 @@ type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
 @dataclass(frozen=True)
 class GivenUp:
     """A condition the solver gave up on: the first plan aimed at it whose ask ended in
-    ``timeout`` or ``unknown``, the input whose path that plan extends, and the answer."""
+    ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, the input whose
+    path that plan extends, and the answer."""
 
     condition: Condition
     plan: Plan

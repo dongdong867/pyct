@@ -34,3 +34,12 @@ SITE = Site("/t/m.py", 7, 7)
 )
 def test_each_rewrites_note_has_its_line(note: RewriteNote, line: str) -> None:
     assert note_line(note) == line
+
+
+def test_a_character_a_terminal_reads_is_written_escaped() -> None:
+    note = RewriteFailed(SITE, 1, "it raised on the input: LookupError: unknown encoding: \x1b[2J")
+
+    assert note_line(note) == (
+        "llm: rewrite for /t/m.py:7:7, try 1: it raised on the input: LookupError: unknown"
+        " encoding: \\x1b[2J"
+    )

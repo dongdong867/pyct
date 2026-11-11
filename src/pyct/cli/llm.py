@@ -171,7 +171,17 @@ def note_line(note: Note) -> str | None:
 
 
 def rewrite_line(note: RewriteNote) -> str:
-    """The stderr line a rewrites note gives, the site written ``file:line:col``."""
+    """The stderr line a rewrites note gives, the site written ``file:line:col``, each
+    character a terminal reads, as a reason's text from the rewrite's raise may hold, escaped
+    as Python escapes it."""
+    return _escaped(_rewrite_text(note))
+
+
+def _escaped(text: str) -> str:
+    return "".join(each if each.isprintable() else repr(each)[1:-1] for each in text)
+
+
+def _rewrite_text(note: RewriteNote) -> str:
     site = note.site
     at = f"llm: rewrite for {site.file}:{site.line}:{site.col}"
     match note:

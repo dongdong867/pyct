@@ -95,8 +95,9 @@ class Rewrites(Asker):
         self._used = ()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
         programs: tuple[Given, ...] = ()
-        if reused is not None and _left(started, limit) > 0:
-            rewritten = solver_answer(wanted, origin, _left(started, limit), reused.asked)
+        left = _left(started, limit)
+        if reused is not None and left > 0:
+            rewritten = solver_answer(wanted, origin, left, reused.asked)
             if isinstance(rewritten.answer, Sat):
                 self._used = reused.conditions
                 return dataclasses.replace(rewritten, source=Source.REWRITE)
@@ -167,7 +168,7 @@ class _Around:
         if limit <= 0:
             return None
         solved = solver_answer(plan, origin, limit, asked)
-        self.run.hand_out(solved.asked)
+        self.run.tell_ask(solved.asked)
         return solved.answer
 
     def _limit(self) -> float:

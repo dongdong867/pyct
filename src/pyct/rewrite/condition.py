@@ -83,7 +83,13 @@ def expression_in(text: str, parameters: Sequence[str]) -> str | None:
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
     if not names & set(parameters):
         return None
-    return body if body.isprintable() else ast.unparse(tree)
+    if body.isprintable():
+        return body
+    try:
+        return ast.unparse(tree)
+    except RecursionError:
+        # too deep to write again; the form check refuses it for its depth
+        return body
 
 
 def rewrite_code(expression: str, parameters: Sequence[str], file: str) -> types.CodeType | Refused:

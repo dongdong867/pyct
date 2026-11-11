@@ -228,7 +228,7 @@ class Loop:
         coverage = Coverage.of(self.told.scope, covered | self.told.imported)
         return why_uncovered(self.records, self.misses, untried, coverage, stop_at)
 
-    def hand_out(self, ask: Ask) -> None:
+    def tell_ask(self, ask: Ask) -> None:
         """Hand out an ask a tool made between two passes, numbered among the run's asks."""
         self.told.ask(dataclasses.replace(ask, number=next(self._numbers)))
 

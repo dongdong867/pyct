@@ -143,8 +143,9 @@ class Asking:
     def _input(
         self, code: types.CodeType, ran: ExecutionResult, around: Around
     ) -> str | _Ended | None:
-        """The rewrite's ask on the plan's path and its input on the real code: None when the
-        input took the wanted side, else why the try failed or ended."""
+        """The rewrite's ask on the plan's path, each kept rewrite in its own condition's place,
+        and its input on the real code: None when the input took the wanted side, else why the
+        try failed or ended."""
         given = self.given
         items = recorded(ran, code.co_filename)
         if isinstance(items, str):
@@ -155,9 +156,9 @@ class Asking:
         if not around.going():
             return _Ended("budget spent")
         origin = given.origin
-        answer = around.ask(
-            in_place(given.plan.asked, given.condition, items.items), given.plan, origin
-        )
+        reused = self.kept.reused(given.plan, origin, around.run_rewrite)
+        held = given.plan.asked if reused is None else reused.asked
+        answer = around.ask(in_place(held, given.condition, items.items), given.plan, origin)
         if answer is None:
             return _Ended("budget spent")
         if isinstance(answer, Error):
