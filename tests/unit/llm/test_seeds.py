@@ -6,14 +6,11 @@ from dataclasses import dataclass, field
 from pyct.config.goal import Goal
 from pyct.config.llm import DEFAULT_LIMIT
 from pyct.llm.connection import Connection
-from pyct.llm.recording import Recording
 from pyct.llm.seeds import SEED_FORM, SEEDS, LlmSeeds, request_text
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import AskCost, Reply, Unanswered, Why
 from pyct.run.llm_seeds import SeedReply, SeedRequest
-
-# a connection whose replies this test does not read back
-NOT_RECORDED = Recording(None, "not recorded in this test")
+from tests.acceptance.llm_stub import NO_RECORDING
 
 REQUEST = SeedRequest(
     place="targets.llm.seeds::f",
@@ -58,14 +55,14 @@ def test_a_request_with_no_seeds_of_the_user_s_quotes_none() -> None:
 def test_a_seeds_ask_asks_about_the_target_s_spec_with_the_request_text() -> None:
     caller = Answering(Reply('[{"x": 1234}, {"x": 7}]', COST))
 
-    reply = LlmSeeds(Connection(caller, NOT_RECORDED)).seeds(REQUEST)
+    reply = LlmSeeds(Connection(caller, NO_RECORDING)).seeds(REQUEST)
 
     assert reply == SeedReply(('{"x": 1234}', '{"x": 7}'), HANDED)
     assert caller.asked == [(SEEDS, "targets.llm.seeds::f", request_text(REQUEST))]
 
 
 def test_a_reply_with_no_array_is_ignored() -> None:
-    connection = Connection(Answering(Reply("x should be 1234", COST)), NOT_RECORDED)
+    connection = Connection(Answering(Reply("x should be 1234", COST)), NO_RECORDING)
 
     reply = LlmSeeds(connection).seeds(REQUEST)
 
@@ -75,7 +72,7 @@ def test_a_reply_with_no_array_is_ignored() -> None:
 def test_an_ask_with_no_reply_is_handed_back() -> None:
     unanswered = Unanswered(Why.TIMED_OUT, "no reply in 30 s", AskCost(1, seconds=0.5))
 
-    handed = LlmSeeds(Connection(Answering(unanswered), NOT_RECORDED)).seeds(REQUEST)
+    handed = LlmSeeds(Connection(Answering(unanswered), NO_RECORDING)).seeds(REQUEST)
 
     assert handed == dataclasses.replace(
         unanswered, cost=dataclasses.replace(unanswered.cost, tokens_left=DEFAULT_LIMIT)

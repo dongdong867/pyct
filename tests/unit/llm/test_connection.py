@@ -8,15 +8,11 @@ from pyct.cli.llm import counts_line, note_line
 from pyct.config.llm import DEFAULT_LIMIT, LlmSettings, Model
 from pyct.llm.connection import Connection
 from pyct.llm.ledger import Ledger
-from pyct.llm.recording import Recording
 from pyct.llm.replay import ReplayCaller, read_replay
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import AskCost, Reply, Unanswered, Why
 from pyct.run.notes import LimitReached, Note
-from tests.acceptance.llm_stub import write_recording
-
-# a connection whose replies this test does not read back
-NOT_RECORDED = Recording(None, "not recorded in this test")
+from tests.acceptance.llm_stub import NO_RECORDING, write_recording
 
 SEEDS = Tool("seeds", 4000)
 OTHER = Tool("summaries", 4000)
@@ -35,7 +31,7 @@ class FakeCaller:
 
 def test_each_tool_and_place_counts_its_own_tries_whatever_they_returned() -> None:
     caller = FakeCaller()
-    connection = Connection(caller, NOT_RECORDED)
+    connection = Connection(caller, NO_RECORDING)
 
     first = connection.ask(SEEDS, "m::f", "one")
     second = connection.ask(SEEDS, "m::f", "two")
@@ -73,7 +69,7 @@ def asked(connection: Connection, times: int) -> list[Reply | Unanswered]:
 def test_past_the_limit_no_request_leaves_and_the_limit_is_said_once() -> None:
     caller = SpendingCaller([(1000, 500)])
     notes: list[Note] = []
-    connection = Connection(caller, NOT_RECORDED, Ledger(1000), noted=notes.append)
+    connection = Connection(caller, NO_RECORDING, Ledger(1000), noted=notes.append)
 
     first, second, third = asked(connection, 3)
 
@@ -89,7 +85,7 @@ def test_past_the_limit_no_request_leaves_and_the_limit_is_said_once() -> None:
 # llm-token-limit-default
 def test_the_default_limit_refuses_the_ask_after_the_one_that_reached_100_000() -> None:
     caller = SpendingCaller([(99_000, 999), (5, 5)])
-    connection = Connection(caller, NOT_RECORDED, Ledger(LlmSettings(("seeds",)).limit))
+    connection = Connection(caller, NO_RECORDING, Ledger(LlmSettings(("seeds",)).limit))
 
     first, second, third = asked(connection, 3)
 
@@ -110,7 +106,7 @@ def test_a_replay_counts_each_reply_at_its_recorded_tokens(tmp_path: Path) -> No
     notes: list[Note] = []
     ledger = Ledger(1000)
     connection = Connection(
-        ReplayCaller(read_replay(recording)), NOT_RECORDED, ledger, noted=notes.append
+        ReplayCaller(read_replay(recording)), NO_RECORDING, ledger, noted=notes.append
     )
 
     first, second = asked(connection, 2)
@@ -126,7 +122,7 @@ def test_a_replay_counts_each_reply_at_its_recorded_tokens(tmp_path: Path) -> No
 # llm-tokens-reported-skipped
 def test_every_ask_counts_once_as_asked_replayed_or_skipped() -> None:
     ledger = Ledger()
-    connection = Connection(FakeCaller(), NOT_RECORDED, ledger)
+    connection = Connection(FakeCaller(), NO_RECORDING, ledger)
 
     asked(connection, 3)
 
@@ -141,7 +137,7 @@ def test_the_seconds_the_summary_and_stderr_write_come_from_one_rounded_wait() -
             return Reply("[]", AskCost(attempt, seconds=0.7496))
 
     ledger = Ledger()
-    Connection(Waiting(), NOT_RECORDED, ledger).ask(SEEDS, "m::f", "text")
+    Connection(Waiting(), NO_RECORDING, ledger).ask(SEEDS, "m::f", "text")
 
     use = ledger.use(Model("openai", "gpt-6-luna"), ("seeds",))
     assert use.seconds == 0.75

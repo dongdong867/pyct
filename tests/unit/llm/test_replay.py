@@ -9,14 +9,10 @@ import pytest
 from pyct.config.command_line import UsageError
 from pyct.config.llm import Model
 from pyct.llm.connection import Connection
-from pyct.llm.recording import Recording
 from pyct.llm.replay import Recorded, ReplayCaller, read_replay
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import Reply, Unanswered, Why
-from tests.acceptance.llm_stub import write_recording
-
-# a connection whose replies this test does not read back
-NOT_RECORDED = Recording(None, "not recorded in this test")
+from tests.acceptance.llm_stub import NO_RECORDING, write_recording
 
 SEEDS = Tool("seeds", 4000)
 
@@ -27,7 +23,7 @@ def test_each_try_gets_its_recorded_reply_and_a_later_one_is_skipped(tmp_path: P
         tmp_path / "two.jsonl",
         [{"place": "m::f", "try": 1, "reply": "one"}, {"place": "m::f", "try": 2, "reply": "two"}],
     )
-    connection = Connection(ReplayCaller(read_replay(recording)), NOT_RECORDED)
+    connection = Connection(ReplayCaller(read_replay(recording)), NO_RECORDING)
 
     answers = [connection.ask(SEEDS, "m::f", "asked again") for _ in range(3)]
 
@@ -42,7 +38,7 @@ def test_a_replayed_reply_reaches_its_tool_with_no_tokens_spent(tmp_path: Path) 
     recording = write_recording(tmp_path / "r.jsonl", [{"tokens": {"in": 1200, "out": 300}}])
     replay = read_replay(recording)
 
-    answer = Connection(ReplayCaller(replay), NOT_RECORDED).ask(
+    answer = Connection(ReplayCaller(replay), NO_RECORDING).ask(
         SEEDS, "targets.llm.seeds::f", "text"
     )
 

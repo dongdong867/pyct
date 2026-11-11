@@ -72,7 +72,7 @@ def test_a_usable_provider_records_to_a_new_file_in_the_cache(
 
     built = build(OPENAI)
 
-    assert built.connection is not None and built.connection.recording is not None
+    assert built.connection is not None
     path = built.connection.recording.path
     assert path is not None and path.parent == tmp_path / "cache" / "llm" / "runs"
 

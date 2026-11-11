@@ -7,7 +7,8 @@ after ``delay`` seconds, or with an HTTP error ``status``, and keeps each reques
 the stub, or at a local port nothing listens on. ``llm_run`` runs ``pyct run`` in that
 environment, and ``llm_lines`` and ``sources`` read what it printed. ``write_recording``,
 ``read_recording`` and ``recordings`` write and read the recordings ``--llm`` makes and
-``--llm-replay`` reads.
+``--llm-replay`` reads, and ``NO_RECORDING`` is a connection's recording for a test that reads
+none back.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from subprocess import CompletedProcess
 
+from pyct.llm.recording import Recording
 from tests.acceptance.harness import input_lines, run_pyct
 
 # the real key variables, which no test passes on to pyct
@@ -31,6 +33,9 @@ KEY_VARIABLES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY")
 DUMMY_KEY = "sk-pyct-test-dummy-key-0123456789"
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
 SEEDS_F = "targets.llm.seeds::f"
+# a recording that never made a file, so it keeps nothing: a connection's for a test that reads
+# no recording back
+NO_RECORDING = Recording(None, "not recorded in this test")
 
 
 @dataclass
