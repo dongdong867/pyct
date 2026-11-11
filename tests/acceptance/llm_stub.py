@@ -40,7 +40,8 @@ class Stub:
     reply: str = "[]"
     delay: float = 0.0
     status: int = 200
-    tokens: tuple[int, int] = (120, 30)
+    # the reply's tokens in and out; None leaves the usage out of the reply
+    tokens: tuple[int, int] | None = (120, 30)
     received: list[Received] = field(default_factory=list)
     port: int = 0
 
@@ -62,10 +63,10 @@ class Stub:
         return 200, _message(str(body["model"]), self.reply, self.tokens)
 
 
-def _response(model: str, text: str, tokens: tuple[int, int]) -> Mapping[str, object]:
+def _response(model: str, text: str, tokens: tuple[int, int] | None) -> Mapping[str, object]:
     """A Responses API reply holding ``text``."""
     content = [{"type": "output_text", "text": text, "annotations": []}]
-    return {
+    reply: dict[str, object] = {
         "id": "resp_stub",
         "object": "response",
         "created_at": 0,
@@ -80,21 +81,24 @@ def _response(model: str, text: str, tokens: tuple[int, int]) -> Mapping[str, ob
                 "content": content,
             }
         ],
-        "usage": {
+        "parallel_tool_calls": False,
+        "tool_choice": "auto",
+        "tools": [],
+    }
+    if tokens is not None:
+        reply["usage"] = {
             "input_tokens": tokens[0],
             "output_tokens": tokens[1],
             "total_tokens": sum(tokens),
             "input_tokens_details": {"cached_tokens": 0},
             "output_tokens_details": {"reasoning_tokens": 0},
-        },
-        "parallel_tool_calls": False,
-        "tool_choice": "auto",
-        "tools": [],
-    }
+        }
+    return reply
 
 
-def _message(model: str, text: str, tokens: tuple[int, int]) -> Mapping[str, object]:
-    """A Messages API reply holding ``text``."""
+def _message(model: str, text: str, tokens: tuple[int, int] | None) -> Mapping[str, object]:
+    """A Messages API reply holding ``text``. The Messages API always counts its tokens."""
+    tokens = (0, 0) if tokens is None else tokens
     return {
         "id": "msg_stub",
         "type": "message",

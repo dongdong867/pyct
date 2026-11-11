@@ -13,12 +13,14 @@ from __future__ import annotations
 import argparse
 import functools
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.binding.bind import access_name, leaves
 from pyct.cli.llm import add_flags as add_llm_flags
+from pyct.cli.llm import no_seed_line, note_line
+from pyct.cli.llm import start as start_llm
 from pyct.cli.shared import Parser, line
 from pyct.cli.sweep import (
     SWEEP_USAGE,
@@ -38,7 +40,7 @@ from pyct.config.command_line import (
     parse_solver_timeout,
 )
 from pyct.config.limits import Limits
-from pyct.config.llm import parse_llm
+from pyct.config.llm import LlmSettings, parse_llm
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -47,9 +49,12 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, Source, StopKind
 from pyct.results.trace import render_miss, render_start, render_stop, render_trace
+from pyct.run.helpers import Helpers
 from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
+from pyct.run.llm_seeds import NoSeedError
+from pyct.run.notes import Note, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import check_seed, missing_args_message, parse_seed
 from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
@@ -155,35 +160,59 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         if isinstance(command, SweepCommand):
             return run_sweep(command)
         with interception(command.spec):
-            target, seeds, limits, tell = _checked(command, watch)
-            print(render_start(command.spec, target.fn), end="", file=sys.stderr, flush=True)
-            for skipped in seeds.skipped:
-                print(skipped, file=sys.stderr, flush=True)
-            result = run(
-                target,
-                seeds.seeds,
-                limits=limits,
-                setup=Setup(
-                    isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO
-                ),
-                tell=tell,
-            )
+            result = _run(command, watch)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
     except (SolverMissingError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
+    except NoSeedError as error:
+        print(no_seed_line(error), file=sys.stderr)
+        return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
     line(render_summary(result))
     return _exit_code(result)
 
 
-def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Seeds, Limits, Tell]:
+def _run(command: RunCommand, watch: ImportWatch | None) -> RunResult:
+    """The checks, the LLM's start, then the run, inside the block that substitutes the
+    target's package. The LLM's line follows the class line and the skipped seeds."""
+    checked = _checked(command, watch)
+    seeds = checked.seeds
+    helpers = Helpers()
+    if checked.llm is not None:
+        helpers = start_llm(checked.llm, len(seeds.seeds))
+    print(render_start(command.spec, checked.target.fn), end="", file=sys.stderr, flush=True)
+    for skipped in seeds.skipped:
+        print(skipped, file=sys.stderr, flush=True)
+    isolation = Isolation.IN_PROCESS if command.in_process else Isolation.AUTO
+    return run(
+        checked.target,
+        seeds.seeds,
+        limits=checked.limits,
+        setup=Setup(isolation=isolation, helpers=helpers),
+        tell=checked.tell,
+    )
+
+
+@dataclass(frozen=True)
+class _Checked:
+    """What the checks gave: the target, its seeds, the limits, the Tell, and the LLM's
+    settings, None for a plain run."""
+
+    target: Target
+    seeds: Seeds
+    limits: Limits
+    tell: Tell
+    llm: LlmSettings | None
+
+
+def _checked(command: RunCommand, watch: ImportWatch | None) -> _Checked:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports.
 
-    The Tell prints each input and miss, and writes each ask's programs to the dump folder when
-    the command line names one."""
+    The Tell prints each input, miss and LLM note, and writes each ask's programs to the dump
+    folder when the command line names one."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
     file = None if command.seeds_text is None else read_seeds_file(command.seeds_text)
@@ -194,20 +223,26 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Se
         goal=parse_goal(command.goal_text),
     )
     folder = dump_folder(command.dump_text)
-    parse_llm(command.llm_text, command.llm_model_text)
+    llm = parse_llm(command.llm_text, command.llm_model_text)
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
-    seeds = _seeds(target, seed, file)
+    seeds = _seeds(target, seed, file, llm is not None and "seeds" in llm.tools)
     locate()
-    report = _Labeled(seeds.labels).report
-    return target, seeds, limits, Tell(report=report, missed=_missed, asked=asked)
+    labeled = _Labeled(seeds.labels)
+    tell = Tell(report=labeled.report, missed=_missed, asked=asked, noted=labeled.note)
+    return _Checked(target, seeds, limits, tell, llm)
 
 
-def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | None) -> Seeds:
-    """The seed checked, or every line of the seeds file checked and its repeats left out."""
+def _seeds(
+    target: Target, seed: Mapping[str, object] | None, file: SeedsFile | None, asking: bool
+) -> Seeds:
+    """The seed checked, or every line of the seeds file checked and its repeats left out. With
+    neither, no seeds when ``asking`` the LLM for them, and a usage error otherwise."""
     if file is not None:
         kept, skipped = distinct(checked_seeds(target, file))
         return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
+    if seed is None and asking:
+        return Seeds(())
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed(target, seed)
@@ -215,15 +250,28 @@ def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | 
 
 
 class _Labeled:
-    """Hands each seed's ``FILE:N`` to its trace, in the order the seeds run."""
+    """Hands each seed's ``FILE:N`` to its trace, and each LLM seed its place in the reply, in
+    the order the seeds run. Prints each LLM note as it comes."""
 
     def __init__(self, labels: Sequence[str]) -> None:
         self.waiting = iter(labels)
+        self.llm: Iterator[str] = iter(())
 
     def report(self, record: InputRecord, coverage: Coverage) -> None:
         # a seed given inline has no label
-        label = next(self.waiting, None) if record.source is Source.SEED else None
+        label = None
+        if record.source is Source.SEED:
+            label = next(self.waiting, None)
+        elif record.source is Source.LLM_SEED:
+            label = next(self.llm, None)
         _report(record, coverage, label)
+
+    def note(self, note: Note) -> None:
+        if isinstance(note, SeedsKept):
+            self.llm = iter(str(number) for number in note.numbers)
+        said = note_line(note)
+        if said is not None:
+            print(said, file=sys.stderr, flush=True)
 
 
 class _Dump:

@@ -77,7 +77,7 @@ def missing_args_message(signature: inspect.Signature) -> str:
     return (
         f"args are required: a JSON object for {parameters}\n"
         f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
-        f" or a file of them through --seeds"
+        f" or a file of them through --seeds, or ask the LLM for them with --llm seeds"
     )
 
 

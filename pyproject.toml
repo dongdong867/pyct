@@ -131,7 +131,7 @@ type = "layers"
 layers = [
   "pyct.cli",
   "pyct.sweep",
-  "(pyct.llm)",
+  "pyct.llm",
   "pyct.run",
   "(pyct.rewrite)",
   "pyct.intercept",
