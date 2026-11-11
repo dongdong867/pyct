@@ -162,3 +162,15 @@ def test_a_run_with_no_seed_and_no_llm_names_llm_seeds_as_a_way_to_start() -> No
 
     assert result.returncode == 2
     assert "--llm seeds" in result.stderr
+
+
+def test_the_llm_s_line_follows_the_skipped_seeds(stub: Stub, tmp_path: Path) -> None:
+    seeds = tmp_path / "seeds.jsonl"
+    seeds.write_text('{"x": 0}\n{"x": 0}\n')
+
+    result = llm_run(stub.port, tmp_path, "--seeds", str(seeds), "--llm", "seeds", key=None)
+
+    assert result.stderr.splitlines()[:2] == [
+        f"skipped {seeds}:2, same seed as line 1",
+        "llm: no OPENAI_API_KEY; running without the LLM",
+    ]

@@ -10,6 +10,7 @@ import pytest
 
 from pyct import cli
 from pyct.cli import main, parse_command
+from pyct.cli import sweep as sweep_command
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.sweep.result import SweepLimits, SweepResult, SweepStop
@@ -59,7 +60,7 @@ def sweep_limits(monkeypatch: pytest.MonkeyPatch, *flags: str) -> SweepLimits:
         seen.append(limits)
         return SweepResult(package, (), SweepStop.DONE, limits)
 
-    monkeypatch.setattr(cli, "sweep", found_nothing)
+    monkeypatch.setattr(sweep_command, "sweep", found_nothing)
     assert main(["sweep", "p", *flags]) == 0
     return seen[0]
 

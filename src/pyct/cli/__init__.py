@@ -182,12 +182,13 @@ def _run(command: RunCommand, watch: ImportWatch | None) -> RunResult:
     target's package. The LLM's line follows the class line and the skipped seeds."""
     checked = _checked(command, watch)
     seeds = checked.seeds
-    helpers = Helpers()
+    helpers, said = Helpers(), ()
     if checked.llm is not None:
-        helpers = start_llm(checked.llm, len(seeds.seeds))
+        helpers, started = start_llm(checked.llm, len(seeds.seeds))
+        said = (started,)
     print(render_start(command.spec, checked.target.fn), end="", file=sys.stderr, flush=True)
-    for skipped in seeds.skipped:
-        print(skipped, file=sys.stderr, flush=True)
+    for each in (*seeds.skipped, *said):
+        print(each, file=sys.stderr, flush=True)
     isolation = Isolation.IN_PROCESS if command.in_process else Isolation.AUTO
     return run(
         checked.target,

@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from typing import TYPE_CHECKING
 
 from pyct.config.llm import ALL, DEFAULT_MODEL, PROVIDERS, TOOLS, LlmSettings
@@ -45,23 +44,22 @@ def add_flags(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def start(settings: LlmSettings, own_seeds: int) -> Helpers:
+def start(settings: LlmSettings, own_seeds: int) -> tuple[Helpers, str]:
     """The helpers for the run, with the line that says which model the tools ask, or, when the
     LLM cannot be used, no helpers and the line that says why.
 
-    A run with no seed of its own and an LLM it cannot use raises NoSeedError instead, and
-    prints nothing here: the refusal is the one line it gives.
+    A run with no seed of its own and an LLM it cannot use raises NoSeedError instead: the
+    refusal is the one line it gives.
     """
     from pyct.llm.build import build
 
     built = build(settings)
     if built.unusable is None:
-        _say(f"llm: {settings.model}, tools: {', '.join(settings.tools)}")
-        return built.helpers
+        return built.helpers, f"llm: {settings.model}, tools: {', '.join(settings.tools)}"
     if not own_seeds:
         raise NoSeedError(_unusable_reason(built.unusable))
-    _say(f"llm: {_unusable_reason(built.unusable, advice=True)}; running without the LLM")
-    return built.helpers
+    reason = _unusable_reason(built.unusable, advice=True)
+    return built.helpers, f"llm: {reason}; running without the LLM"
 
 
 def _unusable_reason(unusable: Unusable, advice: bool = False) -> str:
@@ -89,7 +87,3 @@ def note_line(note: Note) -> str | None:
 def no_seed_line(error: NoSeedError) -> str:
     """The refusal of a run with no seed of its own that the LLM gave none."""
     return f"no seed: the LLM gave none ({error.reason})"
-
-
-def _say(text: str) -> None:
-    print(text, file=sys.stderr, flush=True)
