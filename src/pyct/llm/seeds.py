@@ -5,13 +5,14 @@ It implements ``pyct.run.llm_seeds.SeedProvider`` on top of ``Connection.ask``.
 
 from __future__ import annotations
 
+from pyct.config.llm import SEEDS_TOOL
 from pyct.llm.connection import Connection
 from pyct.llm.replies import json_items
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import Unanswered
-from pyct.run.llm_seeds import MOST_SEEDS, TOOL, SeedReply, SeedRequest
+from pyct.run.llm_seeds import MOST_SEEDS, SeedReply, SeedRequest
 
-SEEDS = Tool(TOOL, 4000)
+SEEDS = Tool(SEEDS_TOOL, 4000)
 
 # how one seed is written, which a later tool's request quotes word for word
 SEED_FORM = (

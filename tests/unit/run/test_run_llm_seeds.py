@@ -2,6 +2,7 @@
 after the user's own, with the budget's clock paused while it waits."""
 
 import json
+import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -50,6 +51,12 @@ class FakeSeeds:
         self.reported_before.append(len(self.reported))
         time.sleep(self.delay)
         return self.answer
+
+
+def deep(value: object, levels: int) -> object:
+    for _ in range(levels):
+        value = [value]
+    return value
 
 
 def replying(*seeds: object, delay: float = 0.0) -> FakeSeeds:
@@ -195,15 +202,22 @@ def test_a_repeat_of_a_user_s_seed_given_twice_names_its_first_input() -> None:
 
 @pytest.mark.parametrize(
     "seed",
-    [{"x": {"__class__": "fractions::Fraction"}}, {"x": [1, {"y": {"__class__": "Fraction"}}]}],
+    [
+        {"x": {"__class__": "tabnanny::NannyNag"}},
+        {"x": [1, {"y": {"__class__": "tabnanny::NannyNag"}}]},
+        {"x": deep({"__class__": "tabnanny::NannyNag"}, 600)},
+    ],
+    ids=["top", "nested", "deep"],
 )
-def test_an_llm_seed_that_names_a_class_is_dropped_before_its_class_is_read(
-    seed: dict[str, object],
+def test_an_llm_seed_that_names_a_class_is_dropped_before_its_module_is_imported(
+    seed: dict[str, object], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delitem(sys.modules, "tabnanny", raising=False)
+
     _, heard = run_f(replying(seed, {"x": 2}))
 
-    # the drop comes before the checks, which would import the class's module in pyct's process
     assert heard.notes == [SeedDropped(1, NAMES_A_CLASS), SeedsKept((2,))]
+    assert "tabnanny" not in sys.modules
 
 
 # llm-seed-dropped-past-the-fifth

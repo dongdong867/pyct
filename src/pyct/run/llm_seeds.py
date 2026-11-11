@@ -1,5 +1,7 @@
 """The seeds ask: the request ``run()`` sends before its first input, and what it does with the
 reply. Each seed is read and checked as a ``--seeds`` line is, then kept, or dropped and said.
+One that names a class with ``"__class__"`` is dropped before the checks: checking it would
+import the module it names in pyct's process, which never runs reply text.
 
 ``SeedProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.seeds``.
 """
@@ -23,7 +25,6 @@ from pyct.run.seed_checks import SeedCheck, parse_seed
 from pyct.run.target import Target
 from pyct.run.tell import Told
 
-TOOL = SEEDS_TOOL
 # the most seeds one reply may give; the request asks for at most this many
 MOST_SEEDS = 5
 # the user's seeds a request quotes at most, and the characters of JSON each may take
@@ -101,11 +102,11 @@ def ask_seeds(
     answer = provider.seeds(request)
     waited = time.monotonic() - started
     if isinstance(answer, Unanswered):
-        told.note(AskSkipped(TOOL, answer.reason))
+        told.note(AskSkipped(SEEDS_TOOL, answer.reason))
         return _none_left(own, answer.reason, waited)
     if answer.ignored is not None or not answer.items:
         ignored = answer.ignored or NO_SEED
-        told.note(ReplyIgnored(TOOL, ignored))
+        told.note(ReplyIgnored(SEEDS_TOOL, ignored))
         return _none_left(own, ignored, waited)
     kept = _kept(SeedCheck.of(target), own, answer.items, told)
     if kept:
@@ -191,10 +192,18 @@ def _judged(
 
 
 def _names_class(value: object) -> bool:
-    """Whether a JSON value holds a ``"__class__"`` key at any depth."""
-    if isinstance(value, Mapping):
-        return CLASS_KEY in value or any(_names_class(each) for each in value.values())
-    return isinstance(value, list) and any(_names_class(each) for each in value)
+    """Whether a JSON value holds a ``"__class__"`` key at any depth, read in a loop, not a call
+    per level, so a seed as deep as the checks take is read too."""
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, dict):
+            if CLASS_KEY in item:
+                return True
+            item = list(item.values())
+        if isinstance(item, list):
+            pending.extend(item)
+    return False
 
 
 def _json(seed: Mapping[str, object]) -> str | None:
