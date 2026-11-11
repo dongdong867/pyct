@@ -4,7 +4,7 @@ import contextlib
 import dataclasses
 import functools
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -263,51 +263,73 @@ class RunResult:
         # the analysis sees its stop at most one stretch late, so it stops that much early
         grace = ANALYSIS_GRACE - LONGEST_STRETCH
         stop_at = None if self.deadline is None else self.deadline + grace
-        run = Run((), {}, stop_at=stop_at)
-        # the inputs and their tries are read only when a cause can still be worked out; tries
-        # the stop cut short leave every line not worked out
-        if not run.late():
-            with contextlib.suppress(OutOfTimeError):
-                pace = Pace(run.late)
-                tries = _tries(self, pace)
-                walked = [
-                    Walked(
-                        record.forks, record.failure is not None, record.covered_lines, record.facts
-                    )
-                    for record in self.records
-                ]
-                run = Run(walked, tries, stop_at=stop_at, lost=_lost(self, pace))
-        # what the inputs ran, without the import's lines: a function only the import called is
-        # one no input entered, and its lines the import skipped are not called
-        ran = frozenset[int]().union(*(record.covered_lines for record in self.records))
-        return tuple(
-            entry
-            for file, lines in self.coverage.uncovered.items()
-            for entry in explain(file, lines, ran & self.coverage.lines[file], run)
-        )
+        return why_uncovered(self.records, self.misses, self.untried, self.coverage, stop_at)
 
 
-def _lost(result: RunResult, pace: Pace) -> dict[Site, tuple[str, ...]]:
+def why_uncovered(
+    records: Sequence[InputRecord],
+    misses: Sequence[Miss],
+    untried: Mapping[ForkSite, int],
+    coverage: Coverage,
+    stop_at: float | None,
+) -> tuple[WhyEntry, ...]:
+    """Why each line ``coverage`` leaves uncovered was not run, one entry per cause, file by
+    file, from the inputs that ran, the misses and the forks never tried, at a run's end or
+    part way through it.
+
+    ``stop_at`` is the monotonic instant past which no cause is worked out,
+    or None to work out every line; the lines left then share one ``not
+    worked out`` entry. The analysis may see the stop up to
+    ``LONGEST_STRETCH`` late.
+    """
+    run = Run((), {}, stop_at=stop_at)
+    # the inputs and their tries are read only when a cause can still be worked out; tries
+    # the stop cut short leave every line not worked out
+    if not run.late():
+        with contextlib.suppress(OutOfTimeError):
+            pace = Pace(run.late)
+            tries = _tries(records, misses, untried, pace)
+            walked = [
+                Walked(record.forks, record.failure is not None, record.covered_lines, record.facts)
+                for record in records
+            ]
+            run = Run(walked, tries, stop_at=stop_at, lost=_lost(records, pace))
+    # what the inputs ran, without the import's lines: a function only the import called is
+    # one no input entered, and its lines the import skipped are not called
+    ran = frozenset[int]().union(*(record.covered_lines for record in records))
+    return tuple(
+        entry
+        for file, lines in coverage.uncovered.items()
+        for entry in explain(file, lines, ran & coverage.lines[file], run)
+    )
+
+
+def _lost(records: Sequence[InputRecord], pace: Pace) -> dict[Site, tuple[str, ...]]:
     """The names of the downgrades the inputs recorded at each site, in the order first
     recorded, each a step of ``pace``."""
     names: dict[Site, dict[str, None]] = {}
-    for record in result.records:
+    for record in records:
         for entry in pace.each(record.downgrades):
             names.setdefault(entry.site, {})[entry.name] = None
     return {site: tuple(held) for site, held in names.items()}
 
 
-def _tries(result: RunResult, pace: Pace) -> dict[ForkSite, Tries]:
+def _tries(
+    records: Sequence[InputRecord],
+    misses: Sequence[Miss],
+    untried: Mapping[ForkSite, int],
+    pace: Pace,
+) -> dict[ForkSite, Tries]:
     """What happened at each site each time the run could have flipped a fork there.
 
     An input may hold many facts, so each is a step of ``pace``, which raises OutOfTimeError
     when the analysis's stop comes."""
     counts: dict[ForkSite, Counter[str]] = {}
-    for where, count in result.untried.items():
+    for where, count in untried.items():
         counts.setdefault(where, Counter())["not_tried"] += count
-    for miss in result.misses:
+    for miss in misses:
         counts.setdefault(ForkSite(miss.site, miss.raising), Counter())[miss.why.value] += 1
-    for record in result.records:
+    for record in records:
         if record.aim is not None and record.mismatch_at is not None:
             aimed = ForkSite(record.aim.site, record.aim.raising)
             counts.setdefault(aimed, Counter())["left_the_plan"] += 1

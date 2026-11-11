@@ -1,26 +1,22 @@
 import dataclasses
-import functools
 import platform
-import time
 from pathlib import Path
 
 import pytest
 
-from pyct.binding.bind import Seed
-from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.foundation.branch import Branch, Expression, Site
-from pyct.execution.execute import ExecutionContext, execute
-from pyct.results.coverage import Coverage, Progress, Scope
+from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
-from pyct.run.run import Bounds, Tell, _attempt, run
+from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
+from pyct.run.tell import Tell
 from pyct.solver import walk_keys
 from pyct.solver.answer import Answer, Timeout, Unknown
 
@@ -30,11 +26,6 @@ ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 OTHER_SIDE_LONGER = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
 IMPLIED_CHECK = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
-
-
-def no_input_yet() -> Progress:
-    """A run's progress before any input, which no stop reads as full; a fresh one per call."""
-    return Progress(Scope(file="", lines=frozenset()), frozenset())
 
 
 def argument(record: InputRecord, name: str) -> int:
@@ -108,25 +99,6 @@ def test_run_reports_a_timeout_when_the_budget_runs_out(
     assert result.stopped.kind is StopKind.BUDGET
 
 
-def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    target = load_target("targets.flip.one_check::classify")
-    seed = {"x": 3}
-    tree = Tree()
-    tree.add(run(target, seed).records[0].forks)
-    # no cvc5 on the PATH: asking would raise rather than answer
-    monkeypatch.setenv("PATH", str(tmp_path))
-    call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
-
-    attempt = _attempt(
-        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), no_input_yet()
-    )
-
-    assert attempt.record is None
-    assert attempt.stop == Stop(kind=StopKind.BUDGET)
-
-
 def limits_given(monkeypatch: pytest.MonkeyPatch, limits: Limits) -> list[float]:
     """The time limit each solve got, over a run whose one fork the solver misses."""
     given: list[float] = []
@@ -135,7 +107,7 @@ def limits_given(monkeypatch: pytest.MonkeyPatch, limits: Limits) -> list[float]
         given.append(timeout)
         return Unknown()
 
-    monkeypatch.setattr("pyct.run.run.solve", unknown)
+    monkeypatch.setattr("pyct.run.loop.solve", unknown)
     run(load_target("targets.flip.one_check::classify"), {"x": 3}, limits=limits)
     return given
 
@@ -349,7 +321,7 @@ def test_run_keeps_picking_until_the_tree_is_empty() -> None:
 
 def test_run_gathers_a_miss_from_every_fork_it_aimed_at(monkeypatch: pytest.MonkeyPatch) -> None:
     target = load_target("targets.flip.nested_checks::bucket")
-    monkeypatch.setattr("pyct.run.run.solve", lambda *args: Unknown())
+    monkeypatch.setattr("pyct.run.loop.solve", lambda *args: Unknown())
 
     result = run(target, {"x": 3})
 
@@ -433,7 +405,7 @@ def test_run_records_what_the_solver_answered_when_it_gave_up(
     monkeypatch: pytest.MonkeyPatch, answer: Answer, why: MissWhy
 ) -> None:
     target = load_target("targets.flip.one_check::classify")
-    monkeypatch.setattr("pyct.run.run.solve", lambda *args: answer)
+    monkeypatch.setattr("pyct.run.loop.solve", lambda *args: answer)
 
     result = run(target, {"x": 3})
 

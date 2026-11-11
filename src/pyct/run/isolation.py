@@ -186,14 +186,14 @@ def in_a_child(
         random.setstate(random_state)
         return execute(ctx, args, until, watch=watch).failure
 
-    with _journal() as buffer:
+    with mapped_journal() as buffer:
         reader = JournalReader(buffer)
-        waited = watched(functools.partial(_forked, buffer, call), until, reader.look)
+        waited = watched(functools.partial(forked, buffer, call), until, reader.look)
         return ending(reader.finish(), waited)
 
 
 @contextlib.contextmanager
-def _journal() -> Generator[mmap.mmap]:
+def mapped_journal() -> Generator[mmap.mmap]:
     """An anonymous shared mapping the child inherits, freed once it is read."""
     try:
         buffer = mmap.mmap(-1, CAPACITY)
@@ -205,8 +205,9 @@ def _journal() -> Generator[mmap.mmap]:
         buffer.close()
 
 
-def _forked(buffer: mmap.mmap, call: Served) -> int:
-    """Fork the input's process and return its pid. The child serves the call and exits.
+def forked(buffer: mmap.mmap, call: Served) -> int:
+    """Fork a child of this process for one call, an input's or one on model-written code, and
+    return its pid. The child serves the call and exits.
 
     Only the child writes the journal, so only the child holds a view of it,
     and this process can unmap it once it is read.
