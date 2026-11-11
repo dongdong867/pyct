@@ -154,6 +154,16 @@ class SeedCheck:
             line for found in forms.outer_first() for line in form_lines(found, self.home, built)
         ]
 
+    def read(self, text: str) -> tuple[Mapping[str, object] | None, list[str]]:
+        """The seed ``text`` writes and no reason, or no seed and each reason it is refused:
+        its shape as JSON (``parse_seed``), then ``refusals``."""
+        try:
+            seed = parse_seed(text)
+        except UsageError as error:
+            return None, [str(error)]
+        reasons = self.refusals(seed)
+        return (None, reasons) if reasons else (seed, [])
+
 
 def _fit_line(signature: inspect.Signature, seed: Mapping[str, object]) -> str | None:
     """Why the seed's keys do not fit the parameters, or None when they fit. Names only, not

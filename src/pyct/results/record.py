@@ -24,6 +24,8 @@ class Source(StrEnum):
 
     SEED = "seed"
     SOLVER = "solver"
+    # a seed the LLM suggested, which runs after the user's own seeds
+    LLM_SEED = "llm_seed"
 
 
 @dataclass(frozen=True)

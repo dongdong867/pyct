@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from pyct.results.coverage import Coverage, Scope
 from pyct.results.record import Aim, InputRecord, Miss
+from pyct.run.notes import Note
 from pyct.solver.given import Given
 
 # what a caller does with an input the moment it is finished
@@ -31,6 +32,9 @@ class Ask:
 # what a caller does with each ask the moment its answer comes in
 type Asked = Callable[[Ask], None]
 
+# what a caller does with each note about the run's LLM tools, the moment it is made
+type Noted = Callable[[Note], None]
+
 
 @dataclass(frozen=True)
 class Tell:
@@ -38,7 +42,8 @@ class Tell:
 
     ``report`` takes each finished input with the lines that input alone
     covered; ``missed`` takes each fork the solver gave no input for;
-    ``asked`` takes each ask with the programs pyct gave cvc5. One object
+    ``asked`` takes each ask with the programs pyct gave cvc5; ``noted``
+    takes each note about the LLM tools (``pyct.run.notes``). One object
     rather than a keyword per kind of fact, so ``run()`` and the loop keep
     to five parameters: a later kind of fact widens this instead of their
     signatures. A Tell with nothing set hands nothing out.
@@ -47,6 +52,7 @@ class Tell:
     report: Report | None = None
     missed: Missed | None = None
     asked: Asked | None = None
+    noted: Noted | None = None
 
 
 @dataclass(frozen=True)
@@ -72,3 +78,8 @@ class Told:
         """Hand out an ask once its answer is in."""
         if self.tell.asked is not None:
             self.tell.asked(ask)
+
+    def note(self, note: Note) -> None:
+        """Hand out a note about the LLM tools."""
+        if self.tell.noted is not None:
+            self.tell.noted(note)

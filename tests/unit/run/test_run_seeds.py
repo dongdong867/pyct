@@ -15,7 +15,7 @@ from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
-from pyct.run.run import Attempt, Bounds, _covered_or_plateau, _seed_attempt, run
+from pyct.run.run import Attempt, Bounds, Start, _covered_or_plateau, _seed_attempt, run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
 
@@ -147,7 +147,7 @@ def refused(args: object, until: float | None) -> object:
 
 
 def test_a_later_seed_that_cannot_start_stops_the_run() -> None:
-    waiting = deque([Seed.of({"x": 2})])
+    waiting = deque([Start(Seed.of({"x": 2}))])
 
     attempt = _seed_attempt(refused, waiting, Bounds(), no_input_yet())  # pyrefly: ignore[bad-argument-type]
 
@@ -157,7 +157,7 @@ def test_a_later_seed_that_cannot_start_stops_the_run() -> None:
 
 
 def test_a_waiting_seed_does_not_run_once_the_budget_is_spent() -> None:
-    waiting = deque([Seed.of({"x": 2})])
+    waiting = deque([Start(Seed.of({"x": 2}))])
     spent = Bounds(until=time.monotonic() - 1)
 
     attempt = _seed_attempt(refused, waiting, spent, no_input_yet())  # pyrefly: ignore[bad-argument-type]
