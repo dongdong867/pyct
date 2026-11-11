@@ -141,14 +141,14 @@ def test_the_seeds_past_the_fifth_are_dropped(stub: Stub, tmp_path: Path) -> Non
 def test_all_switches_on_every_tool_this_version_has(stub: Stub, tmp_path: Path) -> None:
     result = llm_run(replying(stub, {"x": 7}), tmp_path, '{"x": 0}', "--llm", "all")
 
-    assert llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds"
+    assert llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, rewrites"
 
 
 # llm-model-default
 def test_the_default_model_is_openai_s_gpt_6_luna(stub: Stub, tmp_path: Path) -> None:
     result = llm_run(replying(stub, {"x": 7}), tmp_path, '{"x": 0}', "--llm", "seeds")
 
-    assert llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds"
+    assert llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, rewrites"
     [received] = stub.received
     assert (received.path, received.body["model"]) == ("/v1/responses", "gpt-6-luna")
 
