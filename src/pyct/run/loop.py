@@ -153,9 +153,10 @@ class Loop:
 
         The budget, then full coverage, stop it before it runs, as they stop a
         solver input; so does an input pyct could not start a process for.
-        The plateau does not: it counts only the inputs after the last seed,
-        so it never holds while a seed waits. A stop is kept, and the next
-        pass hands it out; once it is kept, no input runs.
+        The plateau does not: a waiting seed runs before the plateau counts,
+        and a stuck moment's input is the run's answer to its inputs gaining
+        nothing. A stop is kept, and the next pass hands it out; once it is
+        kept, no input runs.
         """
         stop = self._stopped or _spent_or_covered(self.bounds, self.progress)
         if stop is None:

@@ -141,6 +141,18 @@ def test_guesses_take_what_a_tool_gave_up_on_at_an_earlier_moment() -> None:
     assert guesses.handed == [(1, (LOOPED,)), (2, (LOOPED,))]
 
 
+def test_guesses_leave_an_entry_given_up_earlier_that_its_tool_takes_now() -> None:
+    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP})
+    guesses = FakeTool(Kind.GUESSES)
+    stuck = Stuck([summaries, guesses])
+    stuck.hold(FakeRun(causes_given=(LOOPED,)))
+    summaries.outcomes = {LOOPED: Outcome.TOOK}
+
+    stuck.hold(FakeRun(causes_given=(LOOPED,)))
+
+    assert guesses.handed == [(1, (LOOPED,))]
+
+
 def test_a_tool_with_no_entry_is_not_handed_any() -> None:
     rewrites = FakeTool(Kind.REWRITES)
 

@@ -13,8 +13,7 @@ hold a ``timeout`` or an ``unknown`` to rewrites, and a ``no fork`` entry
 with no source, a ``handler`` and an ``ended before`` entry to guesses.
 Guesses also take the entries of a tool that is switched off, and each
 entry an earlier tool gave up on, at this moment or an earlier one, unless
-that tool took it at this moment. Every other entry, a ``not taken`` one the
-solver can still reach or showed it cannot, goes to no tool. Decision
+that tool took it at this moment. Every other entry goes to no tool. Decision
 llm-guesses-take-a-switched-off-tool-s-lines-and-no-not-taken-line-the-solver-can-reach.
 """
 

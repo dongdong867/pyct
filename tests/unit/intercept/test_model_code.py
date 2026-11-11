@@ -3,6 +3,7 @@ and nothing of it runs while it compiles."""
 
 import ast
 import types
+import warnings
 
 import pytest
 
@@ -109,5 +110,23 @@ def test_nothing_runs_while_the_code_compiles() -> None:
     text = "raise SystemExit('ran')\ndef f():\n    return 1\n"
 
     code = compile_model_code(text, FILE, ANY_FORM)
+
+    assert isinstance(code, types.CodeType)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # an invalid escape, as a regex the model wrote without a raw string has, which the
+        # parser warns about, and an `is` with a literal, which the compiler does
+        'def f(s):\n    return s == "\\d+"\n',
+        "def f(x):\n    return x is 1\n",
+    ],
+)
+def test_a_reply_python_warns_about_compiles_without_a_word(text: str) -> None:
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        code = compile_model_code(text, FILE, ANY_FORM)
 
     assert isinstance(code, types.CodeType)

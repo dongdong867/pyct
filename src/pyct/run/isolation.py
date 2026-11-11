@@ -206,7 +206,8 @@ def mapped_journal() -> Generator[mmap.mmap]:
 
 
 def forked(buffer: mmap.mmap, call: Served) -> int:
-    """Fork the input's process and return its pid. The child serves the call and exits.
+    """Fork a child of this process for one call, an input's or one on model-written code, and
+    return its pid. The child serves the call and exits.
 
     Only the child writes the journal, so only the child holds a view of it,
     and this process can unmap it once it is read.

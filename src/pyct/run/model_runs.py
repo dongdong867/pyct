@@ -8,7 +8,8 @@ its own, with `len`, `ord` and `chr` bound as in a target's module, calls
 the function on the arguments bound to leaves named by their keys, and
 writes each fork, fact and downgrade to a journal as an input's process
 does, then the answer as JSON to a second mapping. Whatever the call
-changes goes with the child.
+changes in its own process goes with the child; what it does outside the
+process, such as writing a file, only the asking tool's form check bounds.
 
 A child forks only while pyct's process runs one thread, counted as
 isolation counts them; otherwise the call does not run, and the tool that
@@ -61,8 +62,10 @@ class ModelRun:
     """How a call on model-written code went.
 
     ``answer`` is what the call returned, as JSON text, with each tracked
-    value as its plain value; None when the call did not return, or when
-    ``unencoded`` says why its value is not one JSON holds or does not fit.
+    value as its plain value, and a NaN or an infinity as Python's json
+    writes it, which Python's json reads back; None when the call did not
+    return, or when ``unencoded`` says why its value is not one JSON holds or
+    does not fit.
     ``result`` holds the forks, facts and downgrades the child recorded,
     and in ``failure`` the raise that ended the call, or how the child
     ended: past its time limit, a crash, or an exit.

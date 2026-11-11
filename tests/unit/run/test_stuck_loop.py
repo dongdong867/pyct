@@ -9,7 +9,7 @@ from pyct.binding.bind import Seed
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.execution.execute import ExecutionResult
-from pyct.results.causes import Reason, WhyEntry
+from pyct.results.causes import Reason, Tries, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.record import Source, Stop, StopKind
 from pyct.run.bounds import Bounds
@@ -25,6 +25,8 @@ HANDLER = "targets.why.handler::parse"
 # `counts(s)`: a loop counts the "z"s, and no fork reads the count; after the third input no
 # input covers a new line
 COUNTS = "targets.why.stuck::counts"
+# `narrow(x)`: x < 5, then x < 10 under it
+IMPLIED = "targets.flip.implied_check::narrow"
 
 NO_LIMITS = Limits()
 
@@ -160,3 +162,25 @@ def test_a_run_with_no_tool_is_never_stuck() -> None:
 
     assert looped.stop == Stop(StopKind.NO_FORK)
     assert len(looped.records) == 1
+
+
+def test_the_inputs_in_a_row_count_from_after_the_last_seed() -> None:
+    summaries = Tool(Kind.SUMMARIES)
+    loop = loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=10)))
+    seeds = [{"s": ""}] * 6
+    loop.bounds = Bounds.of(Limits(plateau=Plateau(inputs=10)), len(seeds))
+
+    go(loop, *seeds)
+
+    # five seeds in a row gain nothing, yet only the inputs after them count
+    assert summaries.moments[0][1] >= len(seeds) + 5
+
+
+def test_the_causes_part_way_count_an_open_fork_as_not_tried() -> None:
+    loop = loop_of(IMPLIED, [])
+    loop.run_input(Seed.of({"x": 3}), Source.SEED)
+
+    causes = loop.causes(None)
+
+    taken = {entry.lines: entry.tries for entry in causes if entry.reason is Reason.NOT_TAKEN}
+    assert taken == {(5,): Tries(not_tried=1), (6,): Tries(not_tried=1)}

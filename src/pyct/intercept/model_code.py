@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import ast
 import types
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -44,8 +45,16 @@ def compile_model_code(text: str, file: str, check: FormCheck) -> types.CodeType
 
     The checked tree is compiled as it is first, so a tree that does not
     compile is the model's; one that compiles only before its substitutions
-    is pyct's `SubstitutionError`.
+    is pyct's `SubstitutionError`. A warning Python gives about the code,
+    such as an invalid escape in a regex written without a raw string, is
+    not shown, since stderr is pyct's.
     """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", SyntaxWarning)
+        return _compiled(text, file, check)
+
+
+def _compiled(text: str, file: str, check: FormCheck) -> types.CodeType | Refused:
     try:
         tree = ast.parse(text, filename=file)
     except _REFUSALS as error:
