@@ -26,6 +26,8 @@ class Source(StrEnum):
     SOLVER = "solver"
     # a seed the LLM suggested, which runs after the user's own seeds
     LLM_SEED = "llm_seed"
+    # an input the solver gave for the LLM's rewrite of a condition it gave up on
+    REWRITE = "rewrite"
 
 
 @dataclass(frozen=True)

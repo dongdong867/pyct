@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pyct.rewrite.provider import RewriteProvider
 from pyct.run.llm_seeds import SeedProvider
 
 
@@ -13,6 +14,9 @@ class Helpers:
     reads engine state.
 
     ``seeds`` is asked once, before the first input, for seeds that run after the user's own.
+    ``rewrites`` is asked at a stuck moment for an easier condition in place of one whose
+    asks ran out (``pyct.run.rewrites``).
     """
 
     seeds: SeedProvider | None = None
+    rewrites: RewriteProvider | None = None

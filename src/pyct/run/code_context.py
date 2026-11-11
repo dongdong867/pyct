@@ -20,6 +20,8 @@ from pyct.run.target import Target
 
 # the characters of code a request holds at most
 CODE_LIMIT = 16_000
+# the lines of the function around a condition a request holds at most
+AROUND_LINES = 200
 
 type Code = Callable[..., object]
 
@@ -47,6 +49,30 @@ def code_context(target: Target, limit: int = CODE_LIMIT) -> str:
                 seen.add(id(callee))
                 waiting.append(callee)
     return "\n\n".join(parts)
+
+
+def code_around(file: str, line: int, most: int = AROUND_LINES) -> str:
+    """The source of the innermost function in ``file`` that holds ``line``, dedented, with no
+    callee; the file's own lines when no function does. Past ``most`` lines, the ``most`` lines
+    around ``line``. Empty when the file does not read or parse."""
+    try:
+        with open(file, encoding="utf-8") as opened:
+            source = opened.read()
+        tree = ast.parse(source, filename=file)
+    except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
+        return ""
+    lines = source.splitlines()
+    start, end = 1, len(lines)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            first = min([node.lineno, *(each.lineno for each in node.decorator_list)])
+            last = node.end_lineno or node.lineno
+            if first <= line <= last and last - first < end - start:
+                start, end = first, last
+    if end - start + 1 > most:
+        start = max(start, min(line - most // 2, end - most + 1))
+        end = start + most - 1
+    return textwrap.dedent("\n".join(lines[start - 1 : end]))
 
 
 def _starts(target: Target) -> list[Code]:

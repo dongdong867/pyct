@@ -18,7 +18,19 @@ def test_llm_seeds_takes_the_seeds_tool_with_the_default_model() -> None:
 
 
 def test_llm_all_takes_every_tool_pyct_has() -> None:
-    assert parse_llm("all", None) == LlmSettings(tools=("seeds",), model=DEFAULT_MODEL)
+    expected = LlmSettings(tools=("seeds", "rewrites"), model=DEFAULT_MODEL)
+    assert parse_llm("all", None) == expected
+
+
+# llm-rewrite-switch-alone
+def test_llm_rewrites_takes_the_rewrites_tool_alone() -> None:
+    assert parse_llm("rewrites", None) == LlmSettings(tools=("rewrites",), model=DEFAULT_MODEL)
+
+
+def test_the_tools_come_in_their_own_order_whatever_the_order_written() -> None:
+    settings = parse_llm("rewrites,seeds", None)
+
+    assert settings == LlmSettings(tools=("seeds", "rewrites"), model=DEFAULT_MODEL)
 
 
 def test_a_tool_named_twice_is_taken_once() -> None:

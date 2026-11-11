@@ -11,6 +11,14 @@ from typing import TYPE_CHECKING
 
 from pyct.config.llm import ALL, DEFAULT_LIMIT, DEFAULT_MODEL, PROVIDERS, TOOLS, LlmSettings
 from pyct.results.llm_asks import LlmUse, Why
+from pyct.rewrite.notes import (
+    RewriteDropped,
+    RewriteFailed,
+    RewriteNote,
+    RewriteRead,
+    RewriteSkipped,
+    RewriteTook,
+)
 from pyct.run.helpers import Helpers
 from pyct.run.llm_seeds import NoSeedError
 from pyct.run.notes import AskSkipped, LimitReached, Note, ReplyIgnored, SeedDropped, SeedsKept
@@ -158,6 +166,25 @@ def note_line(note: Note) -> str | None:
             return "llm: token limit reached; no more asks"
         case SeedsKept():
             return None
+        case _:
+            return rewrite_line(note)
+
+
+def rewrite_line(note: RewriteNote) -> str:
+    """The stderr line a rewrites note gives, the site written ``file:line:col``."""
+    site = note.site
+    at = f"llm: rewrite for {site.file}:{site.line}:{site.col}"
+    match note:
+        case RewriteRead(_, expression):
+            return f"{at}: {expression}"
+        case RewriteTook():
+            return f"{at}: took the wanted side"
+        case RewriteFailed(_, attempt, reason):
+            return f"{at}, try {attempt}: {reason}"
+        case RewriteSkipped(_, reason):
+            return f"{at} skipped: {reason}"
+        case RewriteDropped(_, number):
+            return f"{at} dropped at input {number}: took the other side"
 
 
 def no_seed_line(error: NoSeedError) -> str:
