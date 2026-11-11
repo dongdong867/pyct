@@ -2,7 +2,7 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]
 [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]
-[--dump-formulas DIR]``
+[--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS] [--goal coverage|bugs]``
@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.binding.bind import access_name, leaves
+from pyct.cli.llm import add_flags as add_llm_flags
 from pyct.cli.shared import Parser, line
 from pyct.cli.sweep import (
     SWEEP_USAGE,
@@ -37,6 +38,7 @@ from pyct.config.command_line import (
     parse_solver_timeout,
 )
 from pyct.config.limits import Limits
+from pyct.config.llm import parse_llm
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -61,7 +63,7 @@ from pyct.sweep.listing import PackageImportError
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]"
     " [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
-    " [--dump-formulas DIR]"
+    " [--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]"
 )
 # the refusal of seeds given more than one way
 ONE_WAY = "give the seeds one way: after the target, through --args, or through --seeds"
@@ -74,7 +76,8 @@ class RunCommand:
     ``seeds_text`` names a file of seeds, given instead of ``seed_text``.
     ``in_process`` runs every input in pyct's own process rather than one of its own.
     ``goal_text`` is the goal as written, None for the default, and ``dump_text`` the folder
-    each program pyct gives cvc5 goes to, None for none.
+    each program pyct gives cvc5 goes to, None for none. ``llm_text`` and ``llm_model_text`` are
+    ``--llm`` and ``--llm-model`` as written, None when not given.
     """
 
     spec: str
@@ -86,6 +89,8 @@ class RunCommand:
     goal_text: str | None = None
     dump_text: str | None = None
     seeds_text: str | None = None
+    llm_text: str | None = None
+    llm_model_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -130,7 +135,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape or the seeds file's
-    read, budget, plateau, solver timeout, goal, dump folder, import and
+    read, budget, plateau, solver timeout, goal, dump folder, the LLM flags, import and
     signature, seed present, seed fits, seed types, cvc5. A seeds file's
     lines take the shape, fit and type checks in one pass after the import,
     so every bad line is named at once. A line that repeats an earlier seed is said once
@@ -189,6 +194,7 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Se
         goal=parse_goal(command.goal_text),
     )
     folder = dump_folder(command.dump_text)
+    parse_llm(command.llm_text, command.llm_model_text)
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
     seeds = _seeds(target, seed, file)
@@ -315,6 +321,7 @@ def _run_parser(commands: argparse._SubParsersAction[Parser]) -> None:
     run_parser.add_argument("--in-process", action="store_true")
     run_parser.add_argument("--goal", metavar="coverage|bugs")
     run_parser.add_argument("--dump-formulas", dest="dump", metavar="DIR")
+    add_llm_flags(run_parser)
 
 
 def _run_command(namespace: argparse.Namespace) -> RunCommand:
@@ -335,6 +342,8 @@ def _run_command(namespace: argparse.Namespace) -> RunCommand:
         goal_text=namespace.goal,
         dump_text=namespace.dump,
         seeds_text=namespace.seeds_file,
+        llm_text=namespace.llm,
+        llm_model_text=namespace.llm_model,
     )
 
 
