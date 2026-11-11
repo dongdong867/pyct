@@ -39,12 +39,16 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   ├── run/          run(target, seed, *, limits, setup, tell) -> RunResult. Setup holds the
 │   │                 isolation and the LLM helpers. The budget's clock pauses while it waits
 │   │                 for the LLM.
-│   │                 Composition root for one run. isolation.py runs each input in a throwaway process
+│   │                 Composition root for one run. loop.py holds the loop, stuck.py the stuck
+│   │                 moment that hands the LLM tools their missed lines, isolation.py runs each
+│   │                 input in a throwaway process, and model_runs.py runs each call on
+│   │                 model-written code in a forked child
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
 │   ├── intercept/    builtin interception, one import hook: the target's package loads with
 │   │                 a fixed set of operations, `is True`, `in`, conversions and literal
 │   │                 operands, substituted by calls into core, kept in `.pyct_cache/` or
-│   │                 `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's own
+│   │                 `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's own.
+│   │                 model_code.py compiles model-written code the same way, and runs none of it
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue
