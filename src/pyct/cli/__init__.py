@@ -126,8 +126,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
-    could not be loaded, pyct could not start a process for an input, or
-    pyct itself broke during the run. 2: usage.
+    could not be loaded, pyct could not start a process for an input, pyct
+    itself broke during the run, or a run with no seed of its own got none
+    from the LLM. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, and each
     fork the solver could not flip, through ``_missed``, so a second input
@@ -140,8 +141,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape or the seeds file's
-    read, budget, plateau, solver timeout, goal, dump folder, the LLM flags, import and
-    signature, seed present, seed fits, seed types, cvc5. A seeds file's
+    read, budget, plateau, solver timeout, goal, dump folder, the LLM flags,
+    import and signature, seed present, seed fits, seed types, cvc5, then the
+    LLM's SDK and key. A seeds file's
     lines take the shape, fit and type checks in one pass after the import,
     so every bad line is named at once. A line that repeats an earlier seed is said once
     the checks pass, before the first input.

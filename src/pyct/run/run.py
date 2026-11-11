@@ -133,9 +133,12 @@ def run(
 
     ``seed`` is one seed, or several, which run in their order before any
     solver input, each adding its path to the one tree the solver works from.
-    A run needs at least one. While a seed waits to run, the run does not stop
-    on an empty tree, and the plateau counts only the inputs after the last
-    seed; the budget and full coverage stop it as they would a solver input.
+    A run needs at least one, or ``setup.helpers.seeds``, which is asked once,
+    before the first input, for seeds that run after these (``ask_seeds``),
+    with the budget's clock paused while it answers. While a seed waits to run,
+    the run does not stop on an empty tree, and the plateau counts only the
+    inputs after the last seed; the budget and full coverage stop it as they
+    would a solver input.
 
     ``setup.isolation`` says where each input runs: by default in a process
     of its own, and ``Isolation.IN_PROCESS`` runs every input in the
