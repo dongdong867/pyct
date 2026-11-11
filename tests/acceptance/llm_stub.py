@@ -4,7 +4,10 @@
 ``Stub`` answers OpenAI's Responses API and Anthropic's Messages API with the reply it is given,
 after ``delay`` seconds, or with an HTTP error ``status``, and keeps each request it got.
 ``llm_env`` drops both real key variables, sets a dummy key, and points both SDKs' base URLs at
-the stub, or at a local port nothing listens on.
+the stub, or at a local port nothing listens on. ``llm_run`` runs ``pyct run`` in that
+environment, and ``llm_lines`` and ``sources`` read what it printed. ``write_recording``,
+``read_recording`` and ``recordings`` write and read the recordings ``--llm`` makes and
+``--llm-replay`` reads.
 """
 
 from __future__ import annotations
@@ -175,7 +178,7 @@ def write_recording(
     for reply in replies:
         line = {
             "tool": "seeds",
-            "place": "targets.llm.seeds::f",
+            "place": SEEDS_F,
             "try": 1,
             "request": "an earlier request",
             "reply": "[]",

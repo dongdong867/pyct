@@ -9,10 +9,10 @@ from pathlib import Path
 import pytest
 
 from tests.acceptance.harness import run_pyct
-from tests.acceptance.llm_stub import KEY_VARIABLES, closed_port, llm_env
+from tests.acceptance.llm_stub import KEY_VARIABLES, SEEDS_F, closed_port, llm_env
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 
 
 # llm-switch-per-tool-unknown-tool

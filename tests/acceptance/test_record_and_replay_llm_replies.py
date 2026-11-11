@@ -16,6 +16,7 @@ from tests.acceptance.harness import input_lines, let_pyct_run_in_process, run_p
 from tests.acceptance.llm_stub import (
     DUMMY_KEY,
     KEY_VARIABLES,
+    SEEDS_F,
     Stub,
     closed_port,
     llm_env,
@@ -28,7 +29,7 @@ from tests.acceptance.llm_stub import (
 )
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 # another function, `sign(x: int)`, which no recording of f's asks about
 G = "targets.llm.helpers::sign"
 
@@ -129,6 +130,19 @@ def test_a_replay_answers_although_the_request_text_differs(tmp_path: Path) -> N
     assert f"llm: dropped seed 1: {plain_names}" in result.stderr.splitlines()
     assert [line["args"] for line in input_lines(result.stdout)][:2] == [{"x": 0}, {"x": 1234}]
     assert not any(line.startswith("llm: seeds ask skipped") for line in llm_lines(result.stderr))
+
+
+def test_a_reply_with_a_number_too_long_to_read_is_ignored(tmp_path: Path) -> None:
+    reply = '[{"x": ' + "9" * 5000 + "}]"
+    recording = write_recording(tmp_path / "long.jsonl", [{"reply": reply}])
+
+    result = llm_run(
+        closed_port(), tmp_path, '{"x": 0}', "--llm", "seeds", "--llm-replay", str(recording)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "llm: seeds reply ignored: no JSON array in the reply" in result.stderr.splitlines()
+    assert sources(result.stdout)[:2] == ["seed", "solver"]
 
 
 # llm-run-replayed-other-place

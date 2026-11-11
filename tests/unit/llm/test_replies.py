@@ -18,3 +18,7 @@ def test_the_array_may_sit_in_text_or_a_fence() -> None:
 @pytest.mark.parametrize("reply", ["x should be 1234", "[1, 2", '{"x": 1}', "", "[" * 100_000])
 def test_a_reply_with_no_array_python_reads_has_none(reply: str) -> None:
     assert json_items(reply) is None
+
+
+def test_a_reply_whose_array_holds_a_number_too_long_to_read_has_none() -> None:
+    assert json_items('[{"x": ' + "9" * 5000 + "}]") is None

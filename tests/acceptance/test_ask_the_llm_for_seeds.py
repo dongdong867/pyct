@@ -10,10 +10,10 @@ import time
 from pathlib import Path
 
 from tests.acceptance.harness import input_lines, run_pyct
-from tests.acceptance.llm_stub import Stub, llm_lines, llm_run
+from tests.acceptance.llm_stub import SEEDS_F, Stub, llm_lines, llm_run
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 # `hang(x: int)`: never returns, so every run ends on its budget
 HANG = "targets.isolate.hangs_with_finally::hang"
 

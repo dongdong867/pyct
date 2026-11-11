@@ -15,6 +15,7 @@ from pyct.cli import main
 from tests.acceptance.harness import let_pyct_run_in_process, run_pyct, summary_line
 from tests.acceptance.llm_stub import (
     DUMMY_KEY,
+    SEEDS_F,
     Stub,
     closed_port,
     llm_env,
@@ -23,7 +24,7 @@ from tests.acceptance.llm_stub import (
 )
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 # the longest a run waiting out the 30 s ask may take, its own short run included
 SLOW_RUN = 55
 

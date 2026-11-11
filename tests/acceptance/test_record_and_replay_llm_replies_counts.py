@@ -12,6 +12,7 @@ import pytest
 from tests.acceptance.harness import run_pyct, summary_line
 from tests.acceptance.llm_stub import (
     KEY_VARIABLES,
+    SEEDS_F,
     Stub,
     closed_port,
     llm_env,
@@ -20,7 +21,7 @@ from tests.acceptance.llm_stub import (
 )
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 
 
 # llm-tokens-reported-summary-and-stderr
@@ -70,7 +71,9 @@ def test_a_limit_that_is_not_a_positive_number_of_tokens_is_refused(
     assert result.stderr.startswith("--llm-limit takes a positive number of tokens")
 
 
-# llm-token-limit-no-more-asks, llm-token-limit-replay-stops-where-the-recording-did
+# llm-token-limit-no-more-asks, llm-token-limit-replay-stops-where-the-recording-did: the
+# command line's half, the limit line once and no tokens spent. The seeds tool asks once per run,
+# so the refused second ask is tested through Connection in tests/unit/llm/test_connection.py
 def test_a_replay_whose_reply_reaches_the_limit_says_so_once_and_spends_nothing(
     tmp_path: Path,
 ) -> None:
