@@ -9,12 +9,15 @@ from pyct.binding.bind import Seed
 from pyct.branches.tree import Tree
 from pyct.results.coverage import Coverage
 from pyct.results.record import InputRecord, Stop, StopKind
+from pyct.run.bounds import Bounds
 from pyct.run.isolation import Isolation
+from pyct.run.loop import _attempt
 from pyct.run.process import InputStartError
-from pyct.run.run import Bounds, Tell, _attempt, run
+from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
-from tests.unit.run.test_run import no_input_yet
+from pyct.run.tell import Tell
+from tests.unit.run.test_loop import no_input_yet
 
 REFUSED = "[Errno 35] Resource temporarily unavailable"
 

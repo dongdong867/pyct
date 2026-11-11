@@ -9,9 +9,10 @@ from pyct.branches.tree import Tree
 from pyct.results.coverage import Coverage
 from pyct.results.record import InputRecord
 from pyct.run.isolation import Isolation
-from pyct.run.run import Tell, run
+from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
+from pyct.run.tell import Tell
 
 
 @pytest.mark.parametrize("isolation", [Isolation.AUTO, Isolation.IN_PROCESS])

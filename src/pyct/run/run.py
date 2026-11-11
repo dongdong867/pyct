@@ -3,46 +3,23 @@
 from __future__ import annotations
 
 import dataclasses
-import itertools
 import platform
-import time
-from collections import deque
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
 
 from pyct.binding.bind import Seed
-from pyct.binding.model import apply
-from pyct.branches.plan import Plan
-from pyct.branches.tree import Tree
-from pyct.config.goal import Goal
 from pyct.config.limits import Limits
-from pyct.core.foundation.branch import ForkSite
-from pyct.execution.execute import ExecutionResult
-from pyct.results.coverage import Coverage, Progress, Scope, no_gain
-from pyct.results.record import (
-    Environment,
-    InputRecord,
-    Miss,
-    RunResult,
-    Source,
-    Stop,
-    StopKind,
-)
+from pyct.results.coverage import Coverage, Scope
+from pyct.results.record import Environment, RunResult, Source
 from pyct.run.as_found import modules_as_found
 from pyct.run.bounds import Bounds
-from pyct.run.collector import collector_paused
 from pyct.run.defaults import with_defaults
-from pyct.run.isolation import Call, Inputs
+from pyct.run.isolation import Inputs
 from pyct.run.llm_seeds import ask_seeds
-from pyct.run.process import InputStartError
-from pyct.run.records import miss_why, record_of
+from pyct.run.loop import Loop, Start
 from pyct.run.setup import Setup
 from pyct.run.target import Target, argument_checks
-from pyct.run.tell import Ask, Tell, Told
+from pyct.run.tell import Tell, Told
 from pyct.solver import walk_keys
-from pyct.solver.answer import Answer, Error, Sat, Timeout
-from pyct.solver.cvc5 import solve
-from pyct.solver.given import taking
 from pyct.solver.locate import locate, version
 
 _NO_LIMITS = Limits()
@@ -68,57 +45,6 @@ _PLATFORM = _platform()
 _TELL_NOTHING = Tell()
 
 _PLAIN = Setup()
-
-
-@dataclass(frozen=True)
-class Start:
-    """A seed copied for the loop, and where it came from: the user or the LLM."""
-
-    copy: Seed
-    source: Source = Source.SEED
-
-
-@dataclass(frozen=True)
-class Ran:
-    """An input that ran: its record, and its arguments as the walk copied them, which a later
-    answer on its path starts from."""
-
-    record: InputRecord
-    seed: Seed
-
-
-@dataclass(frozen=True)
-class Attempt:
-    """What one pass of the loop produced: an input, or a miss, or the reason to stop.
-
-    ``unrun`` is the site of a fork the pass picked and then stopped before it
-    ran an input for: the pick spends the fork, so only the pass knows it.
-    ``asked`` is the pass's ask of the solver, numbered by the loop.
-    """
-
-    stop: Stop | None = None
-    ran: Ran | None = None
-    miss: Miss | None = None
-    unrun: ForkSite | None = None
-    asked: Ask | None = None
-
-    @property
-    def record(self) -> InputRecord | None:
-        """The record of the input that ran, if one did."""
-        return None if self.ran is None else self.ran.record
-
-
-@dataclass(frozen=True)
-class Loop:
-    """The inputs that ran, the seeds' first, what the solver missed, and why they stopped.
-
-    ``untried`` counts the forks the run never tried at each site.
-    """
-
-    records: tuple[InputRecord, ...]
-    misses: tuple[Miss, ...]
-    stop: Stop
-    untried: Mapping[ForkSite, int] = field(default_factory=dict)
 
 
 def run(
@@ -166,7 +92,8 @@ def run(
     bounds = Bounds.of(limits, len(seeds))
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
     starts, bounds = _starts(target, seeds, setup, bounds, told)
-    looped = _inputs(inputs, starts, bounds, told)
+    loop = Loop(inputs, bounds, told)
+    looped = loop.go(starts)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -177,7 +104,8 @@ def run(
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,
         untried=looped.untried,
-        deadline=bounds.until,
+        # the loop's own, which each wait for the LLM moved later
+        deadline=loop.bounds.until,
         goal=limits.goal,
     )
 
@@ -208,34 +136,6 @@ def _starts(
     return tuple(starts), counted.paused(asked.waited)
 
 
-def _inputs(call: Call, copies: Sequence[Start], bounds: Bounds, told: Told) -> Loop:
-    """The seeds and every input after them, what the solver missed, and why they stopped.
-
-    A first seed whose process cannot start stops the run before any input.
-
-    Each seed is copied, and its leaves noted, before the first seed runs.
-    Every input, each seed's too, calls the target with ``bind``'s rebuild of
-    its copy, so no input changes the leaves the solver reads or the copies
-    a later input starts from.
-    """
-    first = copies[0]
-    try:
-        seeded = _from(first, call(first.copy.args, bounds.until))
-    except InputStartError as error:
-        return Loop((), (), _could_not_start(error))
-    return _loop(call, copies, seeded, bounds, told)
-
-
-def _from(start: Start, executed: ExecutionResult) -> InputRecord:
-    """The record of a seed's input, labeled with where the seed came from."""
-    return dataclasses.replace(record_of(start.copy.args, executed), source=start.source)
-
-
-def _could_not_start(error: InputStartError) -> Stop:
-    """The stop for an input pyct could not start a process for, with the system's reason."""
-    return Stop(StopKind.COULD_NOT_START, str(error))
-
-
 def _environment(cvc5: str | None, isolated: bool) -> Environment:
     """What the run ran in: the version the solver's cvc5 reported, and where inputs ran.
 
@@ -249,226 +149,3 @@ def _environment(cvc5: str | None, isolated: bool) -> Environment:
         platform=_PLATFORM,
         isolated=isolated,
     )
-
-
-def _loop(
-    call: Call,
-    copies: Sequence[Start],
-    seeded: InputRecord,
-    bounds: Bounds,
-    told: Told,
-) -> Loop:
-    """Run each seed still waiting, then pick a fork, run what the solver answers for it, until
-    a pass says to stop.
-
-    Every input's forks join the tree the next pick draws from, so an input
-    that raised or left its plan feeds the loop like any other. A miss is
-    kept, handed out before the next pick, and the loop goes on: the fork is
-    spent either way.
-
-    ``progress`` holds the lines of each input that ran, in run order, the
-    seeds' first, and what each reached; a miss ran no input and adds none.
-    It applies the scope, because a record carries the tracer's raw lines.
-    Each ask is handed out, numbered, the moment its answer is in.
-    """
-    misses: list[Miss] = []
-    progress = Progress(told.scope, told.imported)
-    tree = Tree()
-    records = [_took(seeded, told, tree, progress)]
-    # each input as the walk copied it, by its path's number: a solver answer starts from the
-    # input whose path it extends, not from the seed (see ``Plan.path``)
-    inputs = {0: copies[0].copy}
-    waiting = deque(copies[1:])
-    numbers = itertools.count(1)
-    while True:
-        _let_go(inputs, tree.oldest)
-        attempt = _seed_attempt(call, waiting, bounds, progress)
-        if attempt is None:
-            attempt = _attempt(call, inputs, tree, bounds, progress)
-        _hand_out(attempt, told, numbers, misses)
-        if attempt.stop is not None:
-            return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
-        if attempt.ran is not None:
-            inputs[len(records)] = attempt.ran.seed
-            records.append(_took(attempt.ran.record, told, tree, progress))
-
-
-def _hand_out(attempt: Attempt, told: Told, numbers: Iterator[int], misses: list[Miss]) -> None:
-    """Hand out the pass's ask, numbered, and its miss, which the run keeps. A pass that stops
-    has no miss."""
-    if attempt.asked is not None:
-        told.ask(dataclasses.replace(attempt.asked, number=next(numbers)))
-    if attempt.miss is not None:
-        misses.append(attempt.miss)
-        told.miss(attempt.miss)
-
-
-def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> InputRecord:
-    """Measure an input, hand it out and add its path, then turn the path its pick
-    extended when the input left the plan and covered no line no earlier input had.
-
-    Such an input likely left on what the solver does not model, as a
-    cache that compares keys only on equal hashes, and the deeper forks of
-    that path sit on more of it, so the rest of the path's new sides go
-    shallowest first (`Tree.turn`). How the input ended does not matter.
-    An input that left and covered a new line turns nothing, and a seed
-    follows no plan. Decision
-    fork-order-shallowest-first-after-a-leave-without-gain.
-    """
-    record = _measured(record, progress)
-    _handled(record, told, tree)
-    if record.mismatch_at is not None and no_gain(progress.covered, 1):
-        tree.turn()
-    return record
-
-
-def _measured(record: InputRecord, progress: Progress) -> InputRecord:
-    """The record, with the lines it covered first, once the run's progress has added it."""
-    first = progress.add(record.covered_lines, record.reach)
-    return dataclasses.replace(record, first_covered=first)
-
-
-def _handled(record: InputRecord, told: Told, tree: Tree) -> None:
-    """Hand out a finished input, then add its path to the tree, with the collector paused."""
-    with collector_paused():
-        told.record(record)
-        tree.add(record.forks, record.facts)
-
-
-def _attempt(
-    call: Call,
-    inputs: Mapping[int, Seed],
-    tree: Tree,
-    bounds: Bounds,
-    progress: Progress,
-) -> Attempt:
-    """One pass of the loop: the clock, a fork to aim at, the coverage, the plateau, the solver,
-    the input.
-
-    The four reasons come in the README's order. The budget first, because a
-    run that spent it has paths cut short, so ``no fork to flip`` would claim
-    more than the run knows; the clock alone decides it, because the alarm
-    fires only at the deadline, so an input's timeout failure would say the
-    same thing twice, and a target that swallows the alarm leaves no failure
-    for a second rule to read. Then the tree, so a run that emptied the tree
-    says so even when another reason also holds, then every line and branch
-    covered, then the plateau (``_covered_or_plateau``).
-
-    Each solve gets the solver timeout, or what is left of the budget when
-    that is less, so the budget still bounds the solver. A solver that
-    crashed ends the run as a failure, and so does an input pyct could not
-    start a process for. Any other answer is an input to run, or a miss on
-    that fork.
-    """
-    left = _seconds_left(bounds.until)
-    if _spent(left):
-        return Attempt(stop=Stop(StopKind.BUDGET))
-    wanted = tree.next()
-    if wanted is None:
-        return Attempt(stop=Stop(StopKind.NO_FORK))
-    unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
-    stop = _covered_or_plateau(bounds, progress)
-    if stop is not None:
-        return Attempt(stop=stop, unrun=unrun)
-    origin = inputs[wanted.path]
-    answer, seconds, asked = _solved(wanted, origin, _solve_limit(bounds, left))
-    if isinstance(answer, Timeout):
-        tree.timed_out()
-    if isinstance(answer, Error):
-        stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
-        return Attempt(stop=stop, unrun=unrun, asked=asked)
-    if not isinstance(answer, Sat):
-        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, seconds)
-        return Attempt(miss=miss, asked=asked)
-    solved = apply(origin, answer.model)
-    try:
-        record = record_of(solved.args, call(solved.args, bounds.until), wanted, seconds)
-    except InputStartError as error:
-        return Attempt(stop=_could_not_start(error), unrun=unrun, asked=asked)
-    return Attempt(ran=Ran(record, solved), asked=asked)
-
-
-def _seed_attempt(
-    call: Call, waiting: deque[Start], bounds: Bounds, progress: Progress
-) -> Attempt | None:
-    """One pass for the next seed still waiting: the clock, the coverage and the plateau, then
-    the seed. None when no seed waits.
-
-    No fork is picked while a seed waits, so ``no fork to flip`` is not
-    checked, and the plateau, checked as ``_attempt`` checks it, cannot hold
-    before the last seed. The budget and full coverage stop the run as they
-    do in ``_attempt``, and the seeds after it do not run.
-    """
-    if not waiting:
-        return None
-    start = waiting.popleft()
-    if _spent(_seconds_left(bounds.until)):
-        return Attempt(stop=Stop(StopKind.BUDGET))
-    stop = _covered_or_plateau(bounds, progress)
-    if stop is not None:
-        return Attempt(stop=stop)
-    try:
-        record = _from(start, call(start.copy.args, bounds.until))
-    except InputStartError as error:
-        return Attempt(stop=_could_not_start(error))
-    return Attempt(ran=Ran(record, start.copy))
-
-
-def _solved(wanted: Plan, origin: Seed, limit: float) -> tuple[Answer, float, Ask]:
-    """The solver's answer for the fork aimed at, the seconds from the start of writing the ask
-    to its answer, and the ask with each program pyct gave cvc5 for it."""
-    started = time.monotonic()
-    with taking() as programs:
-        answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
-    asked = Ask(0, wanted.aim, wanted.path, tuple(programs))
-    return answer, time.monotonic() - started, asked
-
-
-def _covered_or_plateau(bounds: Bounds, progress: Progress) -> Stop | None:
-    """The stop on every line and branch covered, for the coverage goal, then the plateau, which
-    counts only the inputs after the last seed and so never holds while one waits. None when
-    neither holds."""
-    if bounds.goal is Goal.COVERAGE and progress.full():
-        return Stop(StopKind.FULL)
-    plateau = bounds.plateau
-    after_the_seeds = len(progress.covered) - bounds.seeds
-    if plateau is not None and after_the_seeds >= plateau and no_gain(progress.covered, plateau):
-        return Stop(StopKind.NO_GAIN, plateau=plateau)
-    return None
-
-
-def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
-    """How many forks the run never tried at each site: the open ones, and one picked but not
-    run. Counted with the collector paused, as each input's path was added."""
-    with collector_paused():
-        counts = tree.untried()
-    if attempt.unrun is not None:
-        counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
-    return counts
-
-
-def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
-    """Let go of each input whose path no later pick can extend: an answer holding a long list
-    is kept only while an answer may still start from it."""
-    for path in [path for path in inputs if path < oldest]:
-        del inputs[path]
-
-
-def _seconds_left(until: float | None) -> float | None:
-    """The seconds the deadline still allows. No deadline, no limit."""
-    return None if until is None else until - time.monotonic()
-
-
-def _spent(left: float | None) -> bool:
-    """Whether the budget is spent. A deadline that has passed is no time at all; cvc5 reads
-    ``--tlimit-per=0`` as no limit."""
-    return left is not None and left <= 0
-
-
-def _solve_limit(bounds: Bounds, left: float | None) -> float:
-    """The seconds one solve gets: the solver timeout, or ``left`` when the budget has less.
-
-    ``left`` is read once, before the budget check, so a solve always gets
-    the same time the check found above zero.
-    """
-    return bounds.solver_timeout if left is None else min(bounds.solver_timeout, left)

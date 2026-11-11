@@ -11,14 +11,16 @@ from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.core.foundation.branch import ForkSite, Site
 from pyct.results.record import StopKind
+from pyct.run.bounds import Bounds
 from pyct.run.isolation import Isolation
+from pyct.run.loop import _attempt
 from pyct.run.process import InputStartError
-from pyct.run.run import Bounds, _attempt, run
+from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from pyct.solver.answer import Error
 from tests.unit.deadline_fires import DEADLINE_FIRES
-from tests.unit.run.test_run import no_input_yet
+from tests.unit.run.test_loop import no_input_yet
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TWO_OTHER_SIDES = str(REPO_ROOT / "targets" / "flip" / "two_other_sides_empty.py")
@@ -52,7 +54,7 @@ def test_a_plateau_stop_counts_the_fork_it_picked_and_never_solved() -> None:
 
 def test_a_solver_failure_counts_the_fork_being_solved(monkeypatch: pytest.MonkeyPatch) -> None:
     target = load_target("targets.flip.one_check::classify")
-    monkeypatch.setattr("pyct.run.run.solve", lambda *args: Error("cvc5: boom"))
+    monkeypatch.setattr("pyct.run.loop.solve", lambda *args: Error("cvc5: boom"))
 
     result = run(target, {"x": 3}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
