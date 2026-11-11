@@ -16,17 +16,21 @@ from pyct.branches.tree import Tree
 from pyct.config.goal import Goal
 from pyct.core.foundation.branch import ForkSite
 from pyct.execution.execute import ExecutionResult
-from pyct.results.coverage import Progress, no_gain
-from pyct.results.record import InputRecord, Miss, Source, Stop, StopKind
+from pyct.results.causes import WhyEntry
+from pyct.results.coverage import Coverage, Progress, no_gain
+from pyct.results.record import InputRecord, Miss, Source, Stop, StopKind, why_uncovered
 from pyct.run.bounds import Bounds
 from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call
 from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of
+from pyct.run.stuck import Stuck
 from pyct.run.tell import Ask, Told
 from pyct.solver.answer import Answer, Error, Sat, Timeout
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import taking
+
+_NO_FORK = Stop(StopKind.NO_FORK)
 
 
 @dataclass(frozen=True)
@@ -95,10 +99,12 @@ class Loop:
     Each ask is handed out, numbered, the moment its answer is in.
 
     ``bounds`` is the one place the loop reads its deadline from, for each
-    input and each solve; ``pause`` moves it later.
+    input and each solve; ``pause`` moves it later. ``stuck`` says when the
+    run is stuck, and holds each moment between two passes (``pyct.run.stuck``);
+    with no tool in it the run is never stuck.
     """
 
-    def __init__(self, call: Call, bounds: Bounds, told: Told) -> None:
+    def __init__(self, call: Call, bounds: Bounds, told: Told, stuck: Stuck | None = None) -> None:
         self.bounds = bounds
         self.told = told
         self.records: list[InputRecord] = []
@@ -111,6 +117,7 @@ class Loop:
         self._call = call
         self._numbers = itertools.count(1)
         self._stopped: Stop | None = None
+        self._stuck = Stuck(()) if stuck is None else stuck
 
     def go(self, starts: Sequence[Start]) -> Looped:
         """Run each seed, the first before any check, then pick a fork and run what the solver
@@ -161,20 +168,49 @@ class Loop:
         self._stopped = stop
         return stop
 
+    @property
+    def stopped(self) -> Stop | None:
+        """The stop an input run between two passes met, which ends the run at the next pass."""
+        return self._stopped
+
+    def causes(self, stop_at: float | None) -> tuple[WhyEntry, ...]:
+        """Why each line is still missed, from the inputs so far, worked out until ``stop_at``.
+        The forks still open count as never tried."""
+        with collector_paused():
+            untried = self.tree.untried()
+        covered = frozenset[int]().union(*(record.covered_lines for record in self.records))
+        coverage = Coverage.of(self.told.scope, covered | self.told.imported)
+        return why_uncovered(self.records, self.misses, untried, coverage, stop_at)
+
     def pause(self, seconds: float) -> None:
         """Move the deadline ``seconds`` later: the clock paused for a wait that is not the run's
         own work, such as the LLM's answer."""
         self.bounds = self.bounds.paused(seconds)
 
     def _next(self, waiting: deque[Start]) -> Attempt:
-        """The next pass: the next seed still waiting, or else a fork to aim at."""
+        """The next pass: the next seed still waiting, or a stuck moment, or a fork to aim at.
+
+        A moment comes before the pick on 5 inputs in a row with no new line,
+        and in place of the stop when no fork is left to flip; ``no fork to
+        flip`` comes before the pick spends a fork, so the next pass picks
+        from what the moment's inputs added.
+        """
         if self._stopped is not None:
             return Attempt(stop=self._stopped)
         if waiting:
             start = waiting.popleft()
-            ran = self.run_input(start.copy, start.source)
-            return Attempt(stop=ran) if isinstance(ran, Stop) else Attempt()
-        return _attempt(self._call, self.inputs, self.tree, self.bounds, self.progress)
+            return _stopped_by(self.run_input(start.copy, start.source))
+        if self._stuck.due(self, self.progress, empty=False):
+            return self._moment()
+        attempt = _attempt(self._call, self.inputs, self.tree, self.bounds, self.progress)
+        if attempt.stop == _NO_FORK and self._stuck.due(self, self.progress, empty=True):
+            return self._moment()
+        return attempt
+
+    def _moment(self) -> Attempt:
+        """Hold a stuck moment; the pass stops the run when an input the moment ran met a stop."""
+        self._stuck.hold(self)
+        return Attempt(stop=self._stopped)
 
     def _keep(self, record: InputRecord, seed: Seed) -> InputRecord:
         """Measure an input, hand it out, add its path, and keep its copy under its number."""
@@ -191,6 +227,11 @@ class Loop:
         if attempt.unrun is not None:
             counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
         return counts
+
+
+def _stopped_by(ran: InputRecord | Stop) -> Attempt:
+    """The pass of an input already kept: nothing more, or the stop it met."""
+    return Attempt(stop=ran) if isinstance(ran, Stop) else Attempt()
 
 
 def _from(start: Start, executed: ExecutionResult) -> InputRecord:
