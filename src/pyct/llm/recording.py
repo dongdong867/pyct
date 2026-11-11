@@ -10,7 +10,7 @@ tool asked with), ``reply``, ``tokens`` as ``{"in", "out"}``, and ``seconds``. A
 reply's tokens are the ones its own recording held. Each line is written and flushed as its
 reply arrives, so a run that crashes keeps the replies it got. A failure is not recorded. A
 write that fails ends the recording, said once as a warning: the lines written before it stay
-in the file, the last one perhaps cut short.
+in the file, the last one perhaps cut short, and the recording keeps the file's path and why.
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ HEAD_KEY = "pyct_llm_recording"
 
 
 class Recording:
-    """The run's recording: its path while it is written, or why no more replies are kept."""
+    """The run's recording: the file's path, ``None`` when it was never made, and why no more
+    replies are kept, ``None`` while they are."""
 
     def __init__(self, path: Path | None, failure: str | None) -> None:
         self.path = path
@@ -66,7 +67,7 @@ class Recording:
     def write(self, tool: Tool, place: str, text: str, reply: Reply) -> None:
         """One reply's line, appended and flushed. A write that fails is said once as a
         warning, and no later reply is kept."""
-        if self.path is None:
+        if self.path is None or self.failure is not None:
             return
         cost = reply.cost
         line = {
@@ -81,7 +82,6 @@ class Recording:
         try:
             _append(self.path, line)
         except OSError as error:
-            self.path = None
             self.failure = error.strerror or type(error).__name__
             logger.warning("llm: pyct cannot record the LLM's replies (%s)", self.failure)
 

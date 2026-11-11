@@ -73,6 +73,6 @@ def _built(settings: LlmSettings, model: Model, caller: Caller, noted: Noted | N
     """One connection over ``caller``, with the run's ledger and a new recording, and each
     switched-on tool on it."""
     recording = Recording.start(model, settings.tools)
-    connection = Connection(caller, Ledger(settings.limit), recording, noted)
+    connection = Connection(caller, recording, Ledger(settings.limit), noted)
     made = {name: HELPERS[name](connection) for name in settings.tools}
     return Built(Helpers(**made), model, connection)

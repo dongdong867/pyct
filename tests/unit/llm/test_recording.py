@@ -85,18 +85,19 @@ def test_a_folder_others_may_write_to_is_said_once_and_records_nothing(
     assert not (cache / "llm").exists()
 
 
-def test_a_write_that_fails_ends_the_recording_with_its_reason(
+def test_a_write_that_fails_ends_the_recording_and_keeps_its_path_and_reason(
     cache: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     recording = Recording.start(MODEL, ("seeds",))
     assert recording.path is not None
-    recording.path.unlink()
-    recording.path.mkdir()
+    path = recording.path
+    path.unlink()
+    path.mkdir()
 
     with caplog.at_level(logging.WARNING):
         recording.write(SEEDS, "m::f", "text", Reply("[]", AskCost(1)))
         recording.write(SEEDS, "m::f", "text", Reply("[]", AskCost(2)))
 
-    assert recording.path is None
+    assert recording.path == path
     assert recording.failure == os.strerror(errno.EISDIR)
     assert len(caplog.records) == 1

@@ -27,13 +27,13 @@ class Connection:
     def __init__(
         self,
         caller: Caller,
+        recording: Recording,
         ledger: Ledger | None = None,
-        recording: Recording | None = None,
         noted: Noted | None = None,
     ) -> None:
         self.caller = caller
-        self.ledger = Ledger() if ledger is None else ledger
         self.recording = recording
+        self.ledger = Ledger() if ledger is None else ledger
         self.noted = noted
         self.tries: dict[tuple[str, str], int] = {}
 
@@ -53,7 +53,7 @@ class Connection:
             answer = Unanswered(Why.LIMIT, LIMIT_REACHED, AskCost(attempt))
         else:
             answer = self.caller.call(tool, place, attempt, text)
-        if isinstance(answer, Reply) and self.recording is not None:
+        if isinstance(answer, Reply):
             self.recording.write(tool, place, text, answer)
         self.ledger.count(tool.name, answer)
         if not reached and self.ledger.reached and self.noted is not None:

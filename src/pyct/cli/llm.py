@@ -91,15 +91,17 @@ class Started:
 
     def closing(self) -> tuple[str, ...]:
         """The lines that end stderr's run summary: the counts, then where the replies were
-        recorded, or why they were not. No lines when the LLM could not be used."""
+        recorded and, when a write failed, why it stopped, or why none were. No lines when the LLM
+        could not be used."""
         connection = self.built.connection
         if connection is None:
             return ()
         recording = connection.recording
-        if recording is None:
-            return (counts_line(self.use()),)
         if recording.path is None:
             where = f"llm: replies not recorded ({recording.failure})"
+        elif recording.failure is not None:
+            where = f"llm: replies recorded in {recording.path} until a write failed"
+            where += f" ({recording.failure})"
         else:
             where = f"llm: replies recorded in {recording.path}"
         return counts_line(self.use()), where
