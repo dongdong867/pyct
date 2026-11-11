@@ -5,6 +5,7 @@ user's own classes (``hints``)."""
 from __future__ import annotations
 
 import functools
+import importlib.util
 import os
 import sys
 
@@ -51,6 +52,32 @@ def from_a_library(cls: type, owner: object = None) -> bool:
     return _library_module(name)
 
 
+def library_module(name: str, owner: str) -> bool:
+    """Whether the module ``name`` is a library's, for code written in the module ``owner``, read
+    from the module's name, so nothing is imported and no attribute of the module is read.
+
+    A loaded module is tested as ``from_a_library`` tests a class's module.
+    A module that is not loaded is a library's when its top-level name is a
+    standard library module's, or when that name's spec, which Python finds
+    without importing the module, has its file, or else every folder it
+    spans, under ``LIBRARY_ROOTS``.
+    """
+    if package_of(name) == package_of(owner):
+        return False
+    if name in sys.modules:
+        return _library_module(name)
+    top = name.partition(".")[0]
+    if top in sys.stdlib_module_names:
+        return True
+    loaded = sys.modules.get(top)
+    spec = importlib.util.find_spec(top) if loaded is None else getattr(loaded, "__spec__", None)
+    if spec is None:
+        return False
+    places = [spec.origin] if spec.has_location and spec.origin else spec.submodule_search_locations
+    found = list(places or ())
+    return bool(found) and all(_under_roots(place) for place in found)
+
+
 def package_of(name: str) -> str:
     """The package a module belongs to: the shortest dotted prefix of its name whose module has
     a file, which a namespace package has none of, or the whole name when none has one. So a
@@ -70,4 +97,9 @@ def _library_module(name: str) -> bool:
     file = getattr(sys.modules.get(name), "__file__", None)
     if not isinstance(file, str):
         return name.partition(".")[0] in sys.stdlib_module_names
-    return file.startswith(LIBRARY_ROOTS) or os.path.realpath(file).startswith(LIBRARY_ROOTS)
+    return _under_roots(file)
+
+
+def _under_roots(path: str) -> bool:
+    """Whether ``path``, as written or as its links lead, lies under ``LIBRARY_ROOTS``."""
+    return path.startswith(LIBRARY_ROOTS) or os.path.realpath(path).startswith(LIBRARY_ROOTS)

@@ -5,23 +5,31 @@ The ``run()`` cases answer with a fake ``SeedProvider``; the ``pyct run`` cases 
 provider's base URLs at the stub on localhost, or replay a recording against a closed port.
 """
 
+import json
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
 from pyct.llm.seeds import SEED_FORM, request_text
+from pyct.results.record import InputRecord, Source
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
 from pyct.run.llm_seeds import SeedReply, SeedRequest
 from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
-from tests.acceptance.fake_seeds import COST, FakeSeeds
+from tests.acceptance.fake_seeds import COST, FakeSeeds, replying
+from tests.acceptance.harness import input_lines
+from tests.acceptance.llm_stub import Stub, closed_port, heads, llm_run, write_recording
 
 M = "targets.llm.shop.models"
 GREET = "targets.llm.shop.greet"
 CHECK = "targets.llm.plain.check::check"
+ANN = {"__class__": f"{M}::Customer", "name": "ann", "age": 30}
+BOB = {"__class__": f"{M}::Customer", "name": "bob", "age": 70}
 
 
 @dataclass
@@ -43,6 +51,100 @@ def asked(spec: str, seed: dict[str, object]) -> tuple[Watching, str]:
     run(load_target(spec), [seed], setup=setup)
     [request] = provider.requests
     return provider, request_text(request)
+
+
+def run_llm(spec: str, *seeds: object) -> list[InputRecord]:
+    """The records of a run of ``spec`` with no seed of the user's, from an LLM reply of
+    ``seeds``."""
+    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(seeds=replying(*seeds)))
+    return list(run(load_target(spec), [], setup=setup).records)
+
+
+def at(args: object, *path: object) -> object:
+    """The value ``args`` holds at ``path``, each step a key or an index."""
+    for step in path:
+        assert isinstance(args, dict | list), args
+        args = args[step]  # pyrefly: ignore[bad-index]
+    return args
+
+
+def above_60(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value > 60
+
+
+def solver_args(records: Sequence[InputRecord]) -> list[object]:
+    """The args of each solver record that ran with no failure."""
+    return [
+        record.args
+        for record in records
+        if record.source is Source.SOLVER and record.failure is None
+    ]
+
+
+def trace_of(stderr: str, head: str) -> list[str]:
+    """The trace lines of the input whose head starts with ``head``, the head first."""
+    lines = stderr.splitlines()
+    start = next(at for at, line in enumerate(lines) if line.startswith(head))
+    rest = heads("\n".join(lines[start + 1 :]))
+    end = lines.index(rest[0], start + 1) if rest else len(lines)
+    return lines[start:end]
+
+
+# llm-seeds-name-a-class-builds-and-follows-an-object
+def test_an_llm_seed_builds_the_object_its_class_names_and_the_run_follows_it(
+    stub: Stub, tmp_path: Path
+) -> None:
+    stub.reply = json.dumps([{"c": ANN}])
+
+    result = llm_run(stub.port, tmp_path, "--llm", "seeds", target=f"{GREET}::greet")
+
+    assert result.returncode == 0, result.stderr
+    first, *rest = input_lines(result.stdout)
+    assert (first["args"], first["source"], first["failure"]) == ({"c": ANN}, "llm_seed", None)
+    trace = trace_of(result.stderr, "llm seed 1 ")
+    assert any("  c['age'] > 60  " in line for line in trace), trace
+    assert any(
+        line["source"] == "solver"
+        and line["failure"] is None
+        and at(line["args"], "c", "__class__") == ANN["__class__"]
+        and above_60(at(line["args"], "c", "age"))
+        for line in rest
+    ), rest
+
+
+# llm-seeds-name-a-class-builds-at-any-depth
+def test_an_llm_seed_builds_objects_inside_a_list_and_inside_another_object() -> None:
+    crowd = run_llm(f"{GREET}::seniors", {"cs": [ANN, BOB]})
+    order = {"__class__": f"{M}::Order", "customer": ANN, "total": 5}
+    paid = run_llm(f"{GREET}::pay", {"o": order})
+
+    for records in (crowd, paid):
+        assert records[0].source is Source.LLM_SEED
+        assert records[0].failure is None, records[0].failure
+    assert any(
+        above_60(at(args, "cs", 0, "age")) and len(at(args, "cs")) == 2  # pyrefly: ignore
+        for args in solver_args(crowd)
+    )
+    assert any(above_60(at(args, "o", "customer", "age")) for args in solver_args(paid))
+
+
+# llm-seeds-name-a-class-replays-a-reply-that-names-a-class
+def test_a_replayed_reply_that_names_a_class_builds_it(tmp_path: Path) -> None:
+    place = f"{GREET}::greet"
+    recording = write_recording(
+        tmp_path / "recorded.jsonl", [{"place": place, "reply": json.dumps([{"c": ANN}])}]
+    )
+
+    result = llm_run(
+        closed_port(), tmp_path, "--llm", "seeds", "--llm-replay", str(recording), target=place
+    )
+
+    assert result.returncode == 0, result.stderr
+    first, *rest = input_lines(result.stdout)
+    assert (first["args"], first["source"], first["failure"]) == ({"c": ANN}, "llm_seed", None)
+    assert any(
+        line["source"] == "solver" and above_60(at(line["args"], "c", "age")) for line in rest
+    )
 
 
 # llm-seeds-name-a-class-the-request-shows-the-class

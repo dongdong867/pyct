@@ -14,7 +14,7 @@ import pluggy
 import pytest
 
 from pyct.binding import libraries
-from pyct.binding.libraries import from_a_library, package_of
+from pyct.binding.libraries import from_a_library, library_module, package_of
 from tests.unit.binding.hint_classes import Box, Coord, Pair, Spot
 from tests.unit.binding.named_classes import Point
 
@@ -90,3 +90,39 @@ def test_a_file_under_a_linked_spelling_of_a_root_is_a_library_s() -> None:
     assert all(root.endswith(os.sep) for root in libraries.LIBRARY_ROOTS)
     standard = os.path.join(os.path.realpath(os.path.dirname(os.__file__)), "")
     assert standard in libraries.LIBRARY_ROOTS
+
+
+@pytest.mark.parametrize(
+    ("name", "library"),
+    [
+        ("datetime", True),
+        ("json.decoder", True),
+        ("pluggy._hooks", True),
+        ("tests.unit.binding.named_classes", False),
+        ("no_such_module_here.inside", False),
+    ],
+)
+def test_a_module_is_told_a_library_s_by_its_name(name: str, library: bool) -> None:
+    assert library_module(name, __name__) is library
+
+
+def test_a_module_that_is_not_loaded_is_told_by_its_top_level_name_without_importing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed, own = tmp_path / "lib" / "site-packages", tmp_path / "proj"
+    for folder, name in ((installed, "acme_lib"), (own, "acme_own")):
+        (folder / name).mkdir(parents=True)
+        (folder / name / "__init__.py").write_text("raise RuntimeError('imported')\n")
+        monkeypatch.syspath_prepend(str(folder))
+    roots = (*libraries.LIBRARY_ROOTS, os.path.join(str(installed), ""))
+    monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
+    before = set(sys.modules)
+
+    assert library_module("acme_lib.models", __name__)
+    assert not library_module("acme_own.models", __name__)
+    assert library_module("tabnanny", __name__)
+    assert set(sys.modules) == before
+
+
+def test_a_module_of_the_owner_s_package_is_never_a_library_s() -> None:
+    assert not library_module("pluggy._hooks", "pluggy._manager")

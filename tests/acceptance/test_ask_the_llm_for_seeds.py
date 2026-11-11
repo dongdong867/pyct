@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 from tests.acceptance.harness import input_lines, run_pyct
-from tests.acceptance.llm_stub import SEEDS_F, Stub, llm_lines, llm_run
+from tests.acceptance.llm_stub import SEEDS_F, Stub, heads, llm_lines, llm_run
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
 F = SEEDS_F
@@ -22,12 +22,6 @@ def replying(stub: Stub, *seeds: object) -> int:
     """The stub's port, once it replies with ``seeds``."""
     stub.reply = json.dumps(list(seeds))
     return stub.port
-
-
-def heads(stderr: str) -> list[str]:
-    """Each input's trace head: its first line, the one that names its source."""
-    starts = ("seed ", "llm seed ", "solver ")
-    return [line for line in stderr.splitlines() if line.startswith(starts)]
 
 
 # llm-seeds-at-start-runs-after-the-user-s-seeds

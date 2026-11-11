@@ -1,7 +1,8 @@
 """The seeds ask: the request ``run()`` sends before its first input, and what it does with the
 reply. Each seed is read and checked as a ``--seeds`` line is, then kept, or dropped and said.
-One that names a class with ``"__class__"`` is dropped before the checks: checking it would
-import the module it names in pyct's process, which never runs reply text.
+Before the checks, which import the module a ``"__class__"`` names in pyct's process, each class
+it names must be of the user's own code, in a module the request listed or one already imported
+(``ClassGate``).
 
 ``SeedProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.seeds``.
 """
@@ -9,12 +10,16 @@ import the module it names in pyct's process, which never runs reply text.
 from __future__ import annotations
 
 import json
+import sys
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
 from pyct.binding.builds import CLASS_KEY
+from pyct.binding.classes import ClassFormError, ClassNameError, class_parts, load_class, written
+from pyct.binding.libraries import library_module
+from pyct.binding.places import step_in
 from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
 from pyct.config.llm import SEEDS_TOOL
@@ -31,9 +36,10 @@ MOST_SEEDS = 5
 # the user's seeds a request quotes at most, and the characters of JSON each may take
 QUOTED_SEEDS = 10
 QUOTED_SEED_SIZE = 2_000
-# why an LLM seed that names a class is dropped: the checks would import the module it names
-# in pyct's process, and pyct's process never runs reply text
-NAMES_A_CLASS = f'an LLM seed names no class with "{CLASS_KEY}"'
+# why an LLM seed's class is refused: a library's, or one in a module the request did not list
+# and that was not imported
+NOT_THE_USER_S = "must name a class of the user's own code, got"
+NOT_LISTED = "must name a class the request listed or one already imported, got"
 # why a reply whose array is empty gives no seed
 NO_SEED = "the reply held no seed"
 
@@ -100,7 +106,8 @@ def ask_seeds(
     the seeds are pyct's own work. A run with no seed of its own that keeps none raises
     NoSeedError.
     """
-    request = seed_request(target, own, goal)
+    listing = class_listing(target.spec.partition("::")[0])
+    request = seed_request(target, own, goal, listing.text)
     started = time.monotonic()
     answer = provider.seeds(request)
     waited = time.monotonic() - started
@@ -111,7 +118,8 @@ def ask_seeds(
         ignored = answer.ignored or NO_SEED
         told.note(ReplyIgnored(SEEDS_TOOL, ignored))
         return _none_left(own, ignored, waited)
-    kept = _kept(SeedCheck.of(target), own, answer.items, told)
+    gate = ClassGate(target.home, listing.modules)
+    kept = _kept(SeedCheck.of(target), gate, own, answer.items, told)
     if kept:
         told.note(SeedsKept(tuple(number for number, _ in kept)))
     seeds = tuple(seed for _, seed in kept)
@@ -127,10 +135,12 @@ def _none_left(own: Sequence[Mapping[str, object]], reason: str, waited: float) 
     return AskedSeeds((), waited)
 
 
-def seed_request(target: Target, own: Sequence[Mapping[str, object]], goal: Goal) -> SeedRequest:
+def seed_request(
+    target: Target, own: Sequence[Mapping[str, object]], goal: Goal, classes: str
+) -> SeedRequest:
     """The request for ``target``, quoting at most ``QUOTED_SEEDS`` of the user's seeds and none
-    whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write, and listing the
-    classes of its module's folder."""
+    whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write, with the classes
+    ``class_listing`` wrote."""
     written = [_json(seed) for seed in own]
     quoted = tuple(text for text in written if text is not None and len(text) <= QUOTED_SEED_SIZE)[
         :QUOTED_SEEDS
@@ -141,12 +151,13 @@ def seed_request(target: Target, own: Sequence[Mapping[str, object]], goal: Goal
         signature=str(target.signature),
         seeds=quoted,
         goal=goal,
-        classes=class_listing(target.spec.partition("::")[0]).text,
+        classes=classes,
     )
 
 
 def _kept(
     check: SeedCheck,
+    gate: ClassGate,
     own: Sequence[Mapping[str, object]],
     items: Sequence[str],
     told: Told,
@@ -165,7 +176,7 @@ def _kept(
             inputs.setdefault(written, number)
     kept: list[tuple[int, Mapping[str, object]]] = []
     for number, text in enumerate(items, start=1):
-        reason, seed = _judged(check, inputs, number, text)
+        reason, seed = _judged(check, gate, inputs, number, text)
         if seed is None:
             told.note(SeedDropped(number, reason))
             continue
@@ -175,19 +186,18 @@ def _kept(
 
 
 def _judged(
-    check: SeedCheck, inputs: Mapping[str, int], number: int, text: str
+    check: SeedCheck, gate: ClassGate, inputs: Mapping[str, int], number: int, text: str
 ) -> tuple[str, Mapping[str, object] | None]:
-    """The seed an item writes, or why it is dropped: past the fifth, its shape as JSON, a class
-    it names, a check's reasons joined by ``; ``, or the input it repeats."""
+    """The seed an item writes, or why it is dropped: past the fifth, its shape as JSON, the
+    classes it names (``ClassGate``), then the seed checks, each one's reasons joined by ``; ``,
+    or the input it repeats."""
     if number > MOST_SEEDS:
         return f"more than {MOST_SEEDS} seeds", None
     try:
         seed = parse_seed(text)
     except UsageError as error:
         return str(error), None
-    if _names_class(seed):
-        return NAMES_A_CLASS, None
-    reasons = check.refusals(seed)
+    reasons = gate.refusals(seed) or check.refusals(seed)
     if reasons:
         return "; ".join(reasons), None
     repeated = inputs.get(json.dumps(seed))
@@ -196,19 +206,84 @@ def _judged(
     return "", seed
 
 
-def _names_class(value: object) -> bool:
-    """Whether a JSON value holds a ``"__class__"`` key at any depth, read in a loop, not a call
-    per level, so a seed as deep as the checks take is read too."""
-    pending = [value]
+@dataclass(frozen=True)
+class ClassGate:
+    """The classes an LLM seed may name with ``"__class__"``: a class of the user's own code, in
+    a module the request listed or one already imported.
+
+    ``home`` is the module a bare name is read in, and the code a library's
+    module is told apart from (``library_module``). ``listed`` is the
+    modules whose classes the request listed. pyct's own modules and
+    ``__main__`` are never the user's code.
+    """
+
+    home: str
+    listed: frozenset[str]
+
+    def refusals(self, seed: Mapping[str, object]) -> list[str]:
+        """A line for each ``"__class__"`` str at any depth of ``seed`` that names a class an LLM
+        seed may not, outer before inner in seed order.
+
+        Its module is tested by name before anything imports it. A class
+        whose module passes is loaded, and refused when its own module is a
+        library's, as a library's class a user's module imports is. A value
+        that is not a str, one badly written, and one that names no class
+        pass, so the seed checks give their lines.
+        """
+        return [line for place, text in _class_names(seed) for line in self._lines(place, text)]
+
+    def _lines(self, place: str, text: str) -> list[str]:
+        """The line for the ``"__class__"`` ``text`` of the object at ``place``, or none."""
+        try:
+            module_name, _ = class_parts(text, self.home)
+        except ClassFormError:
+            return []
+        if self._library(module_name):
+            reason = NOT_THE_USER_S
+        elif module_name not in sys.modules and module_name not in self.listed:
+            reason = NOT_LISTED
+        elif self._library(_written_in(text, self.home)):
+            reason = NOT_THE_USER_S
+        else:
+            return []
+        return [f"{step_in(place, CLASS_KEY)} {reason} {written(text)}"]
+
+    def _library(self, module_name: str) -> bool:
+        """Whether the module is not the user's code: pyct's own, ``__main__``, or a library's."""
+        if module_name == "__main__" or module_name.partition(".")[0] == "pyct":
+            return True
+        return library_module(module_name, self.home)
+
+
+def _written_in(text: str, home: str) -> str:
+    """The module the class ``text`` names was written in, read off the loaded class; ``home``
+    for one that names no class, which the seed checks refuse."""
+    try:
+        cls = load_class(text, home)
+    except ClassNameError:
+        return home
+    return cls.__module__ if isinstance(cls.__module__, str) else home
+
+
+def _class_names(seed: Mapping[str, object]) -> list[tuple[str, str]]:
+    """Each ``"__class__"`` str a seed holds at any depth, with the place of the object that
+    holds it, outer before inner in seed order. Read in a loop, not a call per level, so a seed
+    as deep as the checks take is read too."""
+    found: list[tuple[str, str]] = []
+    pending: list[tuple[str, object]] = list(seed.items())[::-1]
     while pending:
-        item = pending.pop()
+        place, item = pending.pop()
         if isinstance(item, dict):
-            if CLASS_KEY in item:
-                return True
-            item = list(item.values())
-        if isinstance(item, list):
-            pending.extend(item)
-    return False
+            named = item.get(CLASS_KEY)
+            if isinstance(named, str):
+                found.append((place, named))
+            children = [(step_in(place, key), each) for key, each in item.items()]
+        elif isinstance(item, list):
+            children = [(step_in(place, at), each) for at, each in enumerate(item)]
+        else:
+            continue
+        pending.extend(reversed(children))
+    return found
 
 
 def _json(seed: Mapping[str, object]) -> str | None:

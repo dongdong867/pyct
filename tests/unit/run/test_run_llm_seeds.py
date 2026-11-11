@@ -1,15 +1,19 @@
 """run() asks a SeedProvider once, before the first input, and runs the seeds that pass the checks
 after the user's own, with the budget's clock paused while it waits."""
 
+import importlib
 import json
+import os
 import sys
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from fractions import Fraction
+from pathlib import Path
 
 import pytest
 
+from pyct.binding import libraries
 from pyct.config.budget import Budget
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
@@ -19,7 +23,7 @@ from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.llm_seeds import NAMES_A_CLASS, NoSeedError, SeedReply
+from pyct.run.llm_seeds import NoSeedError, SeedReply
 from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import SeedCheck
@@ -178,24 +182,110 @@ def test_a_repeat_of_a_user_s_seed_given_twice_names_its_first_input() -> None:
     ]
 
 
+# where each seed below names tabnanny's class, and the line its drop says
+NAG = '"tabnanny::NannyNag"'
+LIBRARY = "must name a class of the user's own code, got"
+UNLISTED = "must name a class the request listed or one already imported, got"
+
+
 @pytest.mark.parametrize(
-    "seed",
+    ("seed", "place"),
     [
-        {"x": {"__class__": "tabnanny::NannyNag"}},
-        {"x": [1, {"y": {"__class__": "tabnanny::NannyNag"}}]},
-        {"x": deep({"__class__": "tabnanny::NannyNag"}, 600)},
+        ({"x": {"__class__": "tabnanny::NannyNag"}}, "x"),
+        ({"x": [1, {"y": {"__class__": "tabnanny::NannyNag"}}]}, "x[1]['y']"),
+        ({"x": deep({"__class__": "tabnanny::NannyNag"}, 600)}, "x" + "[0]" * 600),
     ],
     ids=["top", "nested", "deep"],
 )
-def test_an_llm_seed_that_names_a_class_is_dropped_before_its_module_is_imported(
-    seed: dict[str, object], monkeypatch: pytest.MonkeyPatch
+def test_an_llm_seed_naming_a_standard_library_class_is_dropped_before_its_module_is_imported(
+    seed: dict[str, object], place: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delitem(sys.modules, "tabnanny", raising=False)
 
     _, heard = run_f(replying(seed, {"x": 2}))
 
-    assert heard.notes == [SeedDropped(1, NAMES_A_CLASS), SeedsKept((2,))]
+    assert heard.notes == [
+        SeedDropped(1, f"{place}['__class__'] {LIBRARY} {NAG}"),
+        SeedsKept((2,)),
+    ]
     assert "tabnanny" not in sys.modules
+
+
+def test_an_installed_distribution_s_module_is_refused_without_importing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed = tmp_path / "lib" / "site-packages"
+    (installed / "acme_installed").mkdir(parents=True)
+    (installed / "acme_installed" / "__init__.py").write_text("raise RuntimeError('imported')\n")
+    monkeypatch.syspath_prepend(str(installed))
+    roots = (*libraries.LIBRARY_ROOTS, os.path.join(str(installed), ""))
+    monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
+    before = set(sys.modules)
+    named = "acme_installed.models::Thing"
+
+    _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
+
+    assert heard.notes == [SeedDropped(1, f"x['__class__'] {LIBRARY} \"{named}\""), SeedsKept((2,))]
+    assert not {name for name in sys.modules if name.startswith("acme_installed")}
+    assert set(sys.modules) - before <= {name for name in sys.modules if name.startswith("targets")}
+
+
+@pytest.mark.parametrize("named", ["pyct.run.setup::Setup", "__main__::Thing"])
+def test_pyct_s_own_module_and_main_are_not_the_user_s_code(named: str) -> None:
+    _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
+
+    assert heard.notes == [SeedDropped(1, f"x['__class__'] {LIBRARY} \"{named}\""), SeedsKept((2,))]
+
+
+def test_a_user_module_the_request_did_not_list_is_refused_without_importing_it() -> None:
+    named = "targets.classes.orders::Buyer"
+
+    _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
+
+    assert heard.notes == [
+        SeedDropped(1, f"x['__class__'] {UNLISTED} \"{named}\""),
+        SeedsKept((2,)),
+    ]
+    assert "targets.classes.orders" not in sys.modules
+
+
+def test_each_refused_class_of_a_seed_has_its_line_joined_by_semicolons() -> None:
+    seed = {
+        "x": [{"__class__": "tabnanny::NannyNag"}, {"__class__": "targets.classes.orders::Buyer"}]
+    }
+
+    _, heard = run_f(replying(seed, {"x": 2}))
+
+    lines = [
+        f"x[0]['__class__'] {LIBRARY} {NAG}",
+        f"x[1]['__class__'] {UNLISTED} \"targets.classes.orders::Buyer\"",
+    ]
+    assert heard.notes == [SeedDropped(1, "; ".join(lines)), SeedsKept((2,))]
+
+
+@pytest.mark.parametrize(
+    "form",
+    # the folder's class the request listed, and a class of a module the test already imported
+    [
+        {"__class__": "targets.llm.calls::Counter", "start": 1},
+        {"__class__": "tests.unit.binding.named_classes::Point", "x": 1, "y": 2},
+    ],
+    ids=["listed", "loaded"],
+)
+def test_a_listed_module_s_class_or_a_loaded_user_module_s_passes(form: dict[str, object]) -> None:
+    importlib.import_module("tests.unit.binding.named_classes")
+
+    _, heard = run_f(replying({"x": form}))
+
+    assert heard.notes[0] == SeedsKept((1,))
+
+
+def test_a_class_a_listed_module_holds_from_a_library_is_refused_after_it_loads() -> None:
+    named = "targets.llm.calls::json.JSONDecoder"
+
+    _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
+
+    assert heard.notes == [SeedDropped(1, f"x['__class__'] {LIBRARY} \"{named}\""), SeedsKept((2,))]
 
 
 # llm-seed-dropped-past-the-fifth

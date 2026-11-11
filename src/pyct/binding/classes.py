@@ -48,7 +48,7 @@ def load_class(text: object, home: str) -> type:
     ``ClassNameError``. A text that is not a str or is badly written is a
     ``ClassFormError``. A KeyboardInterrupt goes on, as a Ctrl-C does.
     """
-    module_name, qualname = _parts(text, home)
+    module_name, qualname = class_parts(text, home)
     try:
         found: object = importlib.import_module(module_name)
     except (Exception, SystemExit) as error:
@@ -65,9 +65,10 @@ def load_class(text: object, home: str) -> type:
     return found
 
 
-def _parts(text: object, home: str) -> tuple[str, str]:
+def class_parts(text: object, home: str) -> tuple[str, str]:
     """The module and the dotted name a ``"__class__"`` text names, the bare name's module
-    ``home``."""
+    ``home``, read without importing anything. A text that is not a str or is badly written is a
+    ``ClassFormError``."""
     if isinstance(text, str):
         module_name, joined, qualname = text.partition("::")
         if not joined:
