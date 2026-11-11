@@ -105,6 +105,26 @@ def test_a_class_in_a_module_the_request_did_not_list_is_dropped(
     assert said in result.stderr.splitlines()
 
 
+# llm-seed-class-refused-skipped-skips-a-module-the-request-did-not-list
+def test_a_class_in_the_package_s_main_is_dropped_and_never_imported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    main = "targets.llm.shop.__main__"
+    monkeypatch.delitem(sys.modules, main, raising=False)
+    notes: list[Note] = []
+    provider = replying({"c": {"__class__": f"{main}::Runner", "name": "x"}}, {"c": ANN})
+    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(seeds=provider))
+
+    run(load_target(GREET), [], setup=setup, tell=Tell(noted=notes.append))
+
+    said = (
+        "c['__class__'] must name a class the request listed or one already imported, got"
+        f' "{main}::Runner"'
+    )
+    assert notes[:2] == [SeedDropped(1, said), SeedsKept((2,))]
+    assert main not in sys.modules
+
+
 # llm-seed-class-refused-skipped-skips-a-class-pyct-cannot-find
 def test_a_seed_naming_a_class_pyct_cannot_find_is_dropped(stub: Stub, tmp_path: Path) -> None:
     reply = [

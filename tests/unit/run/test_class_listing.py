@@ -109,6 +109,21 @@ def test_the_target_s_module_comes_first_then_the_others_by_file_name(
     assert listing.modules == frozenset({"listed", "listed.t", "listed.a", "listed.b"})
 
 
+def test_a_package_s_main_is_left_out_since_importing_it_usually_runs_the_program(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = folder(
+        tmp_path,
+        {"t.py": "class T:\n    pass\n", "__main__.py": "class Main:\n    pass\n"},
+    )
+    loaded(monkeypatch, "listed.t", made / "t.py")
+
+    listing = class_listing("listed.t")
+
+    assert headings(listing) == ["# listed.t::T"]
+    assert listing.modules == frozenset({"listed.t"})
+
+
 def test_a_package_s_init_lists_the_package_s_own_modules(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

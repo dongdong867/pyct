@@ -1,11 +1,11 @@
 """The classes a seeds ask lists: each top-level class in the folder of the target's module, read
 from its file with ``ast``, so no module is imported.
 
-The target's own module comes first, then the folder's other modules by file name. Each class
-goes under a ``# module::Name`` heading, the name a seed's ``"__class__"`` writes: its
-decorators and class line, its class-level annotated fields, such as a dataclass's or a
-``NamedTuple``'s, and its ``__init__``, each whole. A class goes in whole or is left out, while
-the classes stay within the limit.
+The target's own module comes first, then the folder's other modules by file name, but a
+``__main__.py``. Each class goes under a ``# module::Name`` heading, the name a seed's
+``"__class__"`` writes: its decorators and class line, its class-level annotated fields, such as
+a dataclass's or a ``NamedTuple``'s, and its ``__init__``, each whole. A class goes in whole or
+is left out, while the classes stay within the limit.
 """
 
 from __future__ import annotations
@@ -70,11 +70,12 @@ def _folder_modules(module_name: str) -> list[tuple[str, Path]]:
 
 
 def _module_name(package: str, stem: str) -> str | None:
-    """The module a file of ``package``'s folder is, or None when Python cannot import its name:
-    its ``__init__.py`` is the package itself."""
+    """The module a file of ``package``'s folder is, or None when Python cannot import its name
+    or it is a ``__main__.py``, which usually runs its program when imported: its
+    ``__init__.py`` is the package itself."""
     if stem == "__init__":
         return package or None
-    if not stem.isidentifier():
+    if stem == "__main__" or not stem.isidentifier():
         return None
     return f"{package}.{stem}" if package else stem
 
