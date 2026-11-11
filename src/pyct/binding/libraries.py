@@ -1,6 +1,7 @@
 """Whether a class is the user's own or a library's: Python's standard library's, or an installed
 distribution's other than the package of the code whose hint names it. A hint builds only the
-user's own classes (``hints``)."""
+user's own classes (``hints``). A module is told the same way from its name alone
+(``library_module``), so a class an LLM seed names is refused before its module is imported."""
 
 from __future__ import annotations
 
