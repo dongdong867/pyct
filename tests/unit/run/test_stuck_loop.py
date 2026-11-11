@@ -167,13 +167,14 @@ def test_a_run_with_no_tool_is_never_stuck() -> None:
 
 def test_the_inputs_in_a_row_count_from_after_the_last_seed() -> None:
     summaries = Tool(Kind.SUMMARIES)
-    seeds = [{"s": ""}] * 6
+    # the seeds cover every line the solver reaches, so no input after them gains one, and the
+    # last three seeds gain nothing either: the five in a row count only from after the sixth
+    seeds = [{"s": ""}, {"s": "a"}, {"s": "z"}, {"s": ""}, {"s": ""}, {"s": ""}]
     loop = loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=10)), seeds=len(seeds))
 
     go(loop, *seeds)
 
-    # the six seeds gain nothing after the first, yet only the inputs after them count
-    assert [moment[:2] for moment in summaries.moments] == [(1, 13), (2, 18)]
+    assert [moment[:2] for moment in summaries.moments] == [(1, 11), (2, 16)]
 
 
 def test_the_causes_part_way_count_an_open_fork_as_not_tried() -> None:
