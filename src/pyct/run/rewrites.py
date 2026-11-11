@@ -100,8 +100,11 @@ class Rewrites(Asker):
                 return dataclasses.replace(rewritten, source=Source.REWRITE)
             programs = rewritten.asked.programs
         rest = limit - (time.monotonic() - started)
-        solved = super().solved(wanted, origin, rest) if rest > 0 else _out_of_time(wanted)
-        self._keep(wanted, origin, solved)
+        if rest > 0:
+            solved = super().solved(wanted, origin, rest)
+            self._keep(wanted, origin, solved)
+        else:
+            solved = _out_of_time(wanted)
         asked = dataclasses.replace(solved.asked, programs=(*programs, *solved.asked.programs))
         return Solved(solved.answer, time.monotonic() - started, asked)
 

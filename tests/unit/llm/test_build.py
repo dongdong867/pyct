@@ -9,6 +9,7 @@ from pyct.config.llm import PROVIDERS, LlmSettings, Model
 from pyct.llm.build import Built, Unusable, build
 from pyct.llm.providers import PROVIDERS as TABLE
 from pyct.llm.replay import ReplayCaller
+from pyct.llm.rewrites import LlmRewrites
 from pyct.llm.seeds import LlmSeeds
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
@@ -55,6 +56,18 @@ def test_a_usable_provider_gives_the_seeds_tool(monkeypatch: pytest.MonkeyPatch)
 
     assert built.unusable is None
     assert isinstance(built.helpers.seeds, LlmSeeds)
+
+
+# llm-rewrite-switch-alone
+def test_the_rewrites_tool_alone_gives_its_helper_and_no_other(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", DUMMY_KEY)
+
+    built = build(LlmSettings(("rewrites",), OPENAI.model))
+
+    assert isinstance(built.helpers.rewrites, LlmRewrites)
+    assert built.helpers.seeds is None
 
 
 def test_no_tool_switched_on_gives_no_helper(monkeypatch: pytest.MonkeyPatch) -> None:

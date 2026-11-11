@@ -42,8 +42,11 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   │                 Composition root for one run. loop.py holds the loop, stuck.py the stuck
 │   │                 moment that hands the LLM tools their missed lines, isolation.py runs each
 │   │                 input in a throwaway process, and model_runs.py runs each call on
-│   │                 model-written code in a forked child
-│   ├── rewrite/      the LLM source rewrite, whole flow in one place
+│   │                 model-written code in a forked child; rewrites.py fills the moment's
+│   │                 rewrites slot
+│   ├── rewrite/      the LLM rewrite of a condition the solver gives up on: the request, the
+│   │                 reply read and checked, the ask on the same path, the tries, the rewrites
+│   │                 kept. run passes in a rewrite's run in a forked child and a real input's run
 │   ├── intercept/    builtin interception, one import hook: the target's package loads with
 │   │                 a fixed set of operations, `is True`, `in`, conversions and literal
 │   │                 operands, substituted by calls into core, kept in `.pyct_cache/` or
@@ -80,8 +83,9 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 `core` is the runtime behavior of a concolic value. `intercept` makes the
 target's package call core where Python would not, through a fixed set of
 substitutions made as Python imports it and the builtin functions it binds
-in each module's builtins. Neither is a rewrite: `rewrite` is the next
-paper's LLM source rewrite.
+in each module's builtins. Neither is a rewrite: `rewrite` is the LLM's
+rewrite of a condition the solver gives up on, which runs only as
+model-written code in a forked child.
 
 `core`'s files sit in six folders, one per layer, top to bottom: `entry/`
 (entry points and the class table), `dicts/`, `lists/` (lists and ranges),
@@ -93,8 +97,8 @@ core's top level fails lint.
 
 Five one-method protocols, each declared at its consumer and implemented in
 `llm/`: `SummaryProvider` in core, `HintProvider` in solver, `RewriteProvider`
-in rewrite, `SeedProvider` in run (`run/llm_seeds.py`), `TriageProvider` in
-sweep. A provider returns its reply or `Unanswered` and never raises for an LLM
+in rewrite (`rewrite/provider.py`), `SeedProvider` in run (`run/llm_seeds.py`),
+`TriageProvider` in sweep. A provider returns its reply or `Unanswered` and never raises for an LLM
 problem. `run()` takes the helpers in `Setup(isolation=..., helpers=Helpers(...))`,
 one field per tool; `Helpers()` with nothing set is pure concolic. A helper
 never changes the tree and never reads engine state.
