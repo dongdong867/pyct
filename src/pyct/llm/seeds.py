@@ -9,9 +9,9 @@ from pyct.llm.connection import Connection
 from pyct.llm.replies import json_items
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import Unanswered
-from pyct.run.llm_seeds import MOST_SEEDS, SeedReply, SeedRequest
+from pyct.run.llm_seeds import MOST_SEEDS, TOOL, SeedReply, SeedRequest
 
-SEEDS = Tool("seeds", 4000)
+SEEDS = Tool(TOOL, 4000)
 
 # how one seed is written, which a later tool's request quotes word for word
 SEED_FORM = (

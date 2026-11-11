@@ -2,6 +2,8 @@
 
 import inspect
 
+import pytest
+
 from pyct.run.code_context import code_context
 from pyct.run.target import Target, load_target
 
@@ -79,3 +81,51 @@ def test_a_function_python_has_no_source_for_is_left_out() -> None:
     target = Target("m::made", made, "m.py", inspect.signature(made))
 
     assert code_context(target) == ""
+
+
+def helper(x: int) -> int:
+    return x + 1
+
+
+class Notes:
+    def told(self, x: int) -> int:
+        text = """
+this line starts at column 0, so dedenting leaves the method indented
+"""
+        return helper(x) + len(text)
+
+
+def here(name: str, fn: object) -> Target:
+    return Target(f"{__name__}::{name}", fn, __file__, inspect.signature(fn))  # type: ignore[arg-type]
+
+
+def test_a_method_holding_a_string_line_at_column_0_still_leads_to_its_callees() -> None:
+    code = code_context(here("Notes.told", Notes.told))
+
+    assert headers(code) == [f"# {__name__}.Notes.told", f"# {__name__}.helper"]
+    assert "this line starts at column 0" in code
+
+
+def nowhere(x: int) -> int:
+    return x
+
+
+nowhere.__module__ = None  # type: ignore[assignment]
+
+
+def calls_nowhere(x: int) -> int:
+    return nowhere(x)
+
+
+def test_a_callee_that_names_no_module_is_left_out() -> None:
+    code = code_context(here("calls_nowhere", calls_nowhere))
+
+    assert headers(code) == [f"# {__name__}.calls_nowhere"]
+
+
+def test_code_python_cannot_parse_alone_leads_to_no_callee(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(inspect, "getsource", lambda _: "    x = (\n")
+
+    code = code_context(here("calls_nowhere", calls_nowhere))
+
+    assert code == f"# {__name__}.calls_nowhere\nx = ("

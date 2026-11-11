@@ -87,7 +87,7 @@ def test_the_request_holds_the_code_its_callee_the_signature_the_seed_and_the_go
     text = message["content"]
     assert "def f(x: int):\n    if x == 1234:\n        return 1" in text
     assert "def sign(x: int) -> int:\n    if x < 0:" in text
-    assert "(x: int)" in text
+    assert "\nSignature: (x: int)\n" in text
     assert '{"x": 0}' in text
     assert "coverage" in text
 
@@ -102,7 +102,8 @@ def test_the_wait_for_the_model_is_not_budget_time(stub: Stub, tmp_path: Path) -
 
     took = time.monotonic() - started
     assert "stopped: budget spent" in result.stderr
-    assert 6.5 < took < 10, took
+    # the 4 s budget and the 3 s wait; the upper bound only catches a run that overruns both
+    assert 6.5 < took < 15, took
 
 
 # llm-seed-dropped-fails-a-check

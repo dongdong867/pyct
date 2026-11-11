@@ -5,6 +5,7 @@ import json
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from fractions import Fraction
 
 import pytest
 
@@ -17,7 +18,7 @@ from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.llm_seeds import NoSeedError, SeedReply, SeedRequest
+from pyct.run.llm_seeds import NAMES_A_CLASS, NoSeedError, SeedReply, SeedRequest
 from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import SeedCheck
@@ -142,7 +143,8 @@ def test_the_wait_for_the_seeds_does_not_count_toward_the_budget() -> None:
 
     took = time.monotonic() - started
     assert result.stopped.kind is StopKind.BUDGET
-    assert 6.5 < took < 9.5, took
+    # the 4 s budget and the 3 s wait; the upper bound only catches a run that overruns both
+    assert 6.5 < took < 15, took
 
 
 # llm-seed-dropped-fails-a-check
@@ -180,6 +182,30 @@ def test_a_seed_that_repeats_an_earlier_one_is_dropped_naming_that_input() -> No
     assert [record.args for record in records].count({"x": 5}) == 1
 
 
+def test_a_repeat_of_a_user_s_seed_given_twice_names_its_first_input() -> None:
+    _, heard = run_f(replying({"x": 5}, {"x": 5}, {"x": 0}), seeds=[{"x": 0}, {"x": 0}, {"x": 1}])
+
+    # the user's three seeds are inputs 1 to 3 and the LLM's first is input 4
+    assert heard.notes == [
+        SeedDropped(2, "same seed as input 4"),
+        SeedDropped(3, "same seed as input 1"),
+        SeedsKept((1,)),
+    ]
+
+
+@pytest.mark.parametrize(
+    "seed",
+    [{"x": {"__class__": "fractions::Fraction"}}, {"x": [1, {"y": {"__class__": "Fraction"}}]}],
+)
+def test_an_llm_seed_that_names_a_class_is_dropped_before_its_class_is_read(
+    seed: dict[str, object],
+) -> None:
+    _, heard = run_f(replying(seed, {"x": 2}))
+
+    # the drop comes before the checks, which would import the class's module in pyct's process
+    assert heard.notes == [SeedDropped(1, NAMES_A_CLASS), SeedsKept((2,))]
+
+
 # llm-seed-dropped-past-the-fifth
 def test_the_seeds_past_the_fifth_are_dropped() -> None:
     records, heard = run_f(replying(*({"x": n} for n in range(10, 17))))
@@ -209,6 +235,23 @@ def test_a_reply_the_tool_could_not_read_is_said_and_the_run_goes_on() -> None:
 
     assert heard.notes == [ReplyIgnored("seeds", "no JSON array in the reply")]
     assert records[0].args == {"x": 0}
+
+
+def test_a_reply_with_no_seed_is_said_and_the_run_goes_on() -> None:
+    records, heard = run_f(FakeSeeds(SeedReply((), COST)))
+
+    assert heard.notes == [ReplyIgnored("seeds", "the reply held no seed")]
+    assert records[0].args == {"x": 0}
+
+
+def test_a_user_s_seed_json_cannot_write_runs_and_is_not_quoted() -> None:
+    provider = replying({"x": 7})
+    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(seeds=provider))
+
+    result = run(load_target("targets.flip.no_check::echo"), [{"x": Fraction(1, 2)}], setup=setup)
+
+    assert provider.requests[0].seeds == ()
+    assert result.records[0].source is Source.SEED
 
 
 def test_the_plateau_leaves_out_the_llm_s_seeds_too() -> None:

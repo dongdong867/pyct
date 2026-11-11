@@ -73,15 +73,25 @@ def _part(function: Code) -> str | None:
 def _callees(function: Code, part: str, package: str) -> Iterator[Code]:
     """Each Python function the code calls by a name that leads to one the package defines; a
     class called leads to its ``__init__``."""
-    tree = ast.parse(part.partition("\n")[2])
-    for node in ast.walk(tree):
+    tree = _parsed(part.partition("\n")[2])
+    for node in () if tree is None else ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         found = _resolved(node.func, function)
         if inspect.isclass(found):
             found = _function(found, "__init__")
-        if inspect.isfunction(found) and in_package(package, found.__module__):
+        module = getattr(found, "__module__", None)
+        if inspect.isfunction(found) and isinstance(module, str) and in_package(package, module):
             yield found
+
+
+def _parsed(code: str) -> ast.Module | None:
+    """The code's tree, or None when Python cannot parse it alone. Code still indented, as a
+    method whose string has a line at column 0 stays after dedenting, is read as a block."""
+    try:
+        return ast.parse(f"if 1:\n{code}" if code[:1].isspace() else code)
+    except SyntaxError:
+        return None
 
 
 def _resolved(expression: ast.expr, function: Code) -> object:

@@ -192,8 +192,8 @@ def _starts(
     """Each seed copied, the user's then the LLM's, and the bounds with the LLM's wait paused
     and its seeds counted. With no seeds helper, the user's seeds alone.
 
-    The ask comes once the deadline is set and before the first input, so the first input
-    starts with the whole budget left.
+    The ask comes once the deadline is set and before the first input. Its wait is added back
+    to the budget; building the request and checking the seeds count toward it.
     """
     provider = setup.helpers.seeds
     asked = None if provider is None else ask_seeds(provider, target, seeds, bounds.goal, told)

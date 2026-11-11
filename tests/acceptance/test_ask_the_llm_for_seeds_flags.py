@@ -47,6 +47,5 @@ def test_a_model_of_another_provider_or_none_is_a_usage_error(tmp_path: Path, mo
     )
 
     assert result.returncode == 2
-    assert "anthropic" in result.stderr
-    assert "openai" in result.stderr
+    assert "the provider anthropic or openai" in result.stderr
     assert result.stdout == ""

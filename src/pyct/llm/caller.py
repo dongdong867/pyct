@@ -57,6 +57,10 @@ class WorkerCaller:
         except subprocess.TimeoutExpired:
             cost = AskCost(attempt, seconds=time.monotonic() - started)
             return Unanswered(Why.TIMED_OUT, f"no reply in {self.seconds:g} s", cost)
+        except OSError as error:
+            cost = AskCost(attempt, seconds=time.monotonic() - started)
+            reason = f"the worker could not start ({type(error).__name__})"
+            return Unanswered(Why.PROVIDER, reason, cost)
         return _answer(done, attempt, time.monotonic() - started)
 
 

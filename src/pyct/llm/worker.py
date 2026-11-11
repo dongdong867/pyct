@@ -19,12 +19,12 @@ from pyct.llm.providers import PROVIDERS
 def main() -> int:
     """Answer the request on stdin on stdout. Exit 0 whether the provider answered or not."""
     request = json.loads(sys.stdin.read())
-    adapter = importlib.import_module(PROVIDERS[request["provider"]].adapter)
     try:
+        adapter = importlib.import_module(PROVIDERS[request["provider"]].adapter)
         text, tokens_in, tokens_out = adapter.ask(
             request["model"], request["text"], request["out_tokens"]
         )
-    except Exception as error:  # noqa: BLE001 - every SDK error becomes a value pyct reports
+    except Exception as error:  # noqa: BLE001 - every adapter and SDK error becomes a value pyct reports
         status = getattr(error, "status_code", None)
         reply: dict[str, object] = {"error": type(error).__name__, "status": status}
     else:

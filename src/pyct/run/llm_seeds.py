@@ -12,21 +12,28 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
+from pyct.binding.builds import CLASS_KEY
+from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
+from pyct.config.llm import SEEDS_TOOL
 from pyct.results.llm_asks import AskCost, Unanswered
 from pyct.run.code_context import code_context
 from pyct.run.notes import AskSkipped, ReplyIgnored, SeedDropped, SeedsKept
-from pyct.run.seed_checks import SeedCheck
+from pyct.run.seed_checks import SeedCheck, parse_seed
 from pyct.run.target import Target
 from pyct.run.tell import Told
 
-# the tool's name, as stderr and the switch write it
-TOOL = "seeds"
+TOOL = SEEDS_TOOL
 # the most seeds one reply may give; the request asks for at most this many
 MOST_SEEDS = 5
 # the user's seeds a request quotes at most, and the characters of JSON each may take
 QUOTED_SEEDS = 10
 QUOTED_SEED_SIZE = 2_000
+# why an LLM seed that names a class is dropped: the checks would import the module it names
+# in pyct's process, and pyct's process never runs reply text
+NAMES_A_CLASS = f'an LLM seed names no class with "{CLASS_KEY}"'
+# why a reply whose array is empty gives no seed
+NO_SEED = "the reply held no seed"
 
 
 class NoSeedError(Exception):
@@ -41,14 +48,12 @@ class NoSeedError(Exception):
 class SeedRequest:
     """What a seeds ask is about: the place, the target's spec; the target's code and its
     same-package callees' (``code_context``); its signature as Python writes it; the user's
-    seeds as JSON; the parameter that holds a method's constructor arguments, if any; and the
-    goal the seeds are for."""
+    seeds as JSON; and the goal the seeds are for."""
 
     place: str
     code: str
     signature: str
     seeds: tuple[str, ...]
-    self_name: str | None = None
     goal: Goal = Goal.COVERAGE
 
 
@@ -98,15 +103,16 @@ def ask_seeds(
     if isinstance(answer, Unanswered):
         told.note(AskSkipped(TOOL, answer.reason))
         return _none_left(own, answer.reason, waited)
-    if answer.ignored is not None:
-        told.note(ReplyIgnored(TOOL, answer.ignored))
-        return _none_left(own, answer.ignored, waited)
+    if answer.ignored is not None or not answer.items:
+        ignored = answer.ignored or NO_SEED
+        told.note(ReplyIgnored(TOOL, ignored))
+        return _none_left(own, ignored, waited)
     kept = _kept(SeedCheck.of(target), own, answer.items, told)
     if kept:
         told.note(SeedsKept(tuple(number for number, _ in kept)))
     seeds = tuple(seed for _, seed in kept)
     if not seeds and not own:
-        raise NoSeedError("every seed was dropped" if answer.items else "the reply held no seed")
+        raise NoSeedError("every seed was dropped")
     return AskedSeeds(seeds, waited)
 
 
@@ -119,15 +125,16 @@ def _none_left(own: Sequence[Mapping[str, object]], reason: str, waited: float) 
 
 def seed_request(target: Target, own: Sequence[Mapping[str, object]], goal: Goal) -> SeedRequest:
     """The request for ``target``, quoting at most ``QUOTED_SEEDS`` of the user's seeds and none
-    whose JSON is longer than ``QUOTED_SEED_SIZE``."""
-    written = [json.dumps(seed) for seed in own]
-    quoted = tuple(text for text in written if len(text) <= QUOTED_SEED_SIZE)[:QUOTED_SEEDS]
+    whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write."""
+    written = [_json(seed) for seed in own]
+    quoted = tuple(text for text in written if text is not None and len(text) <= QUOTED_SEED_SIZE)[
+        :QUOTED_SEEDS
+    ]
     return SeedRequest(
         place=target.spec,
         code=code_context(target),
         signature=str(target.signature),
         seeds=quoted,
-        self_name=target.self_name,
         goal=goal,
     )
 
@@ -142,31 +149,57 @@ def _kept(
     reply from 1. Each other item is dropped, said with its reason.
 
     Two seeds are the same when they write the same JSON, as ``--seeds`` reads repeats; a
-    repeat names the input it repeats by its stdout line.
+    repeat names the first input it repeats by its stdout line. The user's seeds run first, so
+    the LLM's kept seeds are numbered after them.
     """
-    inputs = {json.dumps(seed): number for number, seed in enumerate(own, start=1)}
+    inputs: dict[str, int] = {}
+    for number, seed in enumerate(own, start=1):
+        written = _json(seed)
+        if written is not None:
+            inputs.setdefault(written, number)
     kept: list[tuple[int, Mapping[str, object]]] = []
     for number, text in enumerate(items, start=1):
         reason, seed = _judged(check, inputs, number, text)
         if seed is None:
             told.note(SeedDropped(number, reason))
             continue
-        inputs[json.dumps(seed)] = len(inputs) + 1
         kept.append((number, seed))
+        inputs[json.dumps(seed)] = len(own) + len(kept)
     return kept
 
 
 def _judged(
     check: SeedCheck, inputs: Mapping[str, int], number: int, text: str
 ) -> tuple[str, Mapping[str, object] | None]:
-    """The seed an item writes, or why it is dropped: past the fifth, a check's reasons joined
-    by ``; ``, or the input it repeats."""
+    """The seed an item writes, or why it is dropped: past the fifth, its shape as JSON, a class
+    it names, a check's reasons joined by ``; ``, or the input it repeats."""
     if number > MOST_SEEDS:
         return f"more than {MOST_SEEDS} seeds", None
-    seed, reasons = check.read(text)
-    if seed is None:
+    try:
+        seed = parse_seed(text)
+    except UsageError as error:
+        return str(error), None
+    if _names_class(seed):
+        return NAMES_A_CLASS, None
+    reasons = check.refusals(seed)
+    if reasons:
         return "; ".join(reasons), None
     repeated = inputs.get(json.dumps(seed))
     if repeated is not None:
         return f"same seed as input {repeated}", None
     return "", seed
+
+
+def _names_class(value: object) -> bool:
+    """Whether a JSON value holds a ``"__class__"`` key at any depth."""
+    if isinstance(value, Mapping):
+        return CLASS_KEY in value or any(_names_class(each) for each in value.values())
+    return isinstance(value, list) and any(_names_class(each) for each in value)
+
+
+def _json(seed: Mapping[str, object]) -> str | None:
+    """The seed as JSON, or None when it holds a value JSON cannot write, such as an object."""
+    try:
+        return json.dumps(seed)
+    except (TypeError, ValueError):
+        return None

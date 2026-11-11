@@ -1,7 +1,9 @@
 """WorkerCaller asks through one worker process per ask, and each failure comes back a value."""
 
 import subprocess
+import sys
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
@@ -117,3 +119,15 @@ def test_a_provider_error_with_no_status_is_its_class_alone() -> None:
     answer = _answer(done, 1, 0.5)
 
     assert answer == Unanswered(Why.PROVIDER, "APIConnectionError", AskCost(1, seconds=0.5))
+
+
+def test_a_worker_that_cannot_start_is_the_error_s_class(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "no-python"))
+
+    answer = WorkerCaller(Model("openai", "m")).call(TOOL, "m::f", 1, "the request")
+
+    assert answer == Unanswered(
+        Why.PROVIDER, "the worker could not start (FileNotFoundError)", answer.cost
+    )

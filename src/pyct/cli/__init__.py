@@ -40,7 +40,7 @@ from pyct.config.command_line import (
     parse_solver_timeout,
 )
 from pyct.config.limits import Limits
-from pyct.config.llm import LlmSettings, parse_llm
+from pyct.config.llm import SEEDS_TOOL, LlmSettings, parse_llm
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -229,7 +229,7 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> _Checked:
     llm = parse_llm(command.llm_text, command.llm_model_text)
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
-    seeds = _seeds(target, seed, file, llm is not None and "seeds" in llm.tools)
+    seeds = _seeds(target, seed, file, llm is not None and SEEDS_TOOL in llm.tools)
     locate()
     labeled = _Labeled(seeds.labels)
     tell = Tell(report=labeled.report, missed=_missed, asked=asked, noted=labeled.note)
