@@ -1,5 +1,5 @@
-"""The LLM's settings as ``--llm``, ``--llm-model`` and ``--llm-replay`` write them, and the
-refusal of wrong ones."""
+"""The LLM's settings as ``--llm``, ``--llm-model``, ``--llm-replay`` and ``--llm-limit`` write
+them, and the refusal of wrong ones."""
 
 from __future__ import annotations
 
