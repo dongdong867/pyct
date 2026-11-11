@@ -24,6 +24,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.isolate import traced
 
@@ -66,7 +67,7 @@ def _ran(tracer: str, name: str, interrupt: bool) -> dict[str, object]:
     traced.install(tracer)
     started = time.monotonic()
     try:
-        result = run(target, {"x": 0}, limits=limits, isolation=Isolation.IN_PROCESS)
+        result = run(target, {"x": 0}, limits=limits, setup=Setup(isolation=Isolation.IN_PROCESS))
         failure = result.records[0].failure
         ended = None if failure is None else [failure.kind.value, failure.detail]
     except KeyboardInterrupt:

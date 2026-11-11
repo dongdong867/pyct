@@ -2,7 +2,7 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]
 [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]
-[--dump-formulas DIR]``
+[--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS] [--goal coverage|bugs]``
@@ -13,13 +13,23 @@ from __future__ import annotations
 import argparse
 import functools
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
 
 from pyct.binding.bind import access_name, leaves
-from pyct.config.budget import RUN_SECONDS, SWEEP_SECONDS
+from pyct.cli.llm import add_flags as add_llm_flags
+from pyct.cli.llm import no_seed_line, note_line
+from pyct.cli.llm import start as start_llm
+from pyct.cli.shared import Parser, line
+from pyct.cli.sweep import (
+    SWEEP_USAGE,
+    SweepCommand,
+    run_sweep,
+    sweep_command,
+    sweep_parser,
+)
+from pyct.config.budget import RUN_SECONDS
 from pyct.config.command_line import (
     NO_DEADLINE,
     UsageError,
@@ -28,9 +38,9 @@ from pyct.config.command_line import (
     parse_goal,
     parse_plateau,
     parse_solver_timeout,
-    parse_total_budget,
 )
 from pyct.config.limits import Limits
+from pyct.config.llm import SEEDS_TOOL, LlmSettings, parse_llm
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -39,41 +49,29 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, Source, StopKind
 from pyct.results.trace import render_miss, render_start, render_stop, render_trace
+from pyct.run.helpers import Helpers
 from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
+from pyct.run.llm_seeds import NoSeedError
+from pyct.run.notes import Note, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import check_seed, missing_args_message, parse_seed
 from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
+from pyct.run.setup import Setup
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
 from pyct.solver.given import write
 from pyct.solver.locate import SolverMissingError, locate
 from pyct.sweep.listing import PackageImportError
-from pyct.sweep.result import SweepLimits, closing, summary_line
-from pyct.sweep.rows import Row, row_line, running, told
-from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]"
     " [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
-    " [--dump-formulas DIR]"
-)
-SWEEP_USAGE = (
-    "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
-    " [--total-budget SECONDS] [--goal coverage|bugs]"
+    " [--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]"
 )
 # the refusal of seeds given more than one way
 ONE_WAY = "give the seeds one way: after the target, through --args, or through --seeds"
-# what pyct sweep --help says above the flags, kept as written
-SWEEP_WARNING = """\
-pyct sweep runs each public function and class of PACKAGE as its own pyct run.
-It calls every function and class it runs with inputs it made up. Each entry
-runs in a temporary working directory of its own, which takes only the files
-an input writes by a relative path, and isolation undoes what an input changes
-in its process. Nothing undoes a file an input writes anywhere else or a
-request it sends.
-"""
 
 
 @dataclass(frozen=True)
@@ -83,7 +81,8 @@ class RunCommand:
     ``seeds_text`` names a file of seeds, given instead of ``seed_text``.
     ``in_process`` runs every input in pyct's own process rather than one of its own.
     ``goal_text`` is the goal as written, None for the default, and ``dump_text`` the folder
-    each program pyct gives cvc5 goes to, None for none.
+    each program pyct gives cvc5 goes to, None for none. ``llm_text`` and ``llm_model_text`` are
+    ``--llm`` and ``--llm-model`` as written, None when not given.
     """
 
     spec: str
@@ -95,6 +94,8 @@ class RunCommand:
     goal_text: str | None = None
     dump_text: str | None = None
     seeds_text: str | None = None
+    llm_text: str | None = None
+    llm_model_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,20 +106,6 @@ class Seeds:
     seeds: tuple[Mapping[str, object], ...]
     labels: tuple[str, ...] = ()
     skipped: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class SweepCommand:
-    """What ``pyct sweep`` was asked for: the package, whether only to list its entries, and the
-    limits, as the command line gave them."""
-
-    package: str
-    list_only: bool = False
-    budget_text: str | None = None
-    plateau_text: str | None = None
-    solver_timeout_text: str | None = None
-    total_budget_text: str | None = None
-    goal_text: str | None = None
 
 
 def entry() -> int:
@@ -139,8 +126,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
-    could not be loaded, pyct could not start a process for an input, or
-    pyct itself broke during the run. 2: usage.
+    could not be loaded, pyct could not start a process for an input, pyct
+    itself broke during the run, or a run with no seed of its own got none
+    from the LLM. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, and each
     fork the solver could not flip, through ``_missed``, so a second input
@@ -153,8 +141,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape or the seeds file's
-    read, budget, plateau, solver timeout, goal, dump folder, import and
-    signature, seed present, seed fits, seed types, cvc5. A seeds file's
+    read, budget, plateau, solver timeout, goal, dump folder, the LLM flags,
+    import and signature, seed present, seed fits, seed types, cvc5, then the
+    LLM's SDK and key. A seeds file's
     lines take the shape, fit and type checks in one pass after the import,
     so every bad line is named at once. A line that repeats an earlier seed is said once
     the checks pass, before the first input.
@@ -171,35 +160,62 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         if isinstance(command, SweepCommand):
-            return _sweep(command)
+            return run_sweep(command)
         with interception(command.spec):
-            target, seeds, limits, tell = _checked(command, watch)
-            print(render_start(command.spec, target.fn), end="", file=sys.stderr, flush=True)
-            for skipped in seeds.skipped:
-                print(skipped, file=sys.stderr, flush=True)
-            result = run(
-                target,
-                seeds.seeds,
-                limits=limits,
-                isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
-                tell=tell,
-            )
+            result = _run(command, watch)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
     except (SolverMissingError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
+    except NoSeedError as error:
+        print(no_seed_line(error), file=sys.stderr)
+        return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
-    _line(render_summary(result))
+    line(render_summary(result))
     return _exit_code(result)
 
 
-def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Seeds, Limits, Tell]:
+def _run(command: RunCommand, watch: ImportWatch | None) -> RunResult:
+    """The checks, the LLM's start, then the run, inside the block that substitutes the
+    target's package. The LLM's line follows the class line and the skipped seeds."""
+    checked = _checked(command, watch)
+    seeds = checked.seeds
+    helpers, said = Helpers(), ()
+    if checked.llm is not None:
+        helpers, started = start_llm(checked.llm, len(seeds.seeds))
+        said = (started,)
+    print(render_start(command.spec, checked.target.fn), end="", file=sys.stderr, flush=True)
+    for each in (*seeds.skipped, *said):
+        print(each, file=sys.stderr, flush=True)
+    isolation = Isolation.IN_PROCESS if command.in_process else Isolation.AUTO
+    return run(
+        checked.target,
+        seeds.seeds,
+        limits=checked.limits,
+        setup=Setup(isolation=isolation, helpers=helpers),
+        tell=checked.tell,
+    )
+
+
+@dataclass(frozen=True)
+class _Checked:
+    """What the checks gave: the target, its seeds, the limits, the Tell, and the LLM's
+    settings, None for a plain run."""
+
+    target: Target
+    seeds: Seeds
+    limits: Limits
+    tell: Tell
+    llm: LlmSettings | None
+
+
+def _checked(command: RunCommand, watch: ImportWatch | None) -> _Checked:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports.
 
-    The Tell prints each input and miss, and writes each ask's programs to the dump folder when
-    the command line names one."""
+    The Tell prints each input, miss and LLM note, and writes each ask's programs to the dump
+    folder when the command line names one."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
     file = None if command.seeds_text is None else read_seeds_file(command.seeds_text)
@@ -210,19 +226,26 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> tuple[Target, Se
         goal=parse_goal(command.goal_text),
     )
     folder = dump_folder(command.dump_text)
+    llm = parse_llm(command.llm_text, command.llm_model_text)
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
-    seeds = _seeds(target, seed, file)
+    seeds = _seeds(target, seed, file, llm is not None and SEEDS_TOOL in llm.tools)
     locate()
-    report = _Labeled(seeds.labels).report
-    return target, seeds, limits, Tell(report=report, missed=_missed, asked=asked)
+    labeled = _Labeled(seeds.labels)
+    tell = Tell(report=labeled.report, missed=_missed, asked=asked, noted=labeled.note)
+    return _Checked(target, seeds, limits, tell, llm)
 
 
-def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | None) -> Seeds:
-    """The seed checked, or every line of the seeds file checked and its repeats left out."""
+def _seeds(
+    target: Target, seed: Mapping[str, object] | None, file: SeedsFile | None, asking: bool
+) -> Seeds:
+    """The seed checked, or every line of the seeds file checked and its repeats left out. With
+    neither, no seeds when ``asking`` the LLM for them, and a usage error otherwise."""
     if file is not None:
         kept, skipped = distinct(checked_seeds(target, file))
         return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
+    if seed is None and asking:
+        return Seeds(())
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed(target, seed)
@@ -230,15 +253,28 @@ def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | 
 
 
 class _Labeled:
-    """Hands each seed's ``FILE:N`` to its trace, in the order the seeds run."""
+    """Hands each seed's ``FILE:N`` to its trace, and each LLM seed its place in the reply, in
+    the order the seeds run. Prints each LLM note as it comes."""
 
     def __init__(self, labels: Sequence[str]) -> None:
         self.waiting = iter(labels)
+        self.llm: Iterator[str] = iter(())
 
     def report(self, record: InputRecord, coverage: Coverage) -> None:
         # a seed given inline has no label
-        label = next(self.waiting, None) if record.source is Source.SEED else None
+        label = None
+        if record.source is Source.SEED:
+            label = next(self.waiting, None)
+        elif record.source is Source.LLM_SEED:
+            label = next(self.llm, None)
         _report(record, coverage, label)
+
+    def note(self, note: Note) -> None:
+        if isinstance(note, SeedsKept):
+            self.llm = iter(str(number) for number in note.numbers)
+        said = note_line(note)
+        if said is not None:
+            print(said, file=sys.stderr, flush=True)
 
 
 class _Dump:
@@ -270,49 +306,6 @@ class _Dump:
             )
 
 
-def _sweep(command: SweepCommand) -> int:
-    """Sweep the package: each row on stdout as it is known, with its stderr line, then the
-    closing lines and the summary."""
-    check_package(command.package)
-    limits = _sweep_limits(command)
-    mode = Mode.LIST if command.list_only else Mode.RUN
-    result = sweep(command.package, limits=limits, mode=mode, tell=SweepTell(_starting, _row))
-    print(closing(result), end="", file=sys.stderr, flush=True)
-    _line(summary_line(result))
-    return 0
-
-
-def _sweep_limits(command: SweepCommand) -> SweepLimits:
-    """The limits the command line gave, each by ``pyct run``'s rule, or the sweep's defaults."""
-    defaults = SweepLimits()
-    budget = parse_budget(command.budget_text, defaults.budget).seconds
-    plateau = parse_plateau(command.plateau_text).inputs
-    total = parse_total_budget(command.total_budget_text)
-    solver_timeout = command.solver_timeout_text
-    return SweepLimits(
-        budget=budget,
-        plateau=defaults.plateau if plateau is None else plateau,
-        solver_timeout=(
-            defaults.solver_timeout
-            if solver_timeout is None
-            else parse_solver_timeout(solver_timeout).seconds
-        ),
-        goal=parse_goal(command.goal_text),
-        total_budget=total,
-    )
-
-
-def _starting(row: Row, number: int, count: int) -> None:
-    print(running(row, number, count), file=sys.stderr, flush=True)
-
-
-def _row(row: Row) -> None:
-    _line(row_line(row))
-    said = told(row)
-    if said is not None:
-        print(said, file=sys.stderr, flush=True)
-
-
 def _report(record: InputRecord, coverage: Coverage, label: str | None = None) -> None:
     """The trace a person reads first, then the one line tools read. ``label`` names where a
     seed came from in its trace.
@@ -329,14 +322,7 @@ def _report(record: InputRecord, coverage: Coverage, label: str | None = None) -
         known: dict[int, str | None] = {}
         printed = printed_forks(record.forks, lambda part: access_name(part, known) in names)
     print(render_trace(record, coverage, printed, label), end="", file=sys.stderr, flush=True)
-    _line(render(record, coverage, printed))
-
-
-def _line(text: str) -> None:
-    """One stdout line: the text and its end go out in one write, so a Ctrl-C between two
-    writes cannot leave the line without its end."""
-    sys.stdout.write(f"{text}\n")
-    sys.stdout.flush()
+    line(render(record, coverage, printed))
 
 
 def _missed(miss: Miss) -> None:
@@ -359,17 +345,17 @@ def _is_a_bug(failure: Failure | None) -> bool:
 def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``, or a file of
     seeds through ``--seeds``: one of the three."""
-    parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
+    parser = Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
-    _sweep_parser(commands)
+    sweep_parser(commands)
     _run_parser(commands)
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
-        return _sweep_command(namespace)
+        return sweep_command(namespace)
     return _run_command(namespace)
 
 
-def _run_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
+def _run_parser(commands: argparse._SubParsersAction[Parser]) -> None:
     """The ``run`` command."""
     run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
@@ -386,6 +372,7 @@ def _run_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     run_parser.add_argument("--in-process", action="store_true")
     run_parser.add_argument("--goal", metavar="coverage|bugs")
     run_parser.add_argument("--dump-formulas", dest="dump", metavar="DIR")
+    add_llm_flags(run_parser)
 
 
 def _run_command(namespace: argparse.Namespace) -> RunCommand:
@@ -406,53 +393,9 @@ def _run_command(namespace: argparse.Namespace) -> RunCommand:
         goal_text=namespace.goal,
         dump_text=namespace.dump,
         seeds_text=namespace.seeds_file,
+        llm_text=namespace.llm,
+        llm_model_text=namespace.llm_model,
     )
-
-
-def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
-    """The ``sweep`` command, with the warning ``--help`` gives above its flags."""
-    parser = commands.add_parser(
-        "sweep",
-        usage=SWEEP_USAGE,
-        description=SWEEP_WARNING,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    parser.add_argument("package", metavar="PACKAGE", help="a module name, such as a.b")
-    parser.add_argument(
-        "--list", dest="list_only", action="store_true", help="list the entries; run none"
-    )
-    parser.add_argument(
-        "--budget",
-        metavar="SECONDS",
-        help=f"each entry's budget; {SWEEP_SECONDS:g} by default, {NO_DEADLINE} for no deadline",
-    )
-    parser.add_argument("--plateau", metavar="N", help="each entry's plateau; 5 by default")
-    parser.add_argument(
-        "--solver-timeout", metavar="SECONDS", help="each solve's limit; 10 by default"
-    )
-    parser.add_argument(
-        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; no bound by default"
-    )
-    parser.add_argument("--goal", metavar="coverage|bugs", help="each entry's goal; coverage")
-
-
-def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
-    return SweepCommand(
-        package=namespace.package,
-        list_only=namespace.list_only,
-        budget_text=namespace.budget,
-        plateau_text=namespace.plateau,
-        solver_timeout_text=namespace.solver_timeout,
-        total_budget_text=namespace.total_budget,
-        goal_text=namespace.goal,
-    )
-
-
-def check_package(package: str) -> None:
-    """Refuse a name with a part that is not a Python name, such as a path, and a file path given
-    for a module name, which ends in ``.py``, as ``pyct run`` refuses one."""
-    if not all(part.isidentifier() for part in package.split(".")) or package.endswith(".py"):
-        raise UsageError(f"PACKAGE must be a module name, got {package!r}")
 
 
 def check_spec(spec: str) -> None:
@@ -464,10 +407,3 @@ def check_spec(spec: str) -> None:
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
-
-
-class _Parser(argparse.ArgumentParser):
-    """An argparse parser that raises UsageError instead of exiting."""
-
-    def error(self, message: str) -> NoReturn:
-        raise UsageError(f"{message}\nusage: {self.usage}")

@@ -67,7 +67,12 @@ class Interception:
 
     def holds(self, name: str) -> bool:
         """Whether the module of this name is in scope."""
-        return name == self.package or name.startswith(f"{self.package}.")
+        return in_package(self.package, name)
+
+
+def in_package(package: str, name: str) -> bool:
+    """Whether the module named ``name`` is ``package`` or one under it."""
+    return name == package or name.startswith(f"{package}.")
 
 
 @contextlib.contextmanager

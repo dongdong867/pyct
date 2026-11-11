@@ -18,9 +18,13 @@ from pyct.results.record import (
     RunResult,
     SolverCounts,
     SolverSeconds,
+    Source,
     Stop,
 )
 from pyct.results.why_render import why_line
+
+# the head's words for a source whose line word is not plain English
+_SOURCE_WORDS = {Source.LLM_SEED: "llm seed"}
 
 
 def render_trace(
@@ -33,7 +37,7 @@ def render_trace(
 
     ``printed`` is each fork's expression as `printed_forks` cut it, for a
     caller that cut them once for the trace and the stdout line alike.
-    ``label`` follows the head's first word, as ``seed FILE:N``.
+    ``label`` follows the head's first words, as ``seed FILE:N`` or ``llm seed N``.
     """
     shown = printed_forks(record.forks) if printed is None else printed
     lines = _head(record, label)
@@ -158,7 +162,8 @@ def _stopped(stop: Stop) -> list[str]:
 
 def _head(record: InputRecord, label: str | None) -> list[str]:
     """Where the input came from, and, when the solver aimed it, whether it landed."""
-    source = record.source.value if label is None else f"{record.source.value} {label}"
+    word = _SOURCE_WORDS.get(record.source, record.source.value)
+    source = word if label is None else f"{word} {label}"
     lines = [f"{source} {json.dumps(record.args)}"]
     if record.aim is None:
         return lines

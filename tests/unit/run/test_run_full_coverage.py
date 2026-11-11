@@ -9,6 +9,7 @@ from pyct.results.coverage import Reach
 from pyct.results.record import Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 
 # `check(s)`: line 2 `if s.startswith("long"):` leads to line 3 and line 5; line 3 forks on its own
@@ -21,7 +22,7 @@ COUNT_X = "targets.stop.count_x::count"
 
 @pytest.mark.parametrize("isolation", [Isolation.IN_PROCESS, Isolation.AUTO])
 def test_run_stops_once_every_line_and_branch_is_covered(isolation: Isolation) -> None:
-    result = run(load_target(RAISES_LAST), {"s": ""}, isolation=isolation)
+    result = run(load_target(RAISES_LAST), {"s": ""}, setup=Setup(isolation=isolation))
 
     # the fork on line 3 is still open, and the run stops all the same
     assert result.stopped == Stop(StopKind.FULL)
@@ -56,7 +57,7 @@ def test_the_stop_on_full_coverage_comes_before_the_plateau() -> None:
 
 @pytest.mark.parametrize("isolation", [Isolation.IN_PROCESS, Isolation.AUTO])
 def test_each_record_carries_what_its_input_reached(isolation: Isolation) -> None:
-    result = run(load_target(RAISES_LAST), {"s": ""}, isolation=isolation)
+    result = run(load_target(RAISES_LAST), {"s": ""}, setup=Setup(isolation=isolation))
 
     seed, raised = result.records
     assert seed.reach.went == {(2, 5)}

@@ -18,6 +18,7 @@ from pyct.results.failure import FailureKind
 from pyct.results.record import Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from tests.acceptance.harness import REPO_ROOT, first_line, forks_of, input_lines, run_pyct
 from tests.acceptance.timed import measured
@@ -73,7 +74,10 @@ def test_an_endless_input_ends_as_its_own_and_the_run_stops_normally(
     # forked, as the command line forks it: the test's own timeout thread would move it to a
     # fresh interpreter
     result = run(
-        target, {"n": 0, "m": 0}, limits=Limits(budget=Budget(4)), isolation=Isolation.FORK
+        target,
+        {"n": 0, "m": 0},
+        limits=Limits(budget=Budget(4)),
+        setup=Setup(isolation=Isolation.FORK),
     )
 
     kinds = [None if record.failure is None else record.failure.kind for record in result.records]
@@ -98,7 +102,9 @@ def test_an_input_past_its_bound_that_outlasts_the_deadline_still_ends_as_its_ow
     target = load_target("targets.isolate.endless::outlast")
 
     # it catches the deadline's raise, so pyct kills its process and it writes no ending
-    result = run(target, {"n": 1}, limits=Limits(budget=Budget(2)), isolation=Isolation.FORK)
+    result = run(
+        target, {"n": 1}, limits=Limits(budget=Budget(2)), setup=Setup(isolation=Isolation.FORK)
+    )
 
     (seed,) = result.records
     assert seed.failure is not None

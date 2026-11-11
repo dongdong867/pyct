@@ -15,6 +15,7 @@ import pytest
 from pyct.results.failure import FailureKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.classes import shop
 from tests.acceptance.harness import (
@@ -150,7 +151,7 @@ def test_run_passes_a_value_under_self_as_given(monkeypatch: pytest.MonkeyPatch)
     let_pyct_run_in_process(monkeypatch)
     target = load_target(f"{SHOP}::Cart.total")
 
-    result = run(target, {"self": 5, "discount": 1}, isolation=Isolation.IN_PROCESS)
+    result = run(target, {"self": 5, "discount": 1}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     first = result.records[0]
     assert first.args == {"self": 5, "discount": 1}

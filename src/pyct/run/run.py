@@ -14,26 +14,29 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
-from pyct.config.budget import Budget
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
-from pyct.config.solver_timeout import DEFAULT_SECONDS
 from pyct.core.foundation.branch import ForkSite
+from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Progress, Scope, no_gain
 from pyct.results.record import (
     Environment,
     InputRecord,
     Miss,
     RunResult,
+    Source,
     Stop,
     StopKind,
 )
 from pyct.run.as_found import modules_as_found
+from pyct.run.bounds import Bounds
 from pyct.run.collector import collector_paused
 from pyct.run.defaults import with_defaults
-from pyct.run.isolation import Call, Inputs, Isolation
+from pyct.run.isolation import Call, Inputs
+from pyct.run.llm_seeds import ask_seeds
 from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of
+from pyct.run.setup import Setup
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver import walk_keys
@@ -64,34 +67,15 @@ _PLATFORM = _platform()
 
 _TELL_NOTHING = Tell()
 
+_PLAIN = Setup()
+
 
 @dataclass(frozen=True)
-class Bounds:
-    """When the loop must stop asking, and how long one solve may take.
+class Start:
+    """A seed copied for the loop, and where it came from: the user or the LLM."""
 
-    The budget becomes an instant here, because the clock starts when the call
-    does, not when the person typed the seconds. The solver timeout stays
-    seconds, because each solve starts its own clock. ``goal`` says whether
-    the loop stops once every line and branch is covered, and ``seeds`` how
-    many inputs the plateau leaves out before it counts. All in one value,
-    so the loop and each pass keep to five parameters.
-    """
-
-    until: float | None = None
-    plateau: int | None = None
-    solver_timeout: float = DEFAULT_SECONDS
-    goal: Goal = Goal.COVERAGE
-    seeds: int = 1
-
-    @classmethod
-    def of(cls, limits: Limits, seeds: int) -> Bounds:
-        return cls(
-            until=_deadline_for(limits.budget),
-            plateau=limits.plateau.inputs,
-            solver_timeout=limits.solver_timeout.seconds,
-            goal=limits.goal,
-            seeds=seeds,
-        )
+    copy: Seed
+    source: Source = Source.SEED
 
 
 @dataclass(frozen=True)
@@ -142,20 +126,23 @@ def run(
     seed: Mapping[str, object] | Sequence[Mapping[str, object]],
     *,
     limits: Limits = _NO_LIMITS,
-    isolation: Isolation = Isolation.AUTO,
+    setup: Setup = _PLAIN,
     tell: Tell = _TELL_NOTHING,
 ) -> RunResult:
     """Call the target with each seed, then with an input per fork left open.
 
     ``seed`` is one seed, or several, which run in their order before any
     solver input, each adding its path to the one tree the solver works from.
-    A run needs at least one. While a seed waits to run, the run does not stop
-    on an empty tree, and the plateau counts only the inputs after the last
-    seed; the budget and full coverage stop it as they would a solver input.
+    A run needs at least one, or ``setup.helpers.seeds``, which is asked once,
+    before the first input, for seeds that run after these (``ask_seeds``),
+    with the budget's clock paused while it answers. While a seed waits to run,
+    the run does not stop on an empty tree, and the plateau counts only the
+    inputs after the last seed; the budget and full coverage stop it as they
+    would a solver input.
 
-    ``isolation`` says where each input runs: by default in a process of its
-    own, and ``Isolation.IN_PROCESS`` runs every input in the caller's
-    process (see ``Isolation``). Each input goes to
+    ``setup.isolation`` says where each input runs: by default in a process
+    of its own, and ``Isolation.IN_PROCESS`` runs every input in the
+    caller's process (see ``Isolation``). Each input goes to
     ``tell.report`` as it finishes, with the coverage of that input alone, so
     an input that hangs never hides the lines of the ones before it. Each
     fork the solver could not flip goes to ``tell.missed`` the same way, so a
@@ -169,18 +156,17 @@ def run(
     the simple defaults it leaves out (``with_defaults``).
     """
     seeds = (seed,) if isinstance(seed, Mapping) else tuple(seed)
-    if not seeds:
+    if not seeds and setup.helpers.seeds is None:
         raise ValueError("a run needs at least one seed")
     scope = Scope.of_module(target.file)
     walk_keys.forget()
-    inputs = Inputs(target, isolation)
+    inputs = Inputs(target, setup.isolation)
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())
     bounds = Bounds.of(limits, len(seeds))
-    checks = argument_checks(target)
-    copies = tuple(Seed.of(with_defaults(target, each), checks, target.home) for each in seeds)
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
-    looped = _inputs(inputs, copies, bounds, told)
+    starts, bounds = _starts(target, seeds, setup, bounds, told)
+    looped = _inputs(inputs, starts, bounds, told)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -196,7 +182,33 @@ def run(
     )
 
 
-def _inputs(call: Call, copies: Sequence[Seed], bounds: Bounds, told: Told) -> Loop:
+def _starts(
+    target: Target,
+    seeds: Sequence[Mapping[str, object]],
+    setup: Setup,
+    bounds: Bounds,
+    told: Told,
+) -> tuple[tuple[Start, ...], Bounds]:
+    """Each seed copied, the user's then the LLM's, and the bounds with the LLM's wait paused
+    and its seeds counted. With no seeds helper, the user's seeds alone.
+
+    The ask comes once the deadline is set and before the first input. Its wait is added back
+    to the budget; building the request and checking the seeds count toward it.
+    """
+    provider = setup.helpers.seeds
+    asked = None if provider is None else ask_seeds(provider, target, seeds, bounds.goal, told)
+    checks = argument_checks(target)
+    starts = [Start(Seed.of(with_defaults(target, each), checks, target.home)) for each in seeds]
+    if asked is None:
+        return tuple(starts), bounds
+    for each in asked.seeds:
+        copy = Seed.of(with_defaults(target, each), checks, target.home)
+        starts.append(Start(copy, Source.LLM_SEED))
+    counted = dataclasses.replace(bounds, seeds=len(starts))
+    return tuple(starts), counted.paused(asked.waited)
+
+
+def _inputs(call: Call, copies: Sequence[Start], bounds: Bounds, told: Told) -> Loop:
     """The seeds and every input after them, what the solver missed, and why they stopped.
 
     A first seed whose process cannot start stops the run before any input.
@@ -208,10 +220,15 @@ def _inputs(call: Call, copies: Sequence[Seed], bounds: Bounds, told: Told) -> L
     """
     first = copies[0]
     try:
-        seeded = record_of(first.args, call(first.args, bounds.until))
+        seeded = _from(first, call(first.copy.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
     return _loop(call, copies, seeded, bounds, told)
+
+
+def _from(start: Start, executed: ExecutionResult) -> InputRecord:
+    """The record of a seed's input, labeled with where the seed came from."""
+    return dataclasses.replace(record_of(start.copy.args, executed), source=start.source)
 
 
 def _could_not_start(error: InputStartError) -> Stop:
@@ -236,7 +253,7 @@ def _environment(cvc5: str | None, isolated: bool) -> Environment:
 
 def _loop(
     call: Call,
-    copies: Sequence[Seed],
+    copies: Sequence[Start],
     seeded: InputRecord,
     bounds: Bounds,
     told: Told,
@@ -260,7 +277,7 @@ def _loop(
     records = [_took(seeded, told, tree, progress)]
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)
-    inputs = {0: copies[0]}
+    inputs = {0: copies[0].copy}
     waiting = deque(copies[1:])
     numbers = itertools.count(1)
     while True:
@@ -372,7 +389,7 @@ def _attempt(
 
 
 def _seed_attempt(
-    call: Call, waiting: deque[Seed], bounds: Bounds, progress: Progress
+    call: Call, waiting: deque[Start], bounds: Bounds, progress: Progress
 ) -> Attempt | None:
     """One pass for the next seed still waiting: the clock, the coverage and the plateau, then
     the seed. None when no seed waits.
@@ -384,17 +401,17 @@ def _seed_attempt(
     """
     if not waiting:
         return None
-    copy = waiting.popleft()
+    start = waiting.popleft()
     if _spent(_seconds_left(bounds.until)):
         return Attempt(stop=Stop(StopKind.BUDGET))
     stop = _covered_or_plateau(bounds, progress)
     if stop is not None:
         return Attempt(stop=stop)
     try:
-        record = record_of(copy.args, call(copy.args, bounds.until))
+        record = _from(start, call(start.copy.args, bounds.until))
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error))
-    return Attempt(ran=Ran(record, copy))
+    return Attempt(ran=Ran(record, start.copy))
 
 
 def _solved(wanted: Plan, origin: Seed, limit: float) -> tuple[Answer, float, Ask]:
@@ -435,11 +452,6 @@ def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
     is kept only while an answer may still start from it."""
     for path in [path for path in inputs if path < oldest]:
         del inputs[path]
-
-
-def _deadline_for(budget: Budget) -> float | None:
-    """The monotonic instant the call must end by. No seconds, no deadline."""
-    return None if budget.seconds is None else time.monotonic() + budget.seconds
 
 
 def _seconds_left(until: float | None) -> float | None:

@@ -14,6 +14,7 @@ from pyct.results.record import Source, StopKind
 from pyct.run import run as run_module
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from tests.nesting import nested_dict, refused_depth
 
@@ -31,7 +32,7 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
 
     # for bugs, past full coverage, so the run asks for every fork: the too short list too
     limits = Limits(goal=Goal.BUGS)
-    result = run(target, {"xs": xs}, limits=limits, isolation=isolation)
+    result = run(target, {"xs": xs}, limits=limits, setup=Setup(isolation=isolation))
 
     # the one input that fails is the one too short to read at 1
     failures = [record.failure for record in result.records if record.failure is not None]
@@ -48,7 +49,7 @@ def test_run_never_changes_the_callers_seed_under_a_float_key() -> None:
     seed: dict[str, object] = {"items": [0], "table": {1.5: [0]}}
     target = load_target("targets.nested.float_key::touch")
 
-    result = run(target, seed, isolation=Isolation.IN_PROCESS)
+    result = run(target, seed, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     # no input met the list an earlier one grew, and every line shows it as called
     assert all(record.failure is None for record in result.records)
@@ -62,7 +63,7 @@ def test_run_stops_cleanly_on_a_seed_too_deep_to_hand_to_a_fresh_interpreter() -
     seed = nested_dict(refused_depth(lambda depth: pickle.dumps(nested_dict(depth))))
     target = load_target("targets.nested.deep::check")
 
-    result = run(target, {"config": seed}, isolation=Isolation.FRESH)
+    result = run(target, {"config": seed}, setup=Setup(isolation=Isolation.FRESH))
 
     assert result.records == ()
     assert result.stopped.kind is StopKind.COULD_NOT_START
@@ -86,7 +87,7 @@ def test_run_walks_the_seed_once_and_once_more_per_solver_input(
     target = load_target("targets.nested.two_items::classify")
 
     # each input's own walk, bind's, happens in the input's process and is not counted here
-    result = run(target, {"items": [1, 2]}, isolation=Isolation.FORK)
+    result = run(target, {"items": [1, 2]}, setup=Setup(isolation=Isolation.FORK))
 
     solved = [record for record in result.records if record.source is Source.SOLVER]
     assert len(solved) >= 2
@@ -101,7 +102,7 @@ def test_run_hands_each_input_arguments_of_its_own(isolation: Isolation) -> None
     x = [0]
     target = load_target("targets.nested.grows_through_tuple::grow")
 
-    result = run(target, {"a": x, "b": (x,)}, isolation=isolation)
+    result = run(target, {"a": x, "b": (x,)}, setup=Setup(isolation=isolation))
 
     assert all(record.failure is None for record in result.records)
     assert result.stopped.reason == "no fork to flip"
@@ -118,7 +119,7 @@ def test_run_hands_each_input_arguments_of_its_own(isolation: Isolation) -> None
 def test_run_passes_a_positional_only_parameter_by_position(isolation: Isolation) -> None:
     target = load_target("targets.nested.positional_only::check")
 
-    result = run(target, {"value": "x"}, isolation=isolation)
+    result = run(target, {"value": "x"}, setup=Setup(isolation=isolation))
 
     assert [record.failure for record in result.records] == [None, None]
     assert [record.args["value"] for record in result.records] == ["x", "abc"]
@@ -138,7 +139,7 @@ def test_run_copies_the_seed_before_the_seed_input_can_change_it() -> None:
     x = [0]
     target = load_target("targets.nested.holder::grow")
 
-    result = run(target, {"a": x, "h": Holder(x)}, isolation=Isolation.IN_PROCESS)
+    result = run(target, {"a": x, "h": Holder(x)}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     assert all(record.failure is None for record in result.records)
     starts = [record.args["a"] for record in result.records]
@@ -158,7 +159,7 @@ def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
     monkeypatch.setattr(run_module, "_attempt", watched)
     target = load_target("targets.nested.two_items::classify")
 
-    run(target, {"items": [1, 2]}, isolation=Isolation.IN_PROCESS)
+    run(target, {"items": [1, 2]}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     assert len(held) > 2
     # an input kept is one a later pick may still extend; none is kept once every fork is spent
@@ -169,7 +170,7 @@ def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
 def test_a_float_inside_an_argument_forks_and_flips(isolation: Isolation) -> None:
     target = load_target("targets.floats.inside_a_dict::check")
 
-    result = run(target, {"config": {"ratio": 0.25, "count": 1}}, isolation=isolation)
+    result = run(target, {"config": {"ratio": 0.25, "count": 1}}, setup=Setup(isolation=isolation))
 
     seeded, *solved = result.records
     # each key is looked up first, and the float's compare is a fork of its own
@@ -198,7 +199,7 @@ def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None
         target,
         {"items": [5, 6, 7], "x": 1},
         limits=Limits(budget=Budget(seconds=20)),
-        isolation=Isolation.IN_PROCESS,
+        setup=Setup(isolation=Isolation.IN_PROCESS),
     )
 
     # the fork on items[2] == 99, after the one on its length

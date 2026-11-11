@@ -15,6 +15,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 
 
@@ -22,7 +23,10 @@ def main(spec: str) -> None:
     target = load_target(spec)
     started = time.monotonic()
     result = run(
-        target, {"x": 0}, limits=Limits(budget=Budget(0.1)), isolation=Isolation.IN_PROCESS
+        target,
+        {"x": 0},
+        limits=Limits(budget=Budget(0.1)),
+        setup=Setup(isolation=Isolation.IN_PROCESS),
     )
     failure = result.records[0].failure
     print(json.dumps({"took": time.monotonic() - started, "kind": failure and failure.kind}))

@@ -13,6 +13,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 
 import pytest
@@ -35,10 +36,12 @@ def run_pyct(
     cwd: Path = REPO_ROOT,
     unset: tuple[str, ...] = (),
     timeout: float = 30,
+    env: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Spawn ``pyct run`` with the given argv from ``cwd``. ``path`` replaces the child's ``PATH``.
 
-    ``unset`` names more variables the child does not inherit.
+    ``unset`` names more variables the child does not inherit, and ``env`` gives the child more
+    variables, or other values, after those are left out.
 
     ``timeout`` is the seconds the child gets before the test fails, for a run whose own budget
     is longer than the usual 30.
@@ -58,13 +61,13 @@ def run_pyct(
         )
     seconds_given = budget not in (None, NO_DEADLINE)
     left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if seconds_given else ())}
-    env = {k: v for k, v in os.environ.items() if k not in left_out}
+    child = {k: v for k, v in os.environ.items() if k not in left_out} | dict(env or {})
     if path is not None:
-        env["PATH"] = path
+        child["PATH"] = path
     result = subprocess.run(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
         cwd=cwd,
-        env=env,
+        env=child,
         capture_output=True,
         text=True,
         check=False,

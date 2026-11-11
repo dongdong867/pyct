@@ -6,6 +6,7 @@ import pytest
 from pyct.results.failure import FailureKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.classes.orders import Item
 
@@ -29,7 +30,9 @@ NAME_IT = 'name the class to build with "__class__"'
 def test_an_object_a_hint_cannot_build_fails_its_input_unrun(
     function: str, args: dict[str, object], detail: str
 ) -> None:
-    result = run(load_target(f"{HINTED}::{function}"), args, isolation=Isolation.IN_PROCESS)
+    result = run(
+        load_target(f"{HINTED}::{function}"), args, setup=Setup(isolation=Isolation.IN_PROCESS)
+    )
 
     (record,) = result.records
     assert record.failure is not None
@@ -49,7 +52,7 @@ def test_a_quoted_class_in_a_union_builds_at_the_top_and_inside(spec: str, name:
     seed = {name: {"value": 1, "next": {"value": 2}}}
     fork = [">", ["[]", ["[]", name, "'next'"], "'value'"], 5]
 
-    result = run(load_target(spec), seed, isolation=Isolation.IN_PROCESS)
+    result = run(load_target(spec), seed, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     assert all(record.failure is None for record in result.records), result.records
     assert fork in [branch.expression for branch in result.records[0].forks]
@@ -64,7 +67,9 @@ def test_instances_a_caller_hands_in_a_list_of_a_class_are_followed() -> None:
     caller = Item("a", 1)
 
     result = run(
-        load_target(f"{HINTED}::total"), {"items": [caller]}, isolation=Isolation.IN_PROCESS
+        load_target(f"{HINTED}::total"),
+        {"items": [caller]},
+        setup=Setup(isolation=Isolation.IN_PROCESS),
     )
 
     assert all(record.failure is None for record in result.records), result.records
@@ -74,7 +79,11 @@ def test_instances_a_caller_hands_in_a_list_of_a_class_are_followed() -> None:
 
 
 def test_a_library_class_hint_passes_the_json_list() -> None:
-    result = run(load_target(f"{HINTED}::queued"), {"q": [1, 2, 3]}, isolation=Isolation.IN_PROCESS)
+    result = run(
+        load_target(f"{HINTED}::queued"),
+        {"q": [1, 2, 3]},
+        setup=Setup(isolation=Isolation.IN_PROCESS),
+    )
 
     assert all(record.failure is None for record in result.records), result.records
     assert any(record.args["q"][0] > 5 for record in result.records[1:])  # pyrefly: ignore

@@ -5,6 +5,7 @@ import pytest
 
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 
 
@@ -12,7 +13,7 @@ from pyct.run.target import load_target
 def test_a_tracked_bool_key_leaves_no_answer_off_the_plan(isolation: Isolation) -> None:
     target = load_target("targets.dicts.int_equal_keys::tracked_bool")
 
-    result = run(target, {"b": False, "d": {}}, isolation=isolation)
+    result = run(target, {"b": False, "d": {}}, setup=Setup(isolation=isolation))
 
     assert [record.mismatch_at for record in result.records] == [None] * len(result.records)
     assert [entry.name for entry in result.records[0].downgrades] == ["__contains__"]
