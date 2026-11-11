@@ -137,6 +137,11 @@ class Progress:
             self._went.setdefault(line, set()).add(way)
         return {self.scope.file: first}
 
+    def missed(self) -> bool:
+        """Whether a line of the scope is still missed: one that neither an input nor the
+        import ran."""
+        return not self.scope.lines <= self._lines | self._imported
+
     def full(self) -> bool:
         """Whether every line and branch is covered: every line of the functions the inputs
         entered is covered, the lines the import ran included, and every branch of them an

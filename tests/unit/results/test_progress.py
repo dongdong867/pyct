@@ -70,3 +70,13 @@ def test_keeps_each_input_s_lines_within_the_scope_in_run_order() -> None:
     progress.add(frozenset({3}), Reach())
 
     assert progress.covered == [frozenset({2}), frozenset({3})]
+
+
+def test_a_line_is_missed_until_an_input_or_the_import_ran_it() -> None:
+    progress = Progress(SCOPE, IMPORTED)
+
+    progress.add(*entered_f({2, 3, 4, 5, 7, 8}, {(3, 4), (3, 5)}))
+    assert progress.missed()
+    progress.add(frozenset({9}), Reach())
+
+    assert not progress.missed()

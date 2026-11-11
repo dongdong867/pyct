@@ -174,7 +174,7 @@ def test_the_tries_look_at_the_clock_as_they_read_each_input_s_facts(tmp_path: P
     )
 
     with pytest.raises(OutOfTimeError):
-        record._tries(result, Pace(lambda _ahead: True))
+        record._tries(result.records, result.misses, result.untried, Pace(lambda _ahead: True))
 
 
 def test_tries_the_stop_cuts_short_leave_every_line_not_worked_out(
