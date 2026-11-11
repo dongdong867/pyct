@@ -56,11 +56,12 @@ def loop_of(
     tools: list[Tool],
     limits: Limits = NO_LIMITS,
     call: Callable[..., object] | None = None,
+    seeds: int = 1,
 ) -> Loop:
     target = load_target(spec)
     told = Told(scope=Scope.of_module(target.file), tell=Tell(), imported=target.import_lines)
     inputs = call or Inputs(target, Isolation.IN_PROCESS)
-    return Loop(inputs, Bounds.of(limits, 1), told, Stuck(tools))  # pyrefly: ignore[bad-argument-type]
+    return Loop(inputs, Bounds.of(limits, seeds), told, Stuck(tools))  # pyrefly: ignore[bad-argument-type]
 
 
 def go(loop: Loop, *seeds: Mapping[str, object]) -> Looped:
@@ -166,14 +167,13 @@ def test_a_run_with_no_tool_is_never_stuck() -> None:
 
 def test_the_inputs_in_a_row_count_from_after_the_last_seed() -> None:
     summaries = Tool(Kind.SUMMARIES)
-    loop = loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=10)))
     seeds = [{"s": ""}] * 6
-    loop.bounds = Bounds.of(Limits(plateau=Plateau(inputs=10)), len(seeds))
+    loop = loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=10)), seeds=len(seeds))
 
     go(loop, *seeds)
 
-    # five seeds in a row gain nothing, yet only the inputs after them count
-    assert summaries.moments[0][1] >= len(seeds) + 5
+    # the six seeds gain nothing after the first, yet only the inputs after them count
+    assert [moment[:2] for moment in summaries.moments] == [(1, 13), (2, 18)]
 
 
 def test_the_causes_part_way_count_an_open_fork_as_not_tried() -> None:
