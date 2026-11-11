@@ -243,11 +243,11 @@ def test_an_ask_with_no_reply_is_said_and_the_run_goes_on_from_the_user_s_seeds(
 
 
 def test_a_reply_the_tool_could_not_read_is_said_and_the_run_goes_on() -> None:
-    provider = FakeSeeds(SeedReply((), COST, ignored="no JSON array in the reply"))
+    provider = FakeSeeds(SeedReply((), COST, ignored="no JSON array pyct can read in the reply"))
 
     records, heard = run_f(provider)
 
-    assert heard.notes == [ReplyIgnored("seeds", "no JSON array in the reply")]
+    assert heard.notes == [ReplyIgnored("seeds", "no JSON array pyct can read in the reply")]
     assert records[0].args == {"x": 0}
 
 
@@ -296,7 +296,10 @@ def test_a_run_with_no_seed_of_its_own_and_none_that_pass_is_refused() -> None:
     ("answer", "reason"),
     [
         (Unanswered(Why.TIMED_OUT, "no reply in 30 s", COST), "no reply in 30 s"),
-        (SeedReply((), COST, ignored="no JSON array in the reply"), "no JSON array in the reply"),
+        (
+            SeedReply((), COST, ignored="no JSON array pyct can read in the reply"),
+            "no JSON array pyct can read in the reply",
+        ),
         (SeedReply((), COST), "the reply held no seed"),
     ],
 )

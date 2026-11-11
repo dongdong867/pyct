@@ -23,7 +23,7 @@ SEED_FORM = (
 )
 
 # the reason a reply with no seeds pyct can read is ignored
-NO_ARRAY = "no JSON array in the reply"
+NO_ARRAY = "no JSON array pyct can read in the reply"
 
 
 class LlmSeeds:

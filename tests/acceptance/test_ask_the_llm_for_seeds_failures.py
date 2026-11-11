@@ -21,6 +21,7 @@ from tests.acceptance.llm_stub import (
     llm_env,
     llm_run,
     sources,
+    write_recording,
 )
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
@@ -100,7 +101,27 @@ def test_a_reply_with_no_json_array_is_ignored(stub: Stub, tmp_path: Path) -> No
     result = llm_run(stub.port, tmp_path, '{"x": 0}', "--llm", "seeds")
 
     assert result.returncode == 0
-    assert "llm: seeds reply ignored: no JSON array in the reply" in result.stderr.splitlines()
+    assert (
+        "llm: seeds reply ignored: no JSON array pyct can read in the reply"
+        in result.stderr.splitlines()
+    )
+    assert sources(result.stdout)[:2] == ["seed", "solver"]
+
+
+# llm-failure-never-stops-a-run-wrong-form
+def test_a_reply_with_a_number_too_long_to_read_is_ignored(tmp_path: Path) -> None:
+    reply = '[{"x": ' + "9" * 5000 + "}]"
+    recording = write_recording(tmp_path / "long.jsonl", [{"reply": reply}])
+
+    result = llm_run(
+        closed_port(), tmp_path, '{"x": 0}', "--llm", "seeds", "--llm-replay", str(recording)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "llm: seeds reply ignored: no JSON array pyct can read in the reply"
+        in result.stderr.splitlines()
+    )
     assert sources(result.stdout)[:2] == ["seed", "solver"]
 
 

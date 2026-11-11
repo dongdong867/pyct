@@ -2,10 +2,11 @@
 
 from pyct.cli.llm import Started, counts_line
 from pyct.config.llm import Model
-from pyct.llm.build import Built
+from pyct.llm.build import Built, Unusable
 from pyct.llm.connection import Connection
+from pyct.llm.providers import PROVIDERS
 from pyct.llm.tool import Tool
-from pyct.results.llm_asks import AskCost, LlmUse, Reply, Unanswered
+from pyct.results.llm_asks import AskCost, LlmUse, Reply, Unanswered, Why
 from pyct.run.helpers import Helpers
 
 MODEL = Model("openai", "gpt-6-luna")
@@ -38,7 +39,9 @@ def test_a_connection_with_no_recording_closes_on_the_counts_alone() -> None:
 
 
 def test_an_llm_that_could_not_be_used_closes_on_no_line() -> None:
-    started = Started(Helpers(), "llm: no key", Built(Helpers(), MODEL), ("seeds",))
+    unusable = Unusable(Why.NO_KEY, PROVIDERS["openai"])
+    built = Built(Helpers(), MODEL, unusable=unusable)
+    started = Started(Helpers(), "llm: no key", built, ("seeds",))
 
     assert started.closing() == ()
     assert started.use() == LlmUse("openai:gpt-6-luna", ("seeds",))

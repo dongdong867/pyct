@@ -63,7 +63,7 @@ def test_a_seeds_ask_asks_about_the_target_s_spec_with_the_request_text() -> Non
 def test_a_reply_with_no_array_is_ignored() -> None:
     reply = LlmSeeds(Connection(Answering(Reply("x should be 1234", COST)))).seeds(REQUEST)
 
-    assert reply == SeedReply((), HANDED, ignored="no JSON array in the reply")
+    assert reply == SeedReply((), HANDED, ignored="no JSON array pyct can read in the reply")
 
 
 def test_an_ask_with_no_reply_is_handed_back() -> None:
