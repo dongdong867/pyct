@@ -30,6 +30,7 @@ from pathlib import Path
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
 from pyct.config.llm import REWRITES_TOOL
+from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition, WhyEntry
 from pyct.results.llm_asks import Why
@@ -49,7 +50,7 @@ from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
-from pyct.solver.answer import Sat, Timeout, Unknown
+from pyct.solver.answer import Answer, Sat, Timeout, Unknown
 from pyct.solver.given import Given
 
 # why a rewrite does not run beside a second thread of pyct's process
@@ -87,24 +88,22 @@ class Rewrites(Asker):
 
     def solved(self, wanted: Plan, origin: Seed, limit: float) -> Solved:
         """The ask with each kept rewrite the plan holds in its condition's place first; then,
-        when it gives no input, the plan's own, within what is left of ``limit``. The first
-        plan at a condition whose own ask ended in ``timeout`` or ``unknown`` is kept."""
+        when it gives no input, the plan's own, each within what is left of ``limit``. The
+        first plan at a condition whose ask ended in ``timeout`` or ``unknown``, or had no time
+        left, is kept."""
         started = time.monotonic()
         self._used = ()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
         programs: tuple[Given, ...] = ()
-        if reused is not None:
-            rewritten = solver_answer(wanted, origin, limit, reused.asked)
+        if reused is not None and _left(started, limit) > 0:
+            rewritten = solver_answer(wanted, origin, _left(started, limit), reused.asked)
             if isinstance(rewritten.answer, Sat):
                 self._used = reused.conditions
                 return dataclasses.replace(rewritten, source=Source.REWRITE)
             programs = rewritten.asked.programs
-        rest = limit - (time.monotonic() - started)
-        if rest > 0:
-            solved = super().solved(wanted, origin, rest)
-            self._keep(wanted, origin, solved)
-        else:
-            solved = _out_of_time(wanted)
+        rest = _left(started, limit)
+        solved = super().solved(wanted, origin, rest) if rest > 0 else _out_of_time(wanted)
+        self._keep(wanted, origin, solved)
         asked = dataclasses.replace(solved.asked, programs=(*programs, *solved.asked.programs))
         return Solved(solved.answer, time.monotonic() - started, asked)
 
@@ -161,7 +160,18 @@ class _Around:
     def going(self) -> bool:
         return _going(self.run)
 
-    def limit(self) -> float:
+    def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
+        """The solver's answer within the seconds one ask gets, its programs handed out as the
+        run's asks are; None when no time is left."""
+        limit = self._limit()
+        if limit <= 0:
+            return None
+        solved = solver_answer(plan, origin, limit, asked)
+        self.run.hand_out(solved.asked)
+        return solved.answer
+
+    def _limit(self) -> float:
+        """The solver timeout, or the budget's rest when that is less."""
         bounds = self.run.bounds
         if bounds.until is None:
             return bounds.solver_timeout
@@ -176,7 +186,7 @@ class _Around:
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
     ) -> ExecutionResult | str:
-        return _Child(time.monotonic() + self.limit()).run(code, args)
+        return _Child(time.monotonic() + self._limit()).run(code, args)
 
     def run_input(self, seed: Seed, plan: Plan) -> InputRecord | Stop:
         return self.run.run_input(seed, Source.REWRITE, plan)
@@ -200,6 +210,11 @@ class _Child:
 def _out_of_time(wanted: Plan) -> Solved:
     """The answer for a plan whose limit a kept rewrite's ask used up: no time left."""
     return Solved(Timeout(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
+
+
+def _left(started: float, limit: float) -> float:
+    """What is left of ``limit`` seconds counted from ``started``."""
+    return limit - (time.monotonic() - started)
 
 
 def _going(run: Running) -> bool:

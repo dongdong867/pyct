@@ -40,8 +40,12 @@ FORM = (
     " narrower than the condition. It may read the parameters and their items, written x[i]"
     ' or d["k"]; literals; comparisons; and, or, not; arithmetic; len, int, float, str, bool,'
     " abs, min, max, ord and chr; math.<function>; and the methods of the values whose names"
-    " do not start with _. It reads no other name, and no self."
+    " do not start with _, other than format and format_map. It reads no other name, and no"
+    " self, and passes no key function. Each operand of and, or and not runs on every input,"
+    " so an operand may not raise where an earlier one would have guarded it."
 )
+# the methods whose text reads a value's attributes
+_READS_FIELDS = frozenset({"format", "format_map"})
 # why a reply gives no rewrite
 NO_EXPRESSION = "the reply holds no expression"
 
@@ -50,7 +54,7 @@ _FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.DOTALL)
 _REFUSALS = (SyntaxError, ValueError, RecursionError, MemoryError)
 _CONSTANTS = (int, float, str, bool, type(None))
 _PLAIN = (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Tuple, ast.List, ast.Slice)
-_USED: dict[type[ast.AST], str] = {
+_REFUSED_AS: dict[type[ast.AST], str] = {
     ast.Lambda: "a lambda",
     ast.IfExp: "an if expression",
     ast.NamedExpr: "an assignment",
@@ -64,9 +68,10 @@ _USED: dict[type[ast.AST], str] = {
 
 def expression_in(text: str, parameters: Sequence[str]) -> str | None:
     """The one expression the reply holds: the text of its first code fence, or the whole reply,
-    stripped. None when that is not one Python expression, or names none of ``parameters``,
-    as prose such as ``this is not code`` that parses as Python but is not about the
-    function."""
+    stripped, as Python writes it on one line when it spans lines or holds a character a
+    terminal reads. None when that is not one Python expression, or names none of
+    ``parameters``, as prose such as ``this is not code`` that parses as Python but is not
+    about the function."""
     fenced = _FENCE.search(text)
     body = (fenced.group(1) if fenced else text).strip()
     if not body:
@@ -76,7 +81,9 @@ def expression_in(text: str, parameters: Sequence[str]) -> str | None:
     except _REFUSALS:
         return None
     names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-    return body if names & set(parameters) else None
+    if not names & set(parameters):
+        return None
+    return body if body.isprintable() else ast.unparse(tree)
 
 
 def rewrite_code(expression: str, parameters: Sequence[str], file: str) -> types.CodeType | Refused:
@@ -146,25 +153,28 @@ def _parts(node: ast.AST, parameters: frozenset[str]) -> list[ast.AST] | str:
         return [part for part in ast.iter_child_nodes(node) if isinstance(part, ast.expr)]
     if isinstance(node, ast.Attribute):
         return f"a rewrite may not read the attribute {node.attr}"
-    return f"a rewrite may not use {_USED.get(type(node), type(node).__name__)}"
+    return f"a rewrite may not use {_REFUSED_AS.get(type(node), type(node).__name__)}"
 
 
 def _call_parts(call: ast.Call, parameters: frozenset[str]) -> list[ast.AST] | str:
     """A call's arguments, and a method's receiver, or why the call is refused: a function not
-    in ``CALLS``, a name that starts with ``_``, a ``math`` name it has no function for, or an
-    argument unpacked with ``*`` or ``**``."""
+    in ``CALLS``, a method that starts with ``_`` or reads fields from its text, a ``math``
+    name it has no function for, an argument unpacked with ``*`` or ``**``, or a key
+    function."""
     parts: list[ast.AST] = [*call.args, *(keyword.value for keyword in call.keywords)]
     if any(isinstance(arg, ast.Starred) for arg in call.args) or any(
         keyword.arg is None for keyword in call.keywords
     ):
         return "a rewrite may not unpack arguments"
+    if any(keyword.arg == "key" for keyword in call.keywords):
+        return "a rewrite may not pass a key function"
     func = call.func
     if isinstance(func, ast.Name):
         allowed = func.id in CALLS and func.id not in parameters
         return parts if allowed else f"a rewrite may not call {func.id}"
     if not isinstance(func, ast.Attribute):
         return "a rewrite calls only a function by its name or a method"
-    if func.attr.startswith("_"):
+    if func.attr.startswith("_") or func.attr in _READS_FIELDS:
         return f"a rewrite may not call {func.attr}"
     receiver = func.value
     if isinstance(receiver, ast.Name) and receiver.id == "math" and "math" not in parameters:

@@ -120,3 +120,25 @@ def test_a_recorded_rewrites_run_replays_with_no_model(stub: Stub, tmp_path: Pat
     llm = summary_line(replayed.stdout)["llm"]
     assert isinstance(llm, dict)
     assert (llm["model"], llm["asks"], llm["replayed"]) == ("openai:gpt-6-luna", 0, 1)
+
+
+def test_a_rewrite_s_ask_is_dumped_beside_the_run_s_own(stub: Stub, tmp_path: Path) -> None:
+    stub.reply = 's == "1e-30"'
+    dumped = tmp_path / "asks"
+
+    result = llm_run(
+        stub.port,
+        tmp_path,
+        SEED,
+        "--llm",
+        "rewrites",
+        "--dump-formulas",
+        str(dumped),
+        *SHORT,
+        target=TEXT,
+    )
+
+    assert result.returncode == 0, result.stderr
+    programs = [path.read_text() for path in sorted(dumped.iterdir())]
+    # the run's own ask reads float(s); the rewrite's compares s to the string itself
+    assert any('"1e-30"' in program for program in programs)

@@ -4,6 +4,7 @@ ends every later ask, and a kept rewrite whose ask gives no input leaves the pla
 import json
 import sys
 import time
+import types
 
 import pytest
 
@@ -19,7 +20,7 @@ from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
 from pyct.run.loop import Solved
 from pyct.run.process import InputStartError
-from pyct.run.rewrites import Rewrites, _Child, _module_of
+from pyct.run.rewrites import Rewrites, _Around, _Child, _module_of
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
@@ -122,7 +123,7 @@ def test_a_kept_rewrite_whose_ask_gives_no_input_leaves_the_plan_s_own(
     assert held[0] is not None and held[1] is None
 
 
-def test_a_kept_rewrite_whose_ask_used_the_limit_leaves_none_for_the_plan_s_own(
+def test_a_kept_rewrite_whose_ask_used_the_limit_keeps_the_plan_for_a_moment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(model_runs, "running", lambda: 1)
@@ -139,8 +140,36 @@ def test_a_kept_rewrite_whose_ask_used_the_limit_leaves_none_for_the_plan_s_own(
     solved = tool.solved(wanted, Seed.of({"s": "0", "n": 0}), 0.2)
 
     assert isinstance(solved.answer, Timeout)
-    # the plan's own ask never ran, so no plan is kept as one the solver gave up on
-    assert tool.given_up == {}
+    # the pick ran out of time at the condition, so rewrites may ask about it at a moment
+    assert list(tool.given_up) == [Condition(site, True)]
+
+
+def test_the_ask_with_a_kept_rewrite_gets_what_its_child_left_of_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_runs, "running", lambda: 1)
+    tool, site = kept_at_line_2()
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, site),))
+    assert wanted is not None
+    child = _Child.run
+    limits: list[float] = []
+
+    def slow_child(self: _Child, *args: object) -> object:
+        time.sleep(0.3)
+        return child(self, *args)  # pyrefly: ignore[bad-argument-type]
+
+    def answered(wanted: object, origin: object, limit: float, asked: object = None) -> Solved:
+        limits.append(limit)
+        return Solved(Unsat(), 0.0, Ask(0, wanted.aim, 0, ()))  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(_Child, "run", slow_child)
+    monkeypatch.setattr(rewrites_module, "solver_answer", answered)
+    monkeypatch.setattr(loop_module, "solver_answer", answered)
+
+    tool.solved(wanted, Seed.of({"s": "0", "n": 0}), 1.0)
+
+    assert limits[0] <= 0.7
+    assert limits[1] <= limits[0]
 
 
 def test_an_entry_with_no_plan_kept_for_its_condition_is_skipped() -> None:
@@ -150,3 +179,16 @@ def test_an_entry_with_no_plan_kept_for_its_condition_is_skipped() -> None:
     handled = tool.take((entry,), Moment(1, (entry,), run=None))  # pyrefly: ignore[bad-argument-type]
 
     assert handled == Handled((Outcome.SKIPPED,), asked=False)
+
+
+def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
+    spent = types.SimpleNamespace(
+        bounds=types.SimpleNamespace(until=time.monotonic() - 1, solver_timeout=5.0)
+    )
+    file = load_target(TEXT).file
+    around = _Around(spent, Told(Scope.of_module(file), Tell()))  # pyrefly: ignore[bad-argument-type]
+    site = Site(file, 2, 7)
+    wanted = plan((Branch([">", "n", 0], False, site),))
+    assert wanted is not None
+
+    assert around.ask(wanted.asked, wanted, Seed.of({"n": 0})) is None

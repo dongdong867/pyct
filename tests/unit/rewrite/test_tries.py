@@ -5,11 +5,9 @@ import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
-import pytest
-
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
-from pyct.core.foundation.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition
 from pyct.results.failure import Failure, FailureKind
@@ -23,7 +21,7 @@ from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteS
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.rewrite.request import About
 from pyct.rewrite.tries import Asking, Tried
-from pyct.solver.answer import Error, Sat
+from pyct.solver.answer import Answer, Error, Sat
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -53,6 +51,8 @@ class Fake:
         )
     )
     goes: list[bool] = field(default_factory=lambda: [True] * 10)
+    answer: Answer | None = field(default_factory=lambda: Sat({"s": "1e-30"}))
+    asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
     asked: int = 0
 
@@ -65,8 +65,9 @@ class Fake:
     def going(self) -> bool:
         return self.goes.pop(0)
 
-    def limit(self) -> float:
-        return 5.0
+    def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
+        self.asks.append(asked)
+        return self.answer
 
     def pause(self, seconds: float) -> None:
         pass
@@ -89,11 +90,6 @@ def tried(fake: Fake) -> Tried:
 
 def failed(fake: Fake) -> list[str]:
     return [note.reason for note in fake.notes if isinstance(note, RewriteFailed)]
-
-
-@pytest.fixture(autouse=True)
-def _sat(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tries, "solve", lambda *_: Sat({"s": "1e-30"}))
 
 
 def test_an_input_that_takes_the_side_ends_the_tries_with_the_rewrite_kept() -> None:
@@ -165,9 +161,8 @@ def test_a_rewrite_with_no_fork_of_its_own_and_no_downgrade_reads_no_argument() 
     assert failed(fake)[0] == "it reads no argument"
 
 
-def test_a_solver_that_fails_on_a_rewrite_fails_the_try(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(tries, "solve", lambda *_: Error("cvc5 said no"))
-    fake = Fake()
+def test_a_solver_that_fails_on_a_rewrite_fails_the_try() -> None:
+    fake = Fake(answer=Error("cvc5 said no"))
 
     tried(fake)
 
@@ -193,3 +188,20 @@ def test_a_reply_with_no_expression_is_quoted_cut_in_the_next_ask() -> None:
 
 def test_an_input_json_cannot_write_is_said_as_python_writes_it() -> None:
     assert tries._written({"o": frozenset({1})}) == "{'o': frozenset({1})}"
+
+
+def test_a_try_with_no_time_left_for_its_ask_ends_the_tries() -> None:
+    fake = Fake(answer=None)
+
+    assert tried(fake) == Tried(False, True, ended="budget spent")
+    assert len(fake.asks) == 1
+
+
+def test_the_try_s_ask_holds_the_rewrite_s_own_fork_in_the_condition_s_place() -> None:
+    fake = Fake()
+
+    tried(fake)
+
+    [asked] = fake.asks
+    assert asked[-1] == Branch(["==", "s", "'1e-30'"], True, Site(FILE, HELD_LINE, HELD_COL))
+    assert FORK not in asked

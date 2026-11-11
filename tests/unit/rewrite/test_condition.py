@@ -8,6 +8,7 @@ import pytest
 
 from pyct.intercept.model_code import Refused
 from pyct.rewrite.condition import (
+    FORM,
     FUNCTION,
     HELD_COL,
     HELD_LINE,
@@ -85,6 +86,9 @@ def test_a_reply_with_no_expression_on_the_parameters_holds_none(reply: str) -> 
         ("min(**s) == 1", "a rewrite may not unpack arguments"),
         ("s == b'x'", "a rewrite may not use that literal"),
         ("{s: n} == n", "a rewrite may not use Dict"),
+        ('"{0.real}".format(n) == "1"', "a rewrite may not call format"),
+        ('"{n}".format_map(s) == "1"', "a rewrite may not call format_map"),
+        ("max(n, 1, key=s) == 1", "a rewrite may not pass a key function"),
     ],
 )
 def test_a_rewrite_outside_the_form_is_refused(expression: str, reason: str) -> None:
@@ -146,3 +150,15 @@ def test_an_item_and_a_negation_of_a_number_are_followed() -> None:
         True,
     )
     assert own_fork("-n < 0", {"s": "x", "n": 2, "a": 1.0})[1] is True
+
+
+def test_a_reply_over_several_lines_or_with_a_control_character_is_read_as_one_line() -> None:
+    spread = expression_in("```python\n(n > 1\n and n < 3)\n```", PARAMETERS)
+    marked = expression_in('s == "\x1b[31m"', PARAMETERS)
+
+    assert spread == "n > 1 and n < 3"
+    assert marked == "s == '\\x1b[31m'"
+
+
+def test_the_form_says_every_operand_runs() -> None:
+    assert "Each operand of and, or and not runs on every input" in FORM

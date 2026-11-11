@@ -9,10 +9,10 @@ import pytest
 
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition
-from pyct.results.record import Source
-from pyct.rewrite import tries
+from pyct.results.record import Source, StopKind
 from pyct.rewrite.condition import rewrite_code
 from pyct.rewrite.kept import Kept
+from pyct.run import loop as loop_module
 from pyct.run import rewrites as rewrites_module
 from tests.acceptance.llm_rewrites import (
     FakeRewrites,
@@ -73,14 +73,23 @@ def test_a_condition_is_asked_about_4_times_at_most_at_a_moment() -> None:
     numbers = [line.split(", try ")[1].partition(":")[0] for line in tries_said(ran.said)]
     assert numbers == ["1", "2", "3", "4"]
     assert len(provider.requests) == 4
-    assert ran.result.stopped is not None
+    # the run goes on to its own stop once the tries' inputs joined the tree
+    assert ran.result.stopped.kind is StopKind.NO_FORK
 
 
 # llm-rewrite-retried-counts-a-reply-pyct-cannot-use
 def test_a_reply_pyct_cannot_use_counts_as_a_try(monkeypatch: pytest.MonkeyPatch) -> None:
     asked: list[object] = []
-    solve = tries.solve
-    monkeypatch.setattr(tries, "solve", lambda *args: asked.append(args) or solve(*args))
+    solve = loop_module.solve
+
+    def counted(held: tuple[object, ...], *args: object) -> object:
+        # an ask that holds a fork of a rewrite's, whose file is the rewrite's
+        files = [getattr(getattr(item, "site", None), "file", "") for item in held]
+        if any(file.startswith("<rewrite") for file in files):
+            asked.append(held)
+        return solve(held, *args)  # pyrefly: ignore[bad-argument-type]
+
+    monkeypatch.setattr(loop_module, "solve", counted)
     replies = ["n & 1 == 1", '__import__("os").getcwd() == s', "this is not code", "n == 3"]
     provider = FakeRewrites(replies)
 

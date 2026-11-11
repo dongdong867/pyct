@@ -5,13 +5,18 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
+import pytest
+
 from pyct.binding.bind import Seed
+from pyct.branches.plan import plan
+from pyct.branches.tree import Tree
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
+from pyct.core.foundation.branch import Branch
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Reason, Tries, WhyEntry
 from pyct.results.coverage import Scope
-from pyct.results.record import Source, Stop, StopKind
+from pyct.results.record import InputRecord, Source, Stop, StopKind
 from pyct.run.bounds import Bounds
 from pyct.run.isolation import Inputs, Isolation
 from pyct.run.loop import Loop, Looped, Start
@@ -185,3 +190,21 @@ def test_the_causes_part_way_count_an_open_fork_as_not_tried() -> None:
 
     taken = {entry.lines: entry.tries for entry in causes if entry.reason is Reason.NOT_TAKEN}
     assert taken == {(5,): Tries(not_tried=1), (6,): Tries(not_tried=1)}
+
+
+def test_an_input_run_between_passes_that_left_its_plan_turns_no_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    loop = loop_of(IMPLIED, [])
+    go(loop, {"x": 0})
+    first, second = loop.records[0].forks[:2]
+    left = plan((Branch(first.expression, not first.taken, first.site), second))
+    assert left is not None
+    turned: list[object] = []
+    monkeypatch.setattr(Tree, "turn", lambda self: turned.append(self))
+
+    record = loop.run_input(Seed.of({"x": 0}), Source.REWRITE, left)
+
+    # the input took the seed's side, so it left the plan and covered no new line
+    assert isinstance(record, InputRecord) and record.mismatch_at == 0
+    assert turned == []

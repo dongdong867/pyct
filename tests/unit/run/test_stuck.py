@@ -62,6 +62,9 @@ class FakeRun:
     def run_input(self, seed: Seed, source: object, wanted: object = None) -> InputRecord | Stop:
         raise AssertionError("no fake tool here runs an input")
 
+    def hand_out(self, ask: object) -> None:
+        pass
+
     def pause(self, seconds: float) -> None:
         self.bounds = self.bounds.paused(seconds)
 

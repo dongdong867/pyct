@@ -23,6 +23,7 @@ from typing import Protocol
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.branches.plan import Plan
+from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
 from pyct.intercept.model_code import Refused
 from pyct.results.llm_asks import Unanswered
@@ -33,8 +34,7 @@ from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteSkipped, RewriteTook
 from pyct.rewrite.provider import EarlierTry, RewriteProvider, RewriteReply
 from pyct.rewrite.request import About, request_for
-from pyct.solver.answer import Error, Sat
-from pyct.solver.cvc5 import solve
+from pyct.solver.answer import Answer, Error, Sat
 
 # the asks about one condition at one moment: the first and 3 more
 ASKS = 4
@@ -43,13 +43,16 @@ QUOTED = 200
 
 
 class Around(Protocol):
-    """The run as a condition's tries see it: whether to go on, the seconds one solver ask gets,
-    the clock paused for the model's wait, a note said, a rewrite run in a child of pyct's
-    process, and a real input run aimed at a plan."""
+    """The run as a condition's tries see it: whether to go on, the solver's answer to an ask on
+    a plan's path, the clock paused for the model's wait, a note said, a rewrite run in a child
+    of pyct's process, and a real input run aimed at a plan."""
 
     def going(self) -> bool: ...
 
-    def limit(self) -> float: ...
+    def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
+        """The solver's answer to ``asked``, aimed at ``plan``'s fork from ``origin``, within
+        the seconds one ask gets; None when no time is left."""
+        ...
 
     def pause(self, seconds: float) -> None: ...
 
@@ -152,8 +155,11 @@ class Asking:
         if not around.going():
             return _Ended("budget spent")
         origin = given.origin
-        asked = in_place(given.plan.asked, given.condition, items.items)
-        answer = solve(asked, origin.leaves, around.limit(), origin.containers(), origin.values)
+        answer = around.ask(
+            in_place(given.plan.asked, given.condition, items.items), given.plan, origin
+        )
+        if answer is None:
+            return _Ended("budget spent")
         if isinstance(answer, Error):
             return f"the solver failed: {answer.detail}"
         if not isinstance(answer, Sat):

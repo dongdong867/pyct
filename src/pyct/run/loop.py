@@ -153,7 +153,6 @@ class Loop:
         # each input as the walk copied it, by its path's number: a solver answer starts from the
         # input whose path it extends, not from the seed (see ``Plan.path``)
         self.inputs: dict[int, Seed] = {}
-        self._call = call
         self._ways = Ways(call, Asker() if asker is None else asker)
         self._numbers = itertools.count(1)
         self._stopped: Stop | None = None
@@ -171,7 +170,7 @@ class Loop:
         """
         first = starts[0]
         try:
-            seeded = _from(first, self._call(first.copy.args, self.bounds.until))
+            seeded = _from(first, self._ways.call(first.copy.args, self.bounds.until))
         except InputStartError as error:
             return Looped((), (), _could_not_start(error))
         self._keep(seeded, first.copy)
@@ -206,12 +205,12 @@ class Loop:
         stop = self._stopped or _spent_or_covered(self.bounds, self.progress)
         if stop is None:
             try:
-                executed = self._call(seed.args, self.bounds.until)
+                executed = self._ways.call(seed.args, self.bounds.until)
             except InputStartError as error:
                 stop = _could_not_start(error)
             else:
                 record = record_of(seed.args, executed, wanted)
-                return self._keep(_labeled(record, source), seed)
+                return self._keep(_labeled(record, source), seed, turn=False)
         self._stopped = stop
         return stop
 
@@ -228,6 +227,10 @@ class Loop:
         covered = frozenset[int]().union(*(record.covered_lines for record in self.records))
         coverage = Coverage.of(self.told.scope, covered | self.told.imported)
         return why_uncovered(self.records, self.misses, untried, coverage, stop_at)
+
+    def hand_out(self, ask: Ask) -> None:
+        """Hand out an ask a tool made between two passes, numbered among the run's asks."""
+        self.told.ask(dataclasses.replace(ask, number=next(self._numbers)))
 
     def pause(self, seconds: float) -> None:
         """Move the deadline ``seconds`` later: the clock paused for a wait that is not the run's
@@ -259,10 +262,11 @@ class Loop:
         self._stuck.hold(self)
         return Attempt(stop=self._stopped)
 
-    def _keep(self, record: InputRecord, seed: Seed) -> InputRecord:
-        """Measure an input, hand it out, add its path, and keep its copy under its number."""
+    def _keep(self, record: InputRecord, seed: Seed, turn: bool = True) -> InputRecord:
+        """Measure an input, hand it out, add its path, and keep its copy under its number.
+        ``turn`` is false for an input run between passes, which no pick of the tree's aimed."""
         self.inputs[len(self.records)] = seed
-        kept = _took(record, self.told, self.tree, self.progress)
+        kept = _took(record, self.told, self.tree, self.progress, turn)
         self.records.append(kept)
         return kept
 
@@ -306,7 +310,9 @@ def _hand_out(attempt: Attempt, told: Told, numbers: Iterator[int], misses: list
         told.miss(attempt.miss)
 
 
-def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> InputRecord:
+def _took(
+    record: InputRecord, told: Told, tree: Tree, progress: Progress, turn: bool
+) -> InputRecord:
     """Measure an input, hand it out and add its path, then turn the path its pick
     extended when the input left the plan and covered no line no earlier input had.
 
@@ -314,13 +320,14 @@ def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> In
     cache that compares keys only on equal hashes, and the deeper forks of
     that path sit on more of it, so the rest of the path's new sides go
     shallowest first (`Tree.turn`). How the input ended does not matter.
-    An input that left and covered a new line turns nothing, and a seed
-    follows no plan. Decision
+    An input that left and covered a new line turns nothing, a seed
+    follows no plan, and an input run between passes, ``turn`` false,
+    extends no pick of the tree's. Decision
     fork-order-shallowest-first-after-a-leave-without-gain.
     """
     record = _measured(record, progress)
     _handled(record, told, tree)
-    if record.mismatch_at is not None and no_gain(progress.covered, 1):
+    if turn and record.mismatch_at is not None and no_gain(progress.covered, 1):
         tree.turn()
     return record
 
