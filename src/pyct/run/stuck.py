@@ -224,4 +224,3 @@ def _cause_stop(until: float | None) -> float:
 
 def _key(entry: WhyEntry) -> _Key:
     return (entry.file, entry.condition if entry.condition is not None else entry.lines)
-
