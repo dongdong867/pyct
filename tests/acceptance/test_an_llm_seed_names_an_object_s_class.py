@@ -14,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from pyct.llm.seeds import SEED_FORM, request_text
+from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, Source
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
@@ -186,3 +187,48 @@ def test_the_request_shows_self_s_constructor_and_how_self_is_written() -> None:
 
     assert "def __init__(self, owner):\n    self.owner = owner" in text
     assert "A method's self is a JSON object of its class's constructor arguments" in text
+
+
+# llm-seeds-build-self-builds-self-from-its-constructor-arguments
+def test_an_llm_seed_builds_self_from_its_constructor_arguments(stub: Stub, tmp_path: Path) -> None:
+    given = {"self": {"owner": "admin"}, "discount": 3}
+    stub.reply = json.dumps([given])
+
+    result = llm_run(stub.port, tmp_path, "--llm", "seeds", target=f"{M}::Till.total")
+
+    assert result.returncode == 0, result.stderr
+    first, *rest = input_lines(result.stdout)
+    assert (first["args"], first["source"], first["failure"]) == (given, "llm_seed", None)
+    assert any(
+        line["source"] == "solver" and at(line["args"], "self", "owner") != "admin" for line in rest
+    ), rest
+
+
+# llm-seeds-build-self-builds-a-named-class-under-self
+@pytest.mark.parametrize("named", [f"{M}::Customer", "Customer"], ids=["full", "bare"])
+def test_an_llm_seed_builds_a_named_class_under_self(named: str) -> None:
+    owner = {**ANN, "__class__": named}
+
+    records = run_llm(f"{M}::Desk.serve", {"self": {"owner": owner}})
+
+    assert records[0].source is Source.LLM_SEED
+    assert records[0].failure is None, records[0].failure
+    assert any(above_60(at(args, "self", "owner", "age")) for args in solver_args(records))
+
+
+# llm-seeds-build-self-reports-self-s-constructor-raise
+def test_an_llm_seed_whose_constructor_under_self_raises_runs_and_reports_it() -> None:
+    owner = {**ANN, "age": -1}
+
+    first, *rest = run_llm(f"{M}::Desk.serve", {"self": {"owner": owner}})
+
+    assert first.source is Source.LLM_SEED
+    assert first.failure is not None
+    assert (first.failure.kind, first.failure.detail) == (
+        FailureKind.TARGET_RAISED,
+        "building self['owner']: ValueError: negative age",
+    )
+    assert any(
+        record.failure is None and at(record.args, "self", "owner", "age") >= 0  # pyrefly: ignore
+        for record in rest
+    ), rest
