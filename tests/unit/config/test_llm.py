@@ -1,5 +1,7 @@
 """``--llm`` and ``--llm-model`` read into the run's LLM settings, and each one's refusal."""
 
+from pathlib import Path
+
 import pytest
 
 from pyct.config.command_line import UsageError
@@ -63,3 +65,48 @@ def test_a_model_with_another_provider_or_no_model_is_refused_naming_the_provide
 def test_llm_model_without_llm_is_refused() -> None:
     with pytest.raises(UsageError, match="--llm-model needs --llm"):
         parse_llm(None, "openai:gpt-6-luna")
+
+
+def test_llm_replay_names_the_recording() -> None:
+    settings = parse_llm("seeds", None, replay_text="runs/one.jsonl")
+
+    assert settings == LlmSettings(("seeds",), DEFAULT_MODEL, replay=Path("runs/one.jsonl"))
+
+
+def test_the_limit_is_100_000_tokens_by_default() -> None:
+    settings = parse_llm("seeds", None)
+
+    assert settings is not None and settings.limit == 100_000
+
+
+def test_llm_limit_takes_a_positive_number_of_tokens() -> None:
+    settings = parse_llm("seeds", None, limit_text="1000")
+
+    assert settings is not None and settings.limit == 1000
+
+
+@pytest.mark.parametrize("text", ["0", "-1", "many", "1.5", ""])
+def test_any_other_limit_is_refused(text: str) -> None:
+    with pytest.raises(UsageError) as refused:
+        parse_llm("seeds", None, limit_text=text)
+
+    assert str(refused.value) == f"--llm-limit takes a positive number of tokens, got {text!r}"
+
+
+@pytest.mark.parametrize(
+    ("flag", "texts"),
+    [("--llm-replay", {"replay_text": "r.jsonl"}), ("--llm-limit", {"limit_text": "10"})],
+)
+def test_another_llm_flag_without_llm_is_refused(flag: str, texts: dict[str, str]) -> None:
+    with pytest.raises(UsageError) as refused:
+        parse_llm(None, None, **texts)
+
+    assert str(refused.value) == f"{flag} needs --llm"
+
+
+def test_llm_model_beside_llm_replay_is_refused() -> None:
+    with pytest.raises(UsageError) as refused:
+        parse_llm("seeds", "openai:gpt-6-luna", replay_text="r.jsonl")
+
+    assert "--llm-model" in str(refused.value)
+    assert "--llm-replay" in str(refused.value)

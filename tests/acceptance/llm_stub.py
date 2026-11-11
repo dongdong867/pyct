@@ -148,6 +148,41 @@ def closed_port() -> int:
         return probe.getsockname()[1]
 
 
+def recordings(cache: Path) -> list[Path]:
+    """The recordings runs made under the cache folder ``cache``, oldest name first."""
+    folder = cache / "llm" / "runs"
+    return sorted(folder.iterdir()) if folder.is_dir() else []
+
+
+def read_recording(path: Path) -> list[dict[str, object]]:
+    """Each line of a recording, read as JSON."""
+    return [json.loads(line) for line in path.read_text().splitlines()]
+
+
+def write_recording(
+    path: Path, replies: list[Mapping[str, object]], model: str = "openai:gpt-6-luna"
+) -> Path:
+    """A recording as a run writes one: the first line naming ``model``, then one line per reply.
+    Each reply's fields not given take a seeds ask's about ``targets.llm.seeds::f``, try 1."""
+    provider, _, name = model.partition(":")
+    head = {"pyct_llm_recording": 1, "provider": provider, "model": name, "tools": ["seeds"]}
+    lines = [json.dumps(head)]
+    for reply in replies:
+        line = {
+            "tool": "seeds",
+            "place": "targets.llm.seeds::f",
+            "try": 1,
+            "request": "an earlier request",
+            "reply": "[]",
+            "tokens": {"in": 0, "out": 0},
+            "seconds": 0.5,
+            **reply,
+        }
+        lines.append(json.dumps(line))
+    path.write_text("".join(f"{line}\n" for line in lines))
+    return path
+
+
 def llm_env(cache: Path, port: int, key: str | None = "OPENAI_API_KEY") -> dict[str, str]:
     """The variables a ``pyct run --llm`` test gives pyct: the dummy key under ``key`` (none when
     it is None), both base URLs at ``port`` on localhost, and the cache folder."""

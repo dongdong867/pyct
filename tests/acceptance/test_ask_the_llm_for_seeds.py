@@ -43,6 +43,7 @@ def heads(stderr: str) -> list[str]:
 
 
 def llm_lines(stderr: str) -> list[str]:
+    """Each ``llm:`` line: the start line first, the counts and the recording's two last."""
     return [line for line in stderr.splitlines() if line.startswith("llm: ")]
 
 
@@ -129,7 +130,7 @@ def test_a_seed_that_repeats_an_earlier_one_is_dropped(stub: Stub, tmp_path: Pat
         replying(stub, {"x": 0}, {"x": 5}, {"x": 5}), tmp_path, '{"x": 0}', "--llm", "seeds"
     )
 
-    assert llm_lines(result.stderr)[1:] == [
+    assert llm_lines(result.stderr)[1:-2] == [
         "llm: dropped seed 1: same seed as input 1",
         "llm: dropped seed 3: same seed as input 2",
     ]
@@ -142,7 +143,7 @@ def test_the_seeds_past_the_fifth_are_dropped(stub: Stub, tmp_path: Path) -> Non
 
     result = llm_run(replying(stub, *seeds), tmp_path, '{"x": 0}', "--llm", "seeds")
 
-    assert llm_lines(result.stderr)[1:] == [
+    assert llm_lines(result.stderr)[1:-2] == [
         "llm: dropped seed 6: more than 5 seeds",
         "llm: dropped seed 7: more than 5 seeds",
     ]

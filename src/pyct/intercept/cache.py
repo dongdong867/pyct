@@ -157,13 +157,13 @@ def _usable(root: Path) -> bool:
     except OSError as error:
         _cannot_keep(root, str(error))
         return False
-    if not _own(found):
+    if not owned_alone(found):
         _cannot_keep(root, "another user owns it or may write to it")
         return False
     return True
 
 
-def _own(found: os.stat_result) -> bool:
+def owned_alone(found: os.stat_result) -> bool:
     """Whether this user owns the file, and no one else may write to it."""
     return found.st_uid == os.getuid() and not found.st_mode & 0o022
 
@@ -194,7 +194,7 @@ def _held(entry: str) -> bytes | None:
         return None
     try:
         found = os.fstat(handle)
-        return os.read(handle, found.st_size) if _own(found) else None
+        return os.read(handle, found.st_size) if owned_alone(found) else None
     except OSError:
         return None
     finally:

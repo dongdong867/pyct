@@ -7,14 +7,18 @@ import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from pyct.config.llm import LlmSettings
-from pyct.llm.caller import WorkerCaller
+from pyct.config.llm import LlmSettings, Model
+from pyct.llm.caller import Caller, WorkerCaller
 from pyct.llm.connection import Connection
+from pyct.llm.ledger import Ledger
 from pyct.llm.providers import PROVIDERS, Provider
+from pyct.llm.recording import Recording
+from pyct.llm.replay import ReplayCaller, read_replay
 from pyct.llm.seeds import SEEDS, LlmSeeds
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
 from pyct.run.llm_seeds import SeedProvider
+from pyct.run.tell import Noted
 
 # each tool's implementation over the run's connection, by its name, which is also the
 # ``Helpers`` field it fills
@@ -32,23 +36,43 @@ class Unusable:
 
 @dataclass(frozen=True)
 class Built:
-    """The helpers for the run, or, when the LLM cannot be used, none and why."""
+    """The helpers for the run and the model they ask, with the connection they ask through,
+    or, when the LLM cannot be used, no helpers, no connection and why.
+
+    A replay's model is the one its recording names.
+    """
 
     helpers: Helpers
+    model: Model
+    connection: Connection | None = None
     unusable: Unusable | None = None
 
 
-def build(settings: LlmSettings) -> Built:
-    """The helpers the switched-on tools give, asking through one connection for the run.
+def build(settings: LlmSettings, noted: Noted | None = None) -> Built:
+    """The helpers the switched-on tools give, asking through one connection for the run, which
+    records every reply in a new file and refuses asks past ``settings.limit``, said once
+    through ``noted``.
 
-    It checks only that the SDK's package can be found, which imports nothing, then that the
-    key variable is set and not empty; it never reads the key's value.
+    With ``settings.replay`` the recording answers instead of the model, so it needs no key and
+    no SDK; a recording that cannot be read raises UsageError. Otherwise it checks only that
+    the SDK's package can be found, which imports nothing, then that the key variable is set
+    and not empty; it never reads the key's value.
     """
+    if settings.replay is not None:
+        replay = read_replay(settings.replay)
+        return _built(settings, replay.model, ReplayCaller(replay), noted)
     provider = PROVIDERS[settings.model.provider]
     if importlib.util.find_spec(provider.package) is None:
-        return Built(Helpers(), Unusable(Why.NO_PACKAGE, provider))
+        return Built(Helpers(), settings.model, unusable=Unusable(Why.NO_PACKAGE, provider))
     if not os.environ.get(provider.key):
-        return Built(Helpers(), Unusable(Why.NO_KEY, provider))
-    connection = Connection(WorkerCaller(settings.model))
+        return Built(Helpers(), settings.model, unusable=Unusable(Why.NO_KEY, provider))
+    return _built(settings, settings.model, WorkerCaller(settings.model), noted)
+
+
+def _built(settings: LlmSettings, model: Model, caller: Caller, noted: Noted | None) -> Built:
+    """One connection over ``caller``, with the run's ledger and a new recording, and each
+    switched-on tool on it."""
+    recording = Recording.start(model, settings.tools)
+    connection = Connection(caller, Ledger(settings.limit), recording, noted)
     made = {name: HELPERS[name](connection) for name in settings.tools}
-    return Built(Helpers(**made))
+    return Built(Helpers(**made), model, connection)

@@ -2,7 +2,8 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]
 [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]
-[--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]``
+[--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL] [--llm-replay FILE]
+[--llm-limit TOKENS]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS] [--goal coverage|bugs]``
@@ -18,8 +19,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.binding.bind import access_name, leaves
+from pyct.cli.llm import Started, no_seed_line, note_line
 from pyct.cli.llm import add_flags as add_llm_flags
-from pyct.cli.llm import no_seed_line, note_line
 from pyct.cli.llm import start as start_llm
 from pyct.cli.shared import Parser, line
 from pyct.cli.sweep import (
@@ -68,7 +69,8 @@ from pyct.sweep.listing import PackageImportError
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--seeds FILE] [--budget SECONDS]"
     " [--plateau N] [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
-    " [--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL]"
+    " [--dump-formulas DIR] [--llm TOOLS] [--llm-model PROVIDER:MODEL] [--llm-replay FILE]"
+    " [--llm-limit TOKENS]"
 )
 # the refusal of seeds given more than one way
 ONE_WAY = "give the seeds one way: after the target, through --args, or through --seeds"
@@ -81,8 +83,9 @@ class RunCommand:
     ``seeds_text`` names a file of seeds, given instead of ``seed_text``.
     ``in_process`` runs every input in pyct's own process rather than one of its own.
     ``goal_text`` is the goal as written, None for the default, and ``dump_text`` the folder
-    each program pyct gives cvc5 goes to, None for none. ``llm_text`` and ``llm_model_text`` are
-    ``--llm`` and ``--llm-model`` as written, None when not given.
+    each program pyct gives cvc5 goes to, None for none. ``llm_text``, ``llm_model_text``,
+    ``llm_replay_text`` and ``llm_limit_text`` are ``--llm``, ``--llm-model``, ``--llm-replay``
+    and ``--llm-limit`` as written, None when not given.
     """
 
     spec: str
@@ -96,6 +99,8 @@ class RunCommand:
     seeds_text: str | None = None
     llm_text: str | None = None
     llm_model_text: str | None = None
+    llm_replay_text: str | None = None
+    llm_limit_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -143,7 +148,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     Checks run in this order: target form, seed shape or the seeds file's
     read, budget, plateau, solver timeout, goal, dump folder, the LLM flags,
     import and signature, seed present, seed fits, seed types, cvc5, then the
-    LLM's SDK and key. A seeds file's
+    LLM's replay file, or its SDK and key. A seeds file's
     lines take the shape, fit and type checks in one pass after the import,
     so every bad line is named at once. A line that repeats an earlier seed is said once
     the checks pass, before the first input.
@@ -162,7 +167,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         if isinstance(command, SweepCommand):
             return run_sweep(command)
         with interception(command.spec):
-            result = _run(command, watch)
+            result, started = _run(command, watch)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -173,30 +178,34 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         print(no_seed_line(error), file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
-    line(render_summary(result))
+    for each in () if started is None else started.closing():
+        print(each, file=sys.stderr, flush=True)
+    line(render_summary(result, None if started is None else started.use()))
     return _exit_code(result)
 
 
-def _run(command: RunCommand, watch: ImportWatch | None) -> RunResult:
+def _run(command: RunCommand, watch: ImportWatch | None) -> tuple[RunResult, Started | None]:
     """The checks, the LLM's start, then the run, inside the block that substitutes the
-    target's package. The LLM's line follows the class line and the skipped seeds."""
+    target's package, with the LLM's start, None for a plain run. The LLM's line follows the
+    class line and the skipped seeds."""
     checked = _checked(command, watch)
     seeds = checked.seeds
-    helpers, said = Helpers(), ()
-    if checked.llm is not None:
-        helpers, started = start_llm(checked.llm, len(seeds.seeds))
-        said = (started,)
+    llm, noted = checked.llm, checked.tell.noted
+    started = None if llm is None else start_llm(llm, len(seeds.seeds), noted)
+    said = () if started is None else (started.said,)
     print(render_start(command.spec, checked.target.fn), end="", file=sys.stderr, flush=True)
     for each in (*seeds.skipped, *said):
         print(each, file=sys.stderr, flush=True)
     isolation = Isolation.IN_PROCESS if command.in_process else Isolation.AUTO
-    return run(
+    helpers = Helpers() if started is None else started.helpers
+    result = run(
         checked.target,
         seeds.seeds,
         limits=checked.limits,
         setup=Setup(isolation=isolation, helpers=helpers),
         tell=checked.tell,
     )
+    return result, started
 
 
 @dataclass(frozen=True)
@@ -226,7 +235,9 @@ def _checked(command: RunCommand, watch: ImportWatch | None) -> _Checked:
         goal=parse_goal(command.goal_text),
     )
     folder = dump_folder(command.dump_text)
-    llm = parse_llm(command.llm_text, command.llm_model_text)
+    llm = parse_llm(
+        command.llm_text, command.llm_model_text, command.llm_replay_text, command.llm_limit_text
+    )
     asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
     seeds = _seeds(target, seed, file, llm is not None and SEEDS_TOOL in llm.tools)
@@ -395,6 +406,8 @@ def _run_command(namespace: argparse.Namespace) -> RunCommand:
         seeds_text=namespace.seeds_file,
         llm_text=namespace.llm,
         llm_model_text=namespace.llm_model,
+        llm_replay_text=namespace.llm_replay,
+        llm_limit_text=namespace.llm_limit,
     )
 
 

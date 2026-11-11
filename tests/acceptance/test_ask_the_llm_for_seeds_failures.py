@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from pyct.cli import main
-from tests.acceptance.harness import input_lines, let_pyct_run_in_process, run_pyct
+from tests.acceptance.harness import input_lines, let_pyct_run_in_process, run_pyct, summary_line
 from tests.acceptance.llm_stub import DUMMY_KEY, KEY_VARIABLES, Stub, closed_port, llm_env, serving
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
@@ -83,7 +83,7 @@ def test_a_provider_that_cannot_be_reached_is_skipped(tmp_path: Path) -> None:
     assert sources(result.stdout)[:2] == ["seed", "solver"]
 
 
-# llm-failure-never-stops-a-run-slow
+# llm-failure-never-stops-a-run-slow, llm-tokens-reported-skipped
 def test_an_ask_with_no_reply_in_30_s_is_skipped(stub: Stub, tmp_path: Path) -> None:
     stub.delay = 40
     started = time.monotonic()
@@ -96,6 +96,9 @@ def test_an_ask_with_no_reply_in_30_s_is_skipped(stub: Stub, tmp_path: Path) -> 
     assert result.returncode == 0
     assert "llm: seeds ask skipped: no reply in 30 s" in result.stderr.splitlines()
     assert sources(result.stdout)[:2] == ["seed", "solver"]
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert (llm["asks"], llm["skipped"]) == (0, 1)
 
 
 # llm-failure-never-stops-a-run-wrong-form
