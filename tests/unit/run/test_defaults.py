@@ -7,6 +7,7 @@ from pyct.binding.classes import constructor as constructor_of
 from pyct.run.defaults import with_defaults
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import Target
 
 
@@ -119,7 +120,7 @@ def test_a_class_whose_signature_python_cannot_read_has_no_constructor() -> None
 def test_a_class_whose_signature_python_cannot_read_is_built_with_no_filled_default() -> None:
     target = target_of(Unread, Unread.check, None)
 
-    result = run(target, {"self": {"n": 1}}, isolation=Isolation.IN_PROCESS)
+    result = run(target, {"self": {"n": 1}}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     first = result.records[0]
     assert first.args == {"self": {"n": 1}}
@@ -130,7 +131,7 @@ def test_a_class_whose_signature_python_cannot_read_is_built_with_no_filled_defa
 def test_each_of_several_seeds_takes_its_left_out_defaults_and_keeps_its_keys() -> None:
     seeds = [{"self": {"name": "ann"}}, {"self": {"name": "bob", "vip": True}}]
 
-    result = run(MEMBER, seeds, isolation=Isolation.IN_PROCESS)
+    result = run(MEMBER, seeds, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     simple = {"rank": 2, "rate": 0.5, "note": ""}
     assert [record.args for record in result.records[:2]] == [

@@ -3,6 +3,7 @@ input covered first."""
 
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from pyct.run.tell import Ask, Tell
 
@@ -14,7 +15,10 @@ def test_each_ask_is_timed_and_handed_out_numbered_with_its_programs() -> None:
     asks: list[Ask] = []
 
     result = run(
-        load_target(NESTED), {"x": 0}, isolation=Isolation.IN_PROCESS, tell=Tell(asked=asks.append)
+        load_target(NESTED),
+        {"x": 0},
+        setup=Setup(isolation=Isolation.IN_PROCESS),
+        tell=Tell(asked=asks.append),
     )
 
     seed, solved = result.records
@@ -34,7 +38,7 @@ def test_each_ask_is_timed_and_handed_out_numbered_with_its_programs() -> None:
 def test_each_record_names_the_lines_it_covered_first() -> None:
     target = load_target(NESTED)
 
-    result = run(target, {"x": 0}, isolation=Isolation.IN_PROCESS)
+    result = run(target, {"x": 0}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     seed, solved = result.records
     # line 1, the def, is the import's

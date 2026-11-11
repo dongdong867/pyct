@@ -24,6 +24,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.isolate import on_the_way_out
 
@@ -113,7 +114,10 @@ def one_try(tracer: str, name: str, handler: object) -> dict[str, object]:
     install(tracer)
     try:
         result = run(
-            target, {"x": 0}, limits=Limits(budget=Budget(budget)), isolation=Isolation.IN_PROCESS
+            target,
+            {"x": 0},
+            limits=Limits(budget=Budget(budget)),
+            setup=Setup(isolation=Isolation.IN_PROCESS),
         )
         failure = result.records[0].failure
         ended: object = None if failure is None else [failure.kind.value, failure.detail]

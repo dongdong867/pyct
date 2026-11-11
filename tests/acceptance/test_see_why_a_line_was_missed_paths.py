@@ -20,6 +20,7 @@ from pyct.results.jsonl import render_summary
 from pyct.results.trace import render_stop
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from tests.acceptance.harness import (
     REPO_ROOT,
@@ -458,7 +459,9 @@ def test_the_lines_left_when_the_deadline_comes_are_not_worked_out(
     monkeypatch.setattr(why_module, "clock", lambda: time.monotonic() + 3600)
     limits = Limits(budget=Budget(seconds=60))
 
-    result = run(load_target(target), {"x": 1}, limits=limits, isolation=Isolation.IN_PROCESS)
+    result = run(
+        load_target(target), {"x": 1}, limits=limits, setup=Setup(isolation=Isolation.IN_PROCESS)
+    )
 
     summary = json.loads(render_summary(result))
     check_every_uncovered_line_explained_once(render_summary(result))
@@ -474,7 +477,7 @@ def test_a_run_with_no_budget_works_out_every_line(monkeypatch: pytest.MonkeyPat
     let_pyct_run_in_process(monkeypatch)
     monkeypatch.setattr(why_module, "clock", lambda: time.monotonic() + 3600)
 
-    result = run(load_target(target), {"x": 1}, isolation=Isolation.IN_PROCESS)
+    result = run(load_target(target), {"x": 1}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     assert "not worked out" not in {entry.reason.value for entry in result.why_uncovered}
 

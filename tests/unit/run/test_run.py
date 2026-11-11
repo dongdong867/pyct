@@ -19,6 +19,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import Bounds, Tell, _attempt, run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from pyct.solver import walk_keys
 from pyct.solver.answer import Answer, Timeout, Unknown
@@ -94,7 +95,10 @@ def test_run_reports_a_timeout_when_the_budget_runs_out(
     target = load_target("targets.trace.never_returns::spin")
 
     result = run(
-        target, {"x": 1}, limits=Limits(budget=Budget(seconds=seconds)), isolation=isolation
+        target,
+        {"x": 1},
+        limits=Limits(budget=Budget(seconds=seconds)),
+        setup=Setup(isolation=isolation),
     )
 
     assert len(result.records) == 1

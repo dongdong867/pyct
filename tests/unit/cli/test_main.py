@@ -6,6 +6,7 @@ import pytest
 
 from pyct import cli
 from pyct.cli import main
+from pyct.cli import sweep as sweep_command
 from pyct.config.goal import Goal
 from pyct.sweep.result import SweepLimits, SweepResult, SweepStop
 from pyct.sweep.sweep import Mode, SweepTell
@@ -194,7 +195,7 @@ def sweeps_seen(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
         seen.append({"package": package, "limits": limits, "mode": mode})
         return SweepResult(package, (), SweepStop.DONE, limits)
 
-    monkeypatch.setattr(cli, "sweep", sweep)
+    monkeypatch.setattr(sweep_command, "sweep", sweep)
     return seen
 
 

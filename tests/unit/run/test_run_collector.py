@@ -10,6 +10,7 @@ from pyct.results.coverage import Coverage
 from pyct.results.record import InputRecord
 from pyct.run.isolation import Isolation
 from pyct.run.run import Tell, run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 
 
@@ -31,7 +32,7 @@ def test_each_report_and_its_path_are_handled_with_the_collector_off(
     monkeypatch.setattr(Tree, "add", adding)
     target = load_target("targets.trace.uncalled_helper::classify")
 
-    run(target, {"x": 1}, isolation=isolation, tell=Tell(report=report))
+    run(target, {"x": 1}, setup=Setup(isolation=isolation), tell=Tell(report=report))
 
     assert reported == added == [False, False]
     assert gc.isenabled()
@@ -46,6 +47,10 @@ def test_the_target_runs_with_the_collector_as_the_run_found_it() -> None:
         seen.append(gc.isenabled())
         return original(x)
 
-    run(dataclasses.replace(target, fn=watched), {"x": 1}, isolation=Isolation.IN_PROCESS)
+    run(
+        dataclasses.replace(target, fn=watched),
+        {"x": 1},
+        setup=Setup(isolation=Isolation.IN_PROCESS),
+    )
 
     assert seen == [True, True]

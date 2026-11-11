@@ -20,6 +20,7 @@ from pyct.results.failure import FailureKind
 from pyct.results.record import InputRecord, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import Target, load_target
 from tests.acceptance.harness import let_pyct_run_in_process
 
@@ -66,7 +67,7 @@ def test_keeps_an_alias_one_value(isolation: Isolation) -> None:
     shared = [0]
     target = load_target("targets.nested.aliases::two_paths")
 
-    result = run(target, {"a": shared, "b": shared}, isolation=isolation)
+    result = run(target, {"a": shared, "b": shared}, setup=Setup(isolation=isolation))
 
     a_0 = ["[]", "a", 0]
     named = {expression for record in result.records for expression, _ in compares(record)}
@@ -91,7 +92,9 @@ def test_walks_a_cycle_once(isolation: Isolation) -> None:
     xs.append(xs)
     target = load_target("targets.nested.holds_itself::check")
 
-    result = run(target, {"xs": xs}, limits=Limits(goal=Goal.BUGS), isolation=isolation)
+    result = run(
+        target, {"xs": xs}, limits=Limits(goal=Goal.BUGS), setup=Setup(isolation=isolation)
+    )
 
     assert result.stopped.kind is StopKind.NO_FORK
     lists = [record.args["xs"] for record in result.records]
@@ -108,7 +111,7 @@ def test_leaves_an_uncopyable_argument_plain(
     target, module = loaded(f"{OBJECTS}::boxed", monkeypatch)
     box = module.Box()
 
-    result = run(target, {"box": box}, isolation=isolation)
+    result = run(target, {"box": box}, setup=Setup(isolation=isolation))
 
     seeded = result.records[0]
     assert seeded.forks == () and seeded.downgrades == ()
@@ -124,7 +127,7 @@ def test_follows_an_object_s_attributes(
     target, module = loaded(f"{OBJECTS}::classify_rule", monkeypatch)
     rule = module.Rule()
 
-    result = run(target, {"rule": rule}, isolation=isolation)
+    result = run(target, {"rule": rule}, setup=Setup(isolation=isolation))
 
     rules = args_of(result.records, "rule")
     assert all(type(each) is module.Rule and each.check is module.checked for each in rules)
@@ -145,7 +148,7 @@ def test_follows_an_object_through_its_own_bound_method(
     target, module = loaded(f"{OBJECTS}::fire", monkeypatch)
     machine = module.Machine()
 
-    result = run(target, {"machine": machine}, isolation=isolation)
+    result = run(target, {"machine": machine}, setup=Setup(isolation=isolation))
 
     for record, made in zip(result.records, args_of(result.records, "machine"), strict=True):
         raised = record.failure is not None and record.failure.kind is FailureKind.TARGET_RAISED
@@ -163,7 +166,7 @@ def test_follows_an_instance_given_as_self(
     assert target.self_class is not None
     given = target.self_class(owner="ann")
 
-    result = run(target, {"self": given, "discount": 5}, isolation=isolation)
+    result = run(target, {"self": given, "discount": 5}, setup=Setup(isolation=isolation))
 
     owner = ["==", ["getattr", "self", "'owner'"], "'admin'"]
     instances = zip(args_of(result.records, "self"), result.records, strict=True)
@@ -181,7 +184,7 @@ def test_keeps_an_object_reached_by_two_paths_one_value(
     target, module = loaded(f"{OBJECTS}::two_counters", monkeypatch)
     shared = module.Counter()
 
-    result = run(target, {"a": shared, "b": shared}, isolation=isolation)
+    result = run(target, {"a": shared, "b": shared}, setup=Setup(isolation=isolation))
 
     n = ["getattr", "a", "'n'"]
     named = {expression for record in result.records for expression, _ in compares(record)}
@@ -206,7 +209,9 @@ def test_walks_an_object_that_holds_itself_once(
     target, module = loaded(f"{OBJECTS}::node_check", monkeypatch)
     node = module.Node()
 
-    result = run(target, {"node": node}, limits=Limits(goal=Goal.BUGS), isolation=isolation)
+    result = run(
+        target, {"node": node}, limits=Limits(goal=Goal.BUGS), setup=Setup(isolation=isolation)
+    )
 
     assert result.stopped.kind is StopKind.NO_FORK
     nodes = args_of(result.records, "node")
@@ -222,7 +227,7 @@ def test_follows_a_list_and_a_dict_inside_an_object(
 ) -> None:
     target, module = loaded(f"{OBJECTS}::held", monkeypatch)
 
-    result = run(target, {"holder": module.Holder()}, isolation=isolation)
+    result = run(target, {"holder": module.Holder()}, setup=Setup(isolation=isolation))
 
     holders = args_of(result.records, "holder")
     assert all(type(each) is module.Holder for each in holders)
@@ -243,7 +248,7 @@ def same_types_run(isolation: Isolation, monkeypatch: pytest.MonkeyPatch) -> tup
         "ordered": OrderedDict(k=0),
         "by_id": {1: 0},
     }
-    return run(target, seed, isolation=isolation), module
+    return run(target, seed, setup=Setup(isolation=isolation)), module
 
 
 # run-with-nested-arguments-hands-back-the-same-types, all but its last clause (see below)

@@ -14,6 +14,7 @@ import pytest
 from pyct.results.failure import FailureKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.classes import cart, shop
 from tests.acceptance.harness import (
@@ -240,7 +241,9 @@ def test_takes_an_instance_as_self_through_run(monkeypatch: pytest.MonkeyPatch) 
     assert target.self_class is not None
     given = target.self_class(owner="ann")
 
-    result = run(target, {"self": given, "discount": 5}, isolation=Isolation.IN_PROCESS)
+    result = run(
+        target, {"self": given, "discount": 5}, setup=Setup(isolation=Isolation.IN_PROCESS)
+    )
 
     discounts = [record.args["discount"] for record in result.records]
     assert any(isinstance(discount, int) and discount > 10 for discount in discounts), discounts

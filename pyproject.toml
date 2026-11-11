@@ -10,13 +10,22 @@ authors = [
 ]
 dependencies = []
 
+# an LLM provider's SDK, for --llm; pyct reads only that the package is there and asks through it
+# in a worker process of its own
+[project.optional-dependencies]
+openai = ["openai>=3.46"]
+anthropic = ["anthropic>=2.6"]
+
 [project.scripts]
 pyct = "pyct.cli:entry"
 
 [dependency-groups]
 dev = [
+  # the two providers' SDKs, so the adapter tests run and pyrefly reads the adapters
+  "anthropic>=2.6",
   "coverage>=7.10",
   "import-linter>=2.0",
+  "openai>=3.46",
   "pyrefly>=0.33",
   "pytest>=8.0",
   "pytest-cov>=7.1",

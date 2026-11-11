@@ -12,6 +12,7 @@ from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
 from pyct.run.run import Bounds, Tell, _attempt, run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from tests.unit.run.test_run import no_input_yet
 
@@ -32,7 +33,10 @@ def test_a_run_says_whether_it_isolated_its_inputs() -> None:
     target = load_target("targets.flip.one_check::classify")
 
     assert run(target, {"x": 3}).environment.isolated is True
-    assert run(target, {"x": 3}, isolation=Isolation.IN_PROCESS).environment.isolated is False
+    assert (
+        run(target, {"x": 3}, setup=Setup(isolation=Isolation.IN_PROCESS)).environment.isolated
+        is False
+    )
 
 
 def test_a_seed_that_cannot_start_stops_the_run_with_no_input(
@@ -55,7 +59,7 @@ def test_an_input_that_cannot_start_stops_the_loop() -> None:
     target = load_target("targets.flip.one_check::classify")
     seed = {"x": 3}
     tree = Tree()
-    tree.add(run(target, seed, isolation=Isolation.IN_PROCESS).records[0].forks)
+    tree.add(run(target, seed, setup=Setup(isolation=Isolation.IN_PROCESS)).records[0].forks)
 
     def refused(args: object, until: float | None) -> object:
         raise InputStartError(f"could not start a child process: {REFUSED}")
@@ -74,7 +78,7 @@ def test_an_input_in_process_needs_no_process_to_start(
     target = load_target("targets.flip.one_check::classify")
     refuse_every_start(monkeypatch)
 
-    result = run(target, {"x": 3}, isolation=Isolation.IN_PROCESS)
+    result = run(target, {"x": 3}, setup=Setup(isolation=Isolation.IN_PROCESS))
 
     assert len(result.records) == 2
     assert result.stopped.kind is StopKind.NO_FORK
@@ -87,7 +91,7 @@ def test_a_caller_drawing_from_random_between_inputs_moves_no_forked_input_s_dra
     def draws(record: InputRecord, coverage: Coverage) -> None:
         random.random()
 
-    result = run(target, {"x": 0}, isolation=Isolation.FORK, tell=Tell(report=draws))
+    result = run(target, {"x": 0}, setup=Setup(isolation=Isolation.FORK), tell=Tell(report=draws))
     random.setstate(left)
 
     # the seed and the one input that flips its fork, each drawing as the import left random

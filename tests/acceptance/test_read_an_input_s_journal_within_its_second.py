@@ -28,6 +28,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.run import isolation
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from tests.acceptance.harness import (
     COVERAGE_STARTUP,
@@ -228,7 +229,12 @@ def test_a_full_journal_ends_its_input_as_its_own_with_the_forks_before(
 
     # forked, as the command line forks it: the test's own timeout thread would move it to a
     # fresh interpreter
-    result = run(target, {"x": 100_000}, limits=Limits(budget=Budget(3)), isolation=Isolation.FORK)
+    result = run(
+        target,
+        {"x": 100_000},
+        limits=Limits(budget=Budget(3)),
+        setup=Setup(isolation=Isolation.FORK),
+    )
 
     seed = result.records[0]
     assert seed.failure == Failure(

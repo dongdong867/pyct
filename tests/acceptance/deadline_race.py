@@ -29,6 +29,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import RunResult
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.isolate import spins
 
@@ -80,7 +81,7 @@ def main(name: str, seconds: float) -> None:
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         spins.SECONDS = max(at + random.uniform(-case.step, case.step), 0.0)
-        result = run(target, {}, limits=limits, isolation=case.isolation)
+        result = run(target, {}, limits=limits, setup=Setup(isolation=case.isolation))
         returned = _tally(result, tally)
         at += case.step if returned else -case.step
         tally["handler_moved"] += signal.getsignal(signal.SIGALRM) is not handler

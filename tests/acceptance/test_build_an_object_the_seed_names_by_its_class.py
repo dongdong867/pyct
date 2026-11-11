@@ -15,6 +15,7 @@ import pytest
 from pyct.results.failure import FailureKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from targets.classes import customers
 from tests.acceptance.harness import (
@@ -270,7 +271,7 @@ def test_fails_an_object_run_cannot_build(
     missing = "targets.classes.nowhere"
     target = load_target(f"{GREET}::greet")
 
-    result = run(target, {"c": customer(f"{missing}::Customer")}, isolation=isolation)
+    result = run(target, {"c": customer(f"{missing}::Customer")}, setup=Setup(isolation=isolation))
 
     record = result.records[0]
     assert record.failure is not None
@@ -318,7 +319,7 @@ def test_run_writes_args_of_the_wrong_kind_by_its_own_type(monkeypatch: pytest.M
     result = run(
         target,
         {"p": {"__class__": "Point", "__args__": (1,), "y": 2}},
-        isolation=Isolation.IN_PROCESS,
+        setup=Setup(isolation=Isolation.IN_PROCESS),
     )
 
     record = result.records[0]

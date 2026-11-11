@@ -31,9 +31,10 @@ from pyct.results.record import (
 from pyct.run.as_found import modules_as_found
 from pyct.run.collector import collector_paused
 from pyct.run.defaults import with_defaults
-from pyct.run.isolation import Call, Inputs, Isolation
+from pyct.run.isolation import Call, Inputs
 from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of
+from pyct.run.setup import Setup
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver import walk_keys
@@ -63,6 +64,8 @@ def _platform() -> str:
 _PLATFORM = _platform()
 
 _TELL_NOTHING = Tell()
+
+_PLAIN = Setup()
 
 
 @dataclass(frozen=True)
@@ -142,7 +145,7 @@ def run(
     seed: Mapping[str, object] | Sequence[Mapping[str, object]],
     *,
     limits: Limits = _NO_LIMITS,
-    isolation: Isolation = Isolation.AUTO,
+    setup: Setup = _PLAIN,
     tell: Tell = _TELL_NOTHING,
 ) -> RunResult:
     """Call the target with each seed, then with an input per fork left open.
@@ -153,9 +156,9 @@ def run(
     on an empty tree, and the plateau counts only the inputs after the last
     seed; the budget and full coverage stop it as they would a solver input.
 
-    ``isolation`` says where each input runs: by default in a process of its
-    own, and ``Isolation.IN_PROCESS`` runs every input in the caller's
-    process (see ``Isolation``). Each input goes to
+    ``setup.isolation`` says where each input runs: by default in a process
+    of its own, and ``Isolation.IN_PROCESS`` runs every input in the
+    caller's process (see ``Isolation``). Each input goes to
     ``tell.report`` as it finishes, with the coverage of that input alone, so
     an input that hangs never hides the lines of the ones before it. Each
     fork the solver could not flip goes to ``tell.missed`` the same way, so a
@@ -173,7 +176,7 @@ def run(
         raise ValueError("a run needs at least one seed")
     scope = Scope.of_module(target.file)
     walk_keys.forget()
-    inputs = Inputs(target, isolation)
+    inputs = Inputs(target, setup.isolation)
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())
     bounds = Bounds.of(limits, len(seeds))
