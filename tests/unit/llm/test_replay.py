@@ -118,3 +118,22 @@ def test_the_same_try_on_two_lines_is_refused_naming_both(tmp_path: Path) -> Non
     assert refusal(path) == (
         f"--llm-replay: {path}:2 and {path}:4 hold the same tool, place and try"
     )
+
+
+def test_a_line_with_a_number_too_long_to_read_is_refused_by_its_number(tmp_path: Path) -> None:
+    path = write_recording(tmp_path / "long.jsonl", [{}])
+    path.write_text(path.read_text() + '{"try": ' + "9" * 5000 + "}\n")
+
+    assert refusal(path) == f"--llm-replay: {path}:3 is not a recorded reply"
+
+
+@pytest.mark.parametrize("version", ["true", "1.0"])
+def test_a_first_line_whose_version_is_not_the_number_1_is_refused(
+    tmp_path: Path, version: str
+) -> None:
+    path = tmp_path / "head.jsonl"
+    path.write_text(f'{{"pyct_llm_recording": {version}, "provider": "openai", "model": "m"}}\n')
+
+    assert refusal(path) == (
+        f"--llm-replay: {path}:1 does not name a recording's provider and model"
+    )

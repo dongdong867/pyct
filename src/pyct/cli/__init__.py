@@ -186,8 +186,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
 
 def _run(command: RunCommand, watch: ImportWatch | None) -> tuple[RunResult, Started | None]:
     """The checks, the LLM's start, then the run, inside the block that substitutes the
-    target's package, with the LLM's start, None for a plain run. The LLM's line follows the
-    class line and the skipped seeds."""
+    target's package. It gives the run's result and the LLM's start, None for a plain run.
+    The LLM's line follows the class line and the skipped seeds."""
     checked = _checked(command, watch)
     seeds = checked.seeds
     llm, noted = checked.llm, checked.tell.noted

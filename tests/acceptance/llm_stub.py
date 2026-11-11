@@ -18,11 +18,16 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from subprocess import CompletedProcess
+
+from tests.acceptance.harness import input_lines, run_pyct
 
 # the real key variables, which no test passes on to pyct
 KEY_VARIABLES = ("OPENAI_API_KEY", "ANTHROPIC_API_KEY")
 # the dummy key a test gives pyct; a test that checks no output holds a key looks for this
 DUMMY_KEY = "sk-pyct-test-dummy-key-0123456789"
+# `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
+SEEDS_F = "targets.llm.seeds::f"
 
 
 @dataclass
@@ -194,3 +199,28 @@ def llm_env(cache: Path, port: int, key: str | None = "OPENAI_API_KEY") -> dict[
     if key is not None:
         env[key] = DUMMY_KEY
     return env
+
+
+def llm_run(
+    port: int,
+    cache: Path,
+    *argv: str,
+    key: str | None = "OPENAI_API_KEY",
+    target: str = SEEDS_F,
+    timeout: float = 30,
+) -> CompletedProcess[str]:
+    """``pyct run TARGET ARGV`` with neither real key, the dummy key under ``key``, both base
+    URLs at ``port`` on localhost, and ``cache`` as the cache folder."""
+    env = llm_env(cache, port, key)
+    return run_pyct(target, *argv, unset=KEY_VARIABLES, env=env, timeout=timeout)
+
+
+def llm_lines(stderr: str) -> list[str]:
+    """Each ``llm:`` line: the start line first, and with a usable LLM the counts and the
+    recording's two last."""
+    return [line for line in stderr.splitlines() if line.startswith("llm: ")]
+
+
+def sources(stdout: str) -> list[object]:
+    """Each input line's source, in order."""
+    return [line["source"] for line in input_lines(stdout)]

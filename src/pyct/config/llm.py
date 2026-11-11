@@ -63,8 +63,11 @@ def parse_llm(
     refused, so a forgotten switch is not a plain run that looks like an LLM one. ``--llm-model``
     beside ``--llm-replay`` is refused too: a replay reports the model the recording names.
     """
-    others = (("--llm-model", model_text), ("--llm-replay", replay_text))
-    others += (("--llm-limit", limit_text),)
+    others = (
+        ("--llm-model", model_text),
+        ("--llm-replay", replay_text),
+        ("--llm-limit", limit_text),
+    )
     if tools_text is None:
         given = [name for name, text in others if text is not None]
         if given:

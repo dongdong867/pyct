@@ -4,7 +4,7 @@ the ledger, which refuses an ask once the run's tokens reach the limit."""
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pyct.cli.llm import note_line
+from pyct.cli.llm import counts_line, note_line
 from pyct.config.llm import DEFAULT_LIMIT, LlmSettings, Model
 from pyct.llm.connection import Connection
 from pyct.llm.ledger import Ledger
@@ -126,3 +126,17 @@ def test_every_ask_counts_once_as_asked_replayed_or_skipped() -> None:
 
     use = ledger.use(Model("openai", "gpt-6-luna"), ("seeds",))
     assert (use.asks, use.replayed, use.skipped) == (2, 0, 1)
+
+
+def test_the_seconds_the_summary_and_stderr_write_come_from_one_rounded_wait() -> None:
+    @dataclass
+    class Waiting:
+        def call(self, tool: Tool, place: str, attempt: int, text: str) -> Reply | Unanswered:
+            return Reply("[]", AskCost(attempt, seconds=0.7496))
+
+    ledger = Ledger()
+    Connection(Waiting(), ledger).ask(SEEDS, "m::f", "text")
+
+    use = ledger.use(Model("openai", "gpt-6-luna"), ("seeds",))
+    assert use.seconds == 0.75
+    assert counts_line(use).endswith(f", {use.seconds:.1f} s waiting")

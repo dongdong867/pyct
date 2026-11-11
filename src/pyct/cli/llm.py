@@ -64,8 +64,9 @@ def _add_spending_flags(parser: argparse.ArgumentParser) -> None:
         dest="llm_limit",
         metavar="TOKENS",
         help=(
-            f"the tokens in and out together the run may spend on the LLM; {DEFAULT_LIMIT:,} by"
-            " default. A replay counts each reply at its recorded tokens"
+            "no more asks once the run's tokens in and out together reach this many, so the ask"
+            f" that reaches it may pass it; {DEFAULT_LIMIT:,} by default. A replay counts each"
+            " reply at its recorded tokens"
         ),
     )
 
@@ -90,11 +91,13 @@ class Started:
 
     def closing(self) -> tuple[str, ...]:
         """The lines that end stderr's run summary: the counts, then where the replies were
-        recorded, or why they were not. None when the LLM could not be used."""
+        recorded, or why they were not. No lines when the LLM could not be used."""
         connection = self.built.connection
-        if connection is None or connection.recording is None:
+        if connection is None:
             return ()
         recording = connection.recording
+        if recording is None:
+            return (counts_line(self.use()),)
         if recording.path is None:
             where = f"llm: replies not recorded ({recording.failure})"
         else:

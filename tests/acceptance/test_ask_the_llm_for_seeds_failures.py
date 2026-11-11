@@ -7,34 +7,25 @@ neither real key reaches pyct, so no request leaves the machine.
 
 import importlib.util
 import time
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from pyct.cli import main
-from tests.acceptance.harness import input_lines, let_pyct_run_in_process, run_pyct, summary_line
-from tests.acceptance.llm_stub import DUMMY_KEY, KEY_VARIABLES, Stub, closed_port, llm_env, serving
+from tests.acceptance.harness import let_pyct_run_in_process, run_pyct, summary_line
+from tests.acceptance.llm_stub import (
+    DUMMY_KEY,
+    Stub,
+    closed_port,
+    llm_env,
+    llm_run,
+    sources,
+)
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
 F = "targets.llm.seeds::f"
 # the longest a run waiting out the 30 s ask may take, its own short run included
 SLOW_RUN = 55
-
-
-@pytest.fixture
-def stub() -> Iterator[Stub]:
-    with serving(Stub()) as running:
-        yield running
-
-
-def llm_run(port: int, cache: Path, *argv: str, key: str | None = "OPENAI_API_KEY", timeout=30):
-    env = llm_env(cache, port, key)
-    return run_pyct(F, *argv, unset=KEY_VARIABLES, env=env, timeout=timeout)
-
-
-def sources(stdout: str) -> list[object]:
-    return [line["source"] for line in input_lines(stdout)]
 
 
 # llm-failure-never-stops-a-run-no-package

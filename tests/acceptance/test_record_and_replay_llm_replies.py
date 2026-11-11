@@ -7,7 +7,6 @@ neither real key reaches pyct, so no request leaves the machine.
 
 import importlib.util
 import json
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -20,9 +19,11 @@ from tests.acceptance.llm_stub import (
     Stub,
     closed_port,
     llm_env,
+    llm_lines,
+    llm_run,
     read_recording,
     recordings,
-    serving,
+    sources,
     write_recording,
 )
 
@@ -30,24 +31,6 @@ from tests.acceptance.llm_stub import (
 F = "targets.llm.seeds::f"
 # another function, `sign(x: int)`, which no recording of f's asks about
 G = "targets.llm.helpers::sign"
-
-
-@pytest.fixture
-def stub() -> Iterator[Stub]:
-    with serving(Stub()) as running:
-        yield running
-
-
-def llm_run(port: int, cache: Path, *argv: str, key: str | None = "OPENAI_API_KEY", target=F):
-    return run_pyct(target, *argv, unset=KEY_VARIABLES, env=llm_env(cache, port, key))
-
-
-def llm_lines(stderr: str) -> list[str]:
-    return [line for line in stderr.splitlines() if line.startswith("llm: ")]
-
-
-def sources(stdout: str) -> list[object]:
-    return [line["source"] for line in input_lines(stdout)]
 
 
 # llm-replies-recorded-one-line-per-reply

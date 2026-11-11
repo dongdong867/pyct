@@ -63,7 +63,8 @@ class Ledger:
         tally.tokens_out += cost.tokens_out
 
     def use(self, model: Model, tools: tuple[str, ...]) -> LlmUse:
-        """The totals over every tool, as the summary writes them."""
+        """The totals over every tool, as the summary writes them, the seconds to the
+        millisecond, so the summary and stderr write one value."""
         tallies = self.tallies.values()
         return LlmUse(
             model=str(model),
@@ -73,5 +74,5 @@ class Ledger:
             skipped=sum(tally.skipped for tally in tallies),
             tokens_in=sum(tally.tokens_in for tally in tallies),
             tokens_out=sum(tally.tokens_out for tally in tallies),
-            seconds=sum(tally.seconds for tally in tallies),
+            seconds=round(sum(tally.seconds for tally in tallies), 3),
         )

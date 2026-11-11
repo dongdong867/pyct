@@ -8,7 +8,9 @@ The first line names the recording: ``{"pyct_llm_recording": 1, "provider", "mod
 Each later line is one reply: ``tool``, ``place``, ``try``, ``request`` (the exact text the
 tool asked with), ``reply``, ``tokens`` as ``{"in", "out"}``, and ``seconds``. A replayed
 reply's tokens are the ones its own recording held. Each line is written and flushed as its
-reply arrives, so a run that crashes keeps the replies it got. A failure is not recorded.
+reply arrives, so a run that crashes keeps the replies it got. A failure is not recorded. A
+write that fails ends the recording, said once as a warning: the lines written before it stay
+in the file, the last one perhaps cut short.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # the version the first line names, so a later pyct can tell a recording it reads apart
 VERSION = 1
-# the key of the first line that holds the version, and that names the file a recording
+# the first line's key: it holds the version and marks the file as a recording
 HEAD_KEY = "pyct_llm_recording"
 
 

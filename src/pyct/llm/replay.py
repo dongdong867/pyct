@@ -71,16 +71,19 @@ def read_replay(path: Path) -> Replay:
 
 
 def _json(text: str) -> object:
-    """The line's JSON value, or None when it is not JSON."""
+    """The line's JSON value, or None when Python's JSON reader cannot read it: not JSON, nested
+    too deep, or a number too long to read."""
     try:
         return json.loads(text)
-    except (json.JSONDecodeError, RecursionError):
+    except (ValueError, RecursionError):
         return None
 
 
 def _model(head: object) -> Model | None:
     """The model a first line names, or None when it is no recording's first line."""
-    if not isinstance(head, dict) or head.get(HEAD_KEY) != VERSION:
+    if not isinstance(head, dict) or type(head.get(HEAD_KEY)) is not int:
+        return None
+    if head[HEAD_KEY] != VERSION:
         return None
     provider, name = head.get("provider"), head.get("model")
     if provider not in PROVIDERS or not isinstance(name, str) or not name:

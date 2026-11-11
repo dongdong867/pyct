@@ -7,13 +7,10 @@ request leaves the machine; the worker and the adapter run for real.
 
 import json
 import time
-from collections.abc import Iterator
 from pathlib import Path
 
-import pytest
-
 from tests.acceptance.harness import input_lines, run_pyct
-from tests.acceptance.llm_stub import KEY_VARIABLES, Stub, llm_env, serving
+from tests.acceptance.llm_stub import Stub, llm_lines, llm_run
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
 F = "targets.llm.seeds::f"
@@ -21,30 +18,16 @@ F = "targets.llm.seeds::f"
 HANG = "targets.isolate.hangs_with_finally::hang"
 
 
-@pytest.fixture
-def stub() -> Iterator[Stub]:
-    with serving(Stub()) as running:
-        yield running
-
-
-def replying(stub: Stub, *seeds: object) -> Stub:
+def replying(stub: Stub, *seeds: object) -> int:
+    """The stub's port, once it replies with ``seeds``."""
     stub.reply = json.dumps(list(seeds))
-    return stub
-
-
-def llm_run(stub: Stub, cache: Path, *argv: str, key: str = "OPENAI_API_KEY", target: str = F):
-    return run_pyct(target, *argv, unset=KEY_VARIABLES, env=llm_env(cache, stub.port, key))
+    return stub.port
 
 
 def heads(stderr: str) -> list[str]:
     """Each input's trace head: its first line, the one that names its source."""
     starts = ("seed ", "llm seed ", "solver ")
     return [line for line in stderr.splitlines() if line.startswith(starts)]
-
-
-def llm_lines(stderr: str) -> list[str]:
-    """Each ``llm:`` line: the start line first, the counts and the recording's two last."""
-    return [line for line in stderr.splitlines() if line.startswith("llm: ")]
 
 
 # llm-seeds-at-start-runs-after-the-user-s-seeds
@@ -99,7 +82,9 @@ def test_the_wait_for_the_model_is_not_budget_time(stub: Stub, tmp_path: Path) -
     replying(stub, {"x": 1})
     started = time.monotonic()
 
-    result = llm_run(stub, tmp_path, '{"x": 0}', "--llm", "seeds", "--budget", "4", target=HANG)
+    result = llm_run(
+        stub.port, tmp_path, '{"x": 0}', "--llm", "seeds", "--budget", "4", target=HANG
+    )
 
     took = time.monotonic() - started
     assert "stopped: budget spent" in result.stderr

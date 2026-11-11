@@ -5,26 +5,22 @@ Each run's base URLs point at a stub on localhost or at a local port nothing lis
 neither real key reaches pyct, so no request leaves the machine.
 """
 
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from tests.acceptance.harness import run_pyct, summary_line
-from tests.acceptance.llm_stub import KEY_VARIABLES, Stub, closed_port, llm_env, serving
+from tests.acceptance.llm_stub import (
+    KEY_VARIABLES,
+    Stub,
+    closed_port,
+    llm_env,
+    llm_run,
+    write_recording,
+)
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`
 F = "targets.llm.seeds::f"
-
-
-@pytest.fixture
-def stub() -> Iterator[Stub]:
-    with serving(Stub()) as running:
-        yield running
-
-
-def llm_run(port: int, cache: Path, *argv: str):
-    return run_pyct(F, *argv, unset=KEY_VARIABLES, env=llm_env(cache, port))
 
 
 # llm-tokens-reported-summary-and-stderr
@@ -72,3 +68,31 @@ def test_a_limit_that_is_not_a_positive_number_of_tokens_is_refused(
 
     assert (result.returncode, result.stdout) == (2, "")
     assert result.stderr.startswith("--llm-limit takes a positive number of tokens")
+
+
+# llm-token-limit-no-more-asks, llm-token-limit-replay-stops-where-the-recording-did
+def test_a_replay_whose_reply_reaches_the_limit_says_so_once_and_spends_nothing(
+    tmp_path: Path,
+) -> None:
+    recording = write_recording(
+        tmp_path / "r.jsonl", [{"reply": '[{"x": 7}]', "tokens": {"in": 1200, "out": 300}}]
+    )
+
+    result = llm_run(
+        closed_port(),
+        tmp_path,
+        '{"x": 0}',
+        "--llm",
+        "seeds",
+        "--llm-replay",
+        str(recording),
+        "--llm-limit",
+        "1000",
+    )
+
+    assert result.returncode == 0, result.stderr
+    said = "llm: token limit reached; no more asks"
+    assert result.stderr.splitlines().count(said) == 1
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert (llm["replayed"], llm["tokens"]) == (1, {"in": 0, "out": 0})
