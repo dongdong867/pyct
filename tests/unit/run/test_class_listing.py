@@ -66,7 +66,8 @@ def test_a_class_shows_its_decorators_its_class_line_its_fields_and_its_init_alo
             "    y: int = 0\n\n    def norm(self):\n        return 0\n\n\n"
             "class Pair(\n    NamedTuple,\n):\n    # the left\n    a: int\n\n\n"
             "class Box:\n    size = 3\n\n    @staticmethod\n    def make():\n        pass\n\n"
-            "    def __init__(self, w):\n        self.w = w\n",
+            "    def __init__(self, w):\n        self.w = w\n\n\n"
+            "class Gap:\n\n    x: int\n",
         },
     )
     loaded(monkeypatch, "listed.t", made / "t.py")
@@ -76,7 +77,8 @@ def test_a_class_shows_its_decorators_its_class_line_its_fields_and_its_init_alo
     assert listing.text == (
         "# listed.t::Point\n@dataclass(frozen=True)\nclass Point:\n    x: int\n    y: int = 0\n\n"
         "# listed.t::Pair\nclass Pair(\n    NamedTuple,\n):\n    # the left\n    a: int\n\n"
-        "# listed.t::Box\nclass Box:\n    def __init__(self, w):\n        self.w = w"
+        "# listed.t::Box\nclass Box:\n    def __init__(self, w):\n        self.w = w\n\n"
+        "# listed.t::Gap\nclass Gap:\n    x: int"
     )
 
 
