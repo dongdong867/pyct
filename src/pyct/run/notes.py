@@ -40,4 +40,9 @@ class SeedsKept:
     numbers: tuple[int, ...]
 
 
-type Note = AskSkipped | ReplyIgnored | SeedDropped | SeedsKept
+@dataclass(frozen=True)
+class LimitReached:
+    """The run's tokens reached ``--llm-limit``: no tool asks again this run. Said once."""
+
+
+type Note = AskSkipped | ReplyIgnored | SeedDropped | SeedsKept | LimitReached

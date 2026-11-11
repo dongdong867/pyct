@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pyct.core.foundation.branch import Branch, Expression, as_the_code_read_it
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
+from pyct.results.llm_asks import LlmUse
 from pyct.results.printed import CUT, PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
@@ -43,13 +44,14 @@ def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None
     return f'{head[:-1]}, "forks": [{forks}], {json.dumps(rest)[1:]}'
 
 
-def render_summary(result: RunResult) -> str:
+def render_summary(result: RunResult, llm: LlmUse | None = None) -> str:
     """The line that closes stdout, one line for the whole run.
 
     A tool tells it from an input line by ``stopped``, which no input line
     carries. The coverage is written the way an input line writes its own,
     and ``uncovered`` is keyed like ``total``: a file with nothing left over
-    carries an empty list rather than dropping out.
+    carries an empty list rather than dropping out. ``llm`` is what the
+    run's LLM tools did, null for a run with no ``--llm``.
     """
     payload = {
         "stopped": result.stopped.reason,
@@ -63,8 +65,22 @@ def render_summary(result: RunResult) -> str:
         "uncovered": _numbers(result.coverage.uncovered),
         "why_uncovered": [why_json(entry) for entry in result.why_uncovered],
         "environment": _environment(result.environment),
+        "llm": None if llm is None else _llm(llm),
     }
     return json.dumps(payload)
+
+
+def _llm(use: LlmUse) -> dict[str, object]:
+    """The LLM's model, tools and counts, its tokens in and out, and its wait to the millisecond."""
+    return {
+        "model": use.model,
+        "tools": list(use.tools),
+        "asks": use.asks,
+        "replayed": use.replayed,
+        "skipped": use.skipped,
+        "tokens": {"in": use.tokens_in, "out": use.tokens_out},
+        "seconds": round(use.seconds, 3),
+    }
 
 
 def _numbers(by_file: Mapping[str, frozenset[int]]) -> dict[str, list[int]]:

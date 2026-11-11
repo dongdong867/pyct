@@ -6,23 +6,26 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from pyct.config.llm import ALL, DEFAULT_MODEL, PROVIDERS, TOOLS, LlmSettings
-from pyct.results.llm_asks import Why
+from pyct.config.llm import ALL, DEFAULT_LIMIT, DEFAULT_MODEL, PROVIDERS, TOOLS, LlmSettings
+from pyct.results.llm_asks import LlmUse, Why
 from pyct.run.helpers import Helpers
 from pyct.run.llm_seeds import NoSeedError
-from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
+from pyct.run.notes import AskSkipped, LimitReached, Note, ReplyIgnored, SeedDropped, SeedsKept
+from pyct.run.tell import Noted
 
 if TYPE_CHECKING:
-    from pyct.llm.build import Unusable
+    from pyct.llm.build import Built, Unusable
 
 # the Anthropic ids the help names as examples; pyct keeps no list of ids
 ANTHROPIC_EXAMPLES = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5")
 
 
 def add_flags(parser: argparse.ArgumentParser) -> None:
-    """``--llm TOOLS`` and ``--llm-model PROVIDER:MODEL``."""
+    """``--llm TOOLS``, ``--llm-model PROVIDER:MODEL``, ``--llm-replay FILE`` and
+    ``--llm-limit TOKENS``."""
     parser.add_argument(
         "--llm",
         dest="llm",
@@ -42,24 +45,95 @@ def add_flags(parser: argparse.ArgumentParser) -> None:
             f" ({', '.join(ANTHROPIC_EXAMPLES)})"
         ),
     )
+    _add_spending_flags(parser)
 
 
-def start(settings: LlmSettings, own_seeds: int) -> tuple[Helpers, str]:
-    """The helpers for the run, with the line that says which model the tools ask, or, when the
-    LLM cannot be used, no helpers and the line that says why.
+def _add_spending_flags(parser: argparse.ArgumentParser) -> None:
+    """``--llm-replay FILE``, which spends no tokens, and ``--llm-limit TOKENS``."""
+    parser.add_argument(
+        "--llm-replay",
+        dest="llm_replay",
+        metavar="FILE",
+        help=(
+            "answer each ask from a recording a run made, by its tool, place and try, and ask no"
+            " model; the run reports the recording's model"
+        ),
+    )
+    parser.add_argument(
+        "--llm-limit",
+        dest="llm_limit",
+        metavar="TOKENS",
+        help=(
+            "no more asks once the run's tokens in and out together reach this many, so the ask"
+            f" that reaches it may pass it; {DEFAULT_LIMIT:,} by default. A replay counts each"
+            " reply at its recorded tokens"
+        ),
+    )
+
+
+@dataclass(frozen=True)
+class Started:
+    """The helpers for the run, the line stderr gives before the first input, and what was
+    built, which the closing lines read once the run ends."""
+
+    helpers: Helpers
+    said: str
+    built: Built
+    tools: tuple[str, ...]
+
+    def use(self) -> LlmUse:
+        """What the tools did, for the summary line: zero counts when the LLM could not be used,
+        so a reader sees the switch was on."""
+        connection = self.built.connection
+        if connection is None:
+            return LlmUse(str(self.built.model), self.tools)
+        return connection.ledger.use(self.built.model, self.tools)
+
+    def closing(self) -> tuple[str, ...]:
+        """The lines that end stderr's run summary: the counts, then where the replies were
+        recorded and, when a write failed, why it stopped, or why none were. No lines when the LLM
+        could not be used."""
+        connection = self.built.connection
+        if connection is None:
+            return ()
+        recording = connection.recording
+        if recording.path is None:
+            where = f"llm: replies not recorded ({recording.failure})"
+        elif recording.failure is not None:
+            where = f"llm: replies recorded in {recording.path} until a write failed"
+            where += f" ({recording.failure})"
+        else:
+            where = f"llm: replies recorded in {recording.path}"
+        return counts_line(self.use()), where
+
+
+def counts_line(use: LlmUse) -> str:
+    """The asks, the tokens spent in this run, and the seconds waited, to the tenth."""
+    return (
+        f"llm: {use.asks} asks, {use.replayed} replayed, {use.skipped} skipped,"
+        f" {use.tokens_in} tokens in, {use.tokens_out} out, {use.seconds:.1f} s waiting"
+    )
+
+
+def start(settings: LlmSettings, own_seeds: int, noted: Noted | None) -> Started:
+    """The helpers for the run, with the line that says which model the tools ask, a replay's
+    the one its recording names, or, when the LLM cannot be used, no helpers and the line that
+    says why.
 
     A run with no seed of its own and an LLM it cannot use raises NoSeedError instead: the
-    refusal is the one line it gives.
+    refusal is the one line it gives. A replay file that cannot be read raises UsageError.
+    ``noted`` hears the connection's notes, such as the limit reached.
     """
     from pyct.llm.build import build
 
-    built = build(settings)
+    built = build(settings, noted)
     if built.unusable is None:
-        return built.helpers, f"llm: {settings.model}, tools: {', '.join(settings.tools)}"
+        said = f"llm: {built.model}, tools: {', '.join(settings.tools)}"
+        return Started(built.helpers, said, built, settings.tools)
     if not own_seeds:
         raise NoSeedError(_unusable_reason(built.unusable))
-    reason = _unusable_reason(built.unusable, advice=True)
-    return built.helpers, f"llm: {reason}; running without the LLM"
+    said = f"llm: {_unusable_reason(built.unusable, advice=True)}; running without the LLM"
+    return Started(built.helpers, said, built, settings.tools)
 
 
 def _unusable_reason(unusable: Unusable, advice: bool = False) -> str:
@@ -80,6 +154,8 @@ def note_line(note: Note) -> str | None:
             return f"llm: {tool} reply ignored: {reason}"
         case SeedDropped(number, reason):
             return f"llm: dropped seed {number}: {reason}"
+        case LimitReached():
+            return "llm: token limit reached; no more asks"
         case SeedsKept():
             return None
 

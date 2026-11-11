@@ -7,34 +7,27 @@ neither real key reaches pyct, so no request leaves the machine.
 
 import importlib.util
 import time
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 from pyct.cli import main
-from tests.acceptance.harness import input_lines, let_pyct_run_in_process, run_pyct
-from tests.acceptance.llm_stub import DUMMY_KEY, KEY_VARIABLES, Stub, closed_port, llm_env, serving
+from tests.acceptance.harness import let_pyct_run_in_process, run_pyct, summary_line
+from tests.acceptance.llm_stub import (
+    DUMMY_KEY,
+    SEEDS_F,
+    Stub,
+    closed_port,
+    llm_env,
+    llm_run,
+    sources,
+    write_recording,
+)
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, and it calls `sign` in targets.llm.helpers
-F = "targets.llm.seeds::f"
+F = SEEDS_F
 # the longest a run waiting out the 30 s ask may take, its own short run included
 SLOW_RUN = 55
-
-
-@pytest.fixture
-def stub() -> Iterator[Stub]:
-    with serving(Stub()) as running:
-        yield running
-
-
-def llm_run(port: int, cache: Path, *argv: str, key: str | None = "OPENAI_API_KEY", timeout=30):
-    env = llm_env(cache, port, key)
-    return run_pyct(F, *argv, unset=KEY_VARIABLES, env=env, timeout=timeout)
-
-
-def sources(stdout: str) -> list[object]:
-    return [line["source"] for line in input_lines(stdout)]
 
 
 # llm-failure-never-stops-a-run-no-package
@@ -83,7 +76,7 @@ def test_a_provider_that_cannot_be_reached_is_skipped(tmp_path: Path) -> None:
     assert sources(result.stdout)[:2] == ["seed", "solver"]
 
 
-# llm-failure-never-stops-a-run-slow
+# llm-failure-never-stops-a-run-slow, llm-tokens-reported-skipped
 def test_an_ask_with_no_reply_in_30_s_is_skipped(stub: Stub, tmp_path: Path) -> None:
     stub.delay = 40
     started = time.monotonic()
@@ -96,6 +89,9 @@ def test_an_ask_with_no_reply_in_30_s_is_skipped(stub: Stub, tmp_path: Path) -> 
     assert result.returncode == 0
     assert "llm: seeds ask skipped: no reply in 30 s" in result.stderr.splitlines()
     assert sources(result.stdout)[:2] == ["seed", "solver"]
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert (llm["asks"], llm["skipped"]) == (0, 1)
 
 
 # llm-failure-never-stops-a-run-wrong-form
@@ -105,7 +101,27 @@ def test_a_reply_with_no_json_array_is_ignored(stub: Stub, tmp_path: Path) -> No
     result = llm_run(stub.port, tmp_path, '{"x": 0}', "--llm", "seeds")
 
     assert result.returncode == 0
-    assert "llm: seeds reply ignored: no JSON array in the reply" in result.stderr.splitlines()
+    assert (
+        "llm: seeds reply ignored: no JSON array pyct can read in the reply"
+        in result.stderr.splitlines()
+    )
+    assert sources(result.stdout)[:2] == ["seed", "solver"]
+
+
+# llm-failure-never-stops-a-run-wrong-form
+def test_a_reply_with_a_number_too_long_to_read_is_ignored(tmp_path: Path) -> None:
+    reply = '[{"x": ' + "9" * 5000 + "}]"
+    recording = write_recording(tmp_path / "long.jsonl", [{"reply": reply}])
+
+    result = llm_run(
+        closed_port(), tmp_path, '{"x": 0}', "--llm", "seeds", "--llm-replay", str(recording)
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        "llm: seeds reply ignored: no JSON array pyct can read in the reply"
+        in result.stderr.splitlines()
+    )
     assert sources(result.stdout)[:2] == ["seed", "solver"]
 
 

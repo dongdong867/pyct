@@ -154,11 +154,11 @@ def test_an_in_process_run_ends_within_the_same_bound(tmp_path: Path) -> None:
 
 
 def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str, str]:
-    """The digests of what a run printed, its paths, its environment and its goal taken out,
-    and the seconds of its asks and the lines each input covered first.
+    """The digests of what a run printed, its paths, its environment, its goal and its LLM entry
+    taken out, and the seconds of its asks and the lines each input covered first.
 
-    The goal, the seconds and the first covered lines came after the digests were pinned, and
-    other tests read them; the seconds differ from run to run.
+    The goal, the LLM entry, the seconds and the first covered lines came after the digests were
+    pinned, and other tests read them; the seconds differ from run to run.
     """
 
     def normalized(text: str) -> str:
@@ -169,6 +169,7 @@ def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str,
     summary = json.loads(result_stdout.splitlines()[-1])
     stdout = result_stdout.replace(json.dumps(summary["environment"]), "<environment>")
     stdout = stdout.replace(f'"goal": {json.dumps(summary["goal"])}, ', "")
+    stdout = stdout.replace(f', "llm": {json.dumps(summary["llm"])}', "")
     stdout = SECONDS_KEY.sub("", stdout)
     kept = [
         line
