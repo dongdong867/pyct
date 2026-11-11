@@ -19,6 +19,7 @@ from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
 from pyct.config.llm import SEEDS_TOOL
 from pyct.results.llm_asks import AskCost, Unanswered
+from pyct.run.class_listing import class_listing
 from pyct.run.code_context import code_context
 from pyct.run.notes import AskSkipped, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.seed_checks import SeedCheck, parse_seed
@@ -49,13 +50,15 @@ class NoSeedError(Exception):
 class SeedRequest:
     """What a seeds ask is about: the place, the target's spec; the target's code and its
     same-package callees' (``code_context``); its signature as Python writes it; the user's
-    seeds as JSON; and the goal the seeds are for."""
+    seeds as JSON; the goal the seeds are for; and the classes of the target module's folder
+    (``class_listing``), empty when it defines none."""
 
     place: str
     code: str
     signature: str
     seeds: tuple[str, ...]
     goal: Goal = Goal.COVERAGE
+    classes: str = ""
 
 
 @dataclass(frozen=True)
@@ -126,7 +129,8 @@ def _none_left(own: Sequence[Mapping[str, object]], reason: str, waited: float) 
 
 def seed_request(target: Target, own: Sequence[Mapping[str, object]], goal: Goal) -> SeedRequest:
     """The request for ``target``, quoting at most ``QUOTED_SEEDS`` of the user's seeds and none
-    whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write."""
+    whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write, and listing the
+    classes of its module's folder."""
     written = [_json(seed) for seed in own]
     quoted = tuple(text for text in written if text is not None and len(text) <= QUOTED_SEED_SIZE)[
         :QUOTED_SEEDS
@@ -137,6 +141,7 @@ def seed_request(target: Target, own: Sequence[Mapping[str, object]], goal: Goal
         signature=str(target.signature),
         seeds=quoted,
         goal=goal,
+        classes=class_listing(target.spec.partition("::")[0]).text,
     )
 
 

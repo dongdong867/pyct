@@ -15,52 +15,30 @@ from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.results.coverage import Coverage
-from pyct.results.llm_asks import AskCost, Unanswered, Why
+from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.llm_seeds import NAMES_A_CLASS, NoSeedError, SeedReply, SeedRequest
+from pyct.run.llm_seeds import NAMES_A_CLASS, NoSeedError, SeedReply
 from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import SeedCheck
 from pyct.run.setup import Setup
 from pyct.run.target import load_target
 from pyct.run.tell import Tell
+from tests.acceptance.fake_seeds import COST, FakeSeeds, replying
 
 # `f(x: int)`: `if x == 1234:` guards `return 1`, then it calls `sign` in targets.llm.helpers
 F = "targets.llm.seeds::f"
 # `hang(x: int)`: never returns, so every run ends on its budget
 HANG = "targets.isolate.hangs_with_finally::hang"
-COST = AskCost(attempt=1)
 NO_LIMITS = Limits()
-
-
-@dataclass
-class FakeSeeds:
-    """A SeedProvider that answers each ask with ``answer``, after ``delay`` seconds, and keeps
-    each request, with how many inputs had been reported when it came."""
-
-    answer: SeedReply | Unanswered
-    delay: float = 0.0
-    requests: list[SeedRequest] = field(default_factory=list)
-    reported_before: list[int] = field(default_factory=list)
-    reported: list[InputRecord] = field(default_factory=list)
-
-    def seeds(self, request: SeedRequest) -> SeedReply | Unanswered:
-        self.requests.append(request)
-        self.reported_before.append(len(self.reported))
-        time.sleep(self.delay)
-        return self.answer
 
 
 def deep(value: object, levels: int) -> object:
     for _ in range(levels):
         value = [value]
     return value
-
-
-def replying(*seeds: object, delay: float = 0.0) -> FakeSeeds:
-    return FakeSeeds(SeedReply(tuple(json.dumps(seed) for seed in seeds), COST), delay)
 
 
 @dataclass
