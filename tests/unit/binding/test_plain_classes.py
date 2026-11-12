@@ -1,6 +1,6 @@
-"""A class read without running code: ``plain_class`` takes a class ``inspect.getattr_static``
-finds only when ``getattr`` would read the same class, and ``load_class`` reads such a step that
-way, any other step with ``getattr`` as before."""
+"""A class read from the module's or the classes' own namespaces without running code:
+``plain_class`` takes such a class only when ``getattr`` would read the same class, and
+``load_class`` reads such a step that way, any other step with ``getattr`` as before."""
 
 import collections
 import importlib
@@ -12,7 +12,7 @@ from types import ModuleType
 import pytest
 
 from pyct.binding import classes
-from pyct.binding.classes import load_class, plain_class
+from pyct.binding.classes import Unread, load_class, plain_attribute, plain_class
 
 MODULE = "acme_plain_classes"
 SOURCE = """
@@ -99,7 +99,7 @@ def test_a_class_in_a_module_s_or_a_class_s_namespace_is_read_plainly(module: Mo
         "class-s-type",
         "get",
         "getattribute",
-        "metaclass-attribute",
+        "type-holds-the-name",
     ],
 )
 def test_a_step_getattr_could_read_otherwise_is_no_plain_class(
@@ -133,3 +133,11 @@ def test_load_class_reads_a_plain_class_without_getattr(
 @pytest.mark.usefixtures("module")
 def test_load_class_reads_any_other_step_with_getattr_as_before(text: str, found: type) -> None:
     assert load_class(text, "x") is found
+
+
+def test_a_name_the_namespaces_lack_is_absent_unless_a_getattr_could_answer_it(
+    module: ModuleType,
+) -> None:
+    assert plain_attribute(module, "missing") is Unread.CODE
+    assert plain_attribute(module.Outer, "missing") is Unread.ABSENT
+    assert plain_attribute(classes, "missing") is Unread.ABSENT

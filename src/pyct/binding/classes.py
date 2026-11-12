@@ -72,8 +72,9 @@ def load_class(text: object, home: str) -> type:
 
 
 class Unread(enum.Enum):
-    """Why ``plain_attribute`` gives no attribute: ``ABSENT``, the namespaces ``getattr`` reads
-    first lack it; ``CODE``, ``getattr`` could run code to read it or read another object."""
+    """Why ``plain_attribute`` gives no attribute: ``ABSENT``, no namespace ``getattr`` reads
+    holds it and no ``__getattr__`` would answer it; ``CODE``, the owner's type holds the name,
+    or ``getattr`` could run code to read it."""
 
     ABSENT = "absent"
     CODE = "code"
@@ -93,11 +94,12 @@ def plain_attribute(owner: object, name: str) -> object:
     The owner's type must read attributes as Python's module or class type
     does and hold no attribute of that name itself; otherwise the read is
     ``Unread.CODE``. A module's own namespace, or the namespaces of a
-    class's method resolution order, are read in ``getattr``'s order; a
-    name none holds is ``Unread.ABSENT``. A class found whose own type
-    defines ``__get__`` is ``Unread.CODE``. So a class this gives is the
-    one ``getattr`` gives, and ``getattr`` runs no code of the module's or
-    a class's to give it.
+    class's method resolution order, are read in ``getattr``'s order. A
+    name none holds is ``Unread.CODE`` when a ``__getattr__`` would answer
+    it, the module's own or the class's type's, and ``Unread.ABSENT``
+    otherwise. A class found whose own type defines ``__get__`` is
+    ``Unread.CODE``. So a class this gives is the one ``getattr`` gives,
+    and ``getattr`` runs no code of the module's or a class's to give it.
     """
     kind = type(owner)
     reader = _defining(kind, "__getattribute__")
@@ -108,9 +110,19 @@ def plain_attribute(owner: object, name: str) -> object:
     else:
         spaces = [_namespace(each) for each in _mro(cast(type, owner))]
     found = next((space[name] for space in spaces if name in space), Unread.ABSENT)
+    if found is Unread.ABSENT and _answers_missing(owner, reader, spaces):
+        return Unread.CODE
     if is_a_class(found) and _defining(type(found), "__get__") is not None:
         return Unread.CODE
     return found
+
+
+def _answers_missing(owner: object, reader: type, spaces: list[Mapping[str, object]]) -> bool:
+    """Whether a ``__getattr__`` answers a name ``getattr`` finds nowhere: the module's own, read
+    from its namespace, or the one the class's type defines."""
+    if reader is types.ModuleType:
+        return "__getattr__" in spaces[0]
+    return _defining(type(owner), "__getattr__") is not None
 
 
 def module_of(cls: type) -> object:

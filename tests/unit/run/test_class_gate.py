@@ -11,7 +11,7 @@ import pluggy
 import pytest
 
 from pyct.run.class_listing import class_listing
-from pyct.run.llm_seeds import NOT_ITS_MODULE, NOT_THE_USER_S, ClassGate
+from pyct.run.llm_seeds import NOT_THE_USER_S, ClassGate
 from pyct.run.target import load_target
 
 GREET = "targets.llm.shop.greet"
@@ -19,6 +19,11 @@ MODELS = "targets.llm.shop.models"
 # modules of the user's own code the gate tests import from ``tmp_path``
 USER = "acme_gate_user"
 LAZY = "acme_gate_lazy"
+# what a name reads as, and the line's reason after the name it reached
+NOT_A_CLASS = "is not a class"
+RUNS_CODE = "cannot be read without running code"
+# the reason for a name with a module among its steps
+THROUGH_A_MODULE = "must name a class by its own module before ::, got"
 PACKAGE = "acme_gate_package"
 USER_SOURCE = """
 import concurrent.futures as cf
@@ -63,6 +68,30 @@ class Describing(type):
 class Holder:
     class Bound(metaclass=Describing):
         pass
+
+
+class Answering(type):
+    def __getattr__(cls, name):
+        return int
+
+
+class Asked(metaclass=Answering):
+    pass
+
+
+# each read of the __module__ the metaclass claims, which the gate never makes
+claimed = []
+
+
+class Claiming(type):
+    @property
+    def __module__(cls):
+        claimed.append(cls)
+        return __name__
+
+
+class Disguised(metaclass=Claiming):
+    __module__ = "collections"
 """
 LAZY_SOURCE = """
 def __getattr__(name):
@@ -101,7 +130,9 @@ def user_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (tmp_path / f"{USER}.py").write_text(USER_SOURCE)
     (tmp_path / f"{LAZY}.py").write_text(LAZY_SOURCE)
     (tmp_path / PACKAGE).mkdir()
-    (tmp_path / PACKAGE / "__init__.py").write_text(f"from {PACKAGE} import sub\n")
+    (tmp_path / PACKAGE / "__init__.py").write_text(
+        f"from {PACKAGE} import sub\nfrom {PACKAGE}.sub import Thing\n"
+    )
     (tmp_path / PACKAGE / "sub.py").write_text("class Thing:\n    pass\n")
     monkeypatch.syspath_prepend(str(tmp_path))
     monkeypatch.setattr(concurrent, "futures", concurrent.futures)
@@ -118,9 +149,9 @@ def test_a_name_that_steps_into_a_module_is_refused_without_reading_it() -> None
     before = set(sys.modules)
 
     for text in (f"{USER}::cf.ProcessPoolExecutor", "cf.ThreadPoolExecutor"):
-        assert asked(gate, text) == refused(text, NOT_ITS_MODULE)
+        assert asked(gate, text) == refused(text, THROUGH_A_MODULE)
     named = f"{PACKAGE}::sub.Thing"
-    assert asked(ClassGate(PACKAGE, frozenset()), named) == refused(named, NOT_ITS_MODULE)
+    assert asked(ClassGate(PACKAGE, frozenset()), named) == refused(named, THROUGH_A_MODULE)
     assert set(sys.modules) == before
 
 
@@ -129,16 +160,9 @@ def test_a_name_only_a_module_s_getattr_answers_is_refused_without_running_it() 
     gate = ClassGate(LAZY, frozenset())
     before = set(sys.modules)
 
-    assert asked(gate, f"{LAZY}::cf.ProcessPoolExecutor") == unread(
-        f"{LAZY} has no class cf.ProcessPoolExecutor"
-    )
-    assert asked(gate, f"{LAZY}::sp") == unread(f"{LAZY} has no class sp")
+    assert asked(gate, f"{LAZY}::cf.ProcessPoolExecutor") == unread(f"{LAZY}::cf {RUNS_CODE}")
+    assert asked(gate, f"{LAZY}::sp") == unread(f"{LAZY}::sp {RUNS_CODE}")
     assert set(sys.modules) == before
-
-
-# what a name reads as, and the line's reason after the name it reached
-NOT_A_CLASS = "is not a class"
-RUNS_CODE = "cannot be read without running code"
 
 
 @pytest.mark.usefixtures("user_module")
@@ -156,6 +180,8 @@ RUNS_CODE = "cannot be read without running code"
         ("Meta.Lazy", "Meta.Lazy", RUNS_CODE),
         # a class whose own type defines __get__, so getattr reads what that returns
         ("Holder.Bound", "Holder.Bound", RUNS_CODE),
+        # a name only the metaclass's __getattr__ answers
+        ("Asked.Missing", "Asked.Missing", RUNS_CODE),
     ],
 )
 def test_a_step_that_is_not_a_class_read_without_running_code_is_refused(
@@ -175,8 +201,9 @@ def test_a_name_the_module_or_a_class_lacks_is_refused_as_the_checks_say() -> No
 
 
 @pytest.mark.usefixtures("user_module")
-def test_a_nested_class_of_the_user_s_passes() -> None:
+def test_a_nested_class_of_the_user_s_and_one_a_package_takes_in_pass() -> None:
     assert asked(ClassGate(USER, frozenset()), f"{USER}::Outer.Inner") == []
+    assert asked(ClassGate(PACKAGE, frozenset()), f"{PACKAGE}::Thing") == []
 
 
 @pytest.mark.parametrize(
