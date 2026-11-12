@@ -9,7 +9,13 @@ from pathlib import Path
 
 import pytest
 
-from pyct.run.class_listing import CLASS_LIMIT, FILE_LIMIT, ClassListing, class_listing
+from pyct.run.class_listing import (
+    CLASS_LIMIT,
+    FILE_LIMIT,
+    SHORTEST_CLASS,
+    ClassListing,
+    class_listing,
+)
 from pyct.run.target import load_target
 
 GREET = "targets.llm.shop.greet"
@@ -222,6 +228,20 @@ def test_once_the_limit_is_full_the_later_files_are_not_read(
 
     assert listing.text == first
     assert read == ["t.py"]
+
+
+def test_a_file_whose_shortest_class_just_fits_the_room_left_is_read_and_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = folder(tmp_path, {"t.py": "class T:\n    pass\n", "a.py": "class A:\n    pass\n"})
+    loaded(monkeypatch, "listed.t", made / "t.py")
+    first = class_listing("listed.t").text.split("\n\n")[0]
+    shortest = SHORTEST_CLASS + len("listed.a")
+    assert shortest == len("# listed.a::A\nclass A:")
+
+    listing = class_listing("listed.t", limit=len(first) + 2 + shortest)
+
+    assert headings(listing) == ["# listed.t::T", "# listed.a::A"]
 
 
 def test_a_module_the_gate_refuses_is_not_listed(
