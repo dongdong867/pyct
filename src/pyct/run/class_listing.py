@@ -91,8 +91,10 @@ def _folder_modules(module_name: str) -> list[tuple[str, Path]]:
 
 def _module_name(package: str, stem: str) -> str | None:
     """The module a file of ``package``'s folder is, or None when Python cannot import its name
-    or it is a ``__main__.py``, which usually runs its program when imported: its
-    ``__init__.py`` is the package itself."""
+    or it is a ``__main__.py``, which usually runs its program when imported.
+
+    The folder's ``__init__.py`` is the package itself.
+    """
     if stem == "__init__":
         return package or None
     if stem == "__main__" or not stem.isidentifier():
