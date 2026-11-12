@@ -30,6 +30,13 @@ M = "targets.llm.shop.models"
 GREET = "targets.llm.shop.greet"
 CHECK = "targets.llm.plain.check::check"
 ANN = {"__class__": f"{M}::Customer", "name": "ann", "age": 30}
+# the seed form the request had before this story, which the story's one sentence extends
+BEFORE_SEED_FORM = (
+    "A seed is a JSON object with one key per parameter of the signature, each holding that"
+    " argument as JSON. A method's self is a JSON object of its class's constructor arguments,"
+    " one key per constructor parameter. An argument may take a type its annotation does not"
+    " name, when the code shows it uses one."
+)
 BOB = {"__class__": f"{M}::Customer", "name": "bob", "age": 70}
 
 
@@ -172,13 +179,21 @@ def test_the_request_has_no_classes_section_when_the_folder_defines_no_class() -
     [request] = provider.requests
     assert request.classes == ""
     assert not [line for line in text.splitlines() if line.startswith("# ") and "::" in line]
-    # the code's section, then the user's seed, then the seed form
-    assert (
-        f'```\n\nThe user\'s seeds, which already run, one per line:\n{{"n": 0}}\n\n{SEED_FORM}'
-        in text
+    assert text.replace(SEED_FORM, BEFORE_SEED_FORM) == "\n\n".join(
+        [
+            "pyct tests one Python function by running it on starting inputs, called seeds, then"
+            " on inputs a solver finds by flipping the branches each input took. Suggest seeds"
+            " that reach code the solver alone would struggle to reach.",
+            "Goal: coverage. Together the seeds should run as many lines and branches of the"
+            " function as they can.",
+            f"Function: {CHECK}\nSignature: (n)",
+            "The function's code, then the code of the functions it calls in its package:\n"
+            f"```python\n{request.code}\n```",
+            'The user\'s seeds, which already run, one per line:\n{"n": 0}',
+            BEFORE_SEED_FORM,
+            "Answer with a JSON array of at most 5 seed objects, and nothing else.",
+        ]
     )
-    plain = SeedRequest(request.place, request.code, request.signature, request.seeds, request.goal)
-    assert text == request_text(plain)
 
 
 # llm-seeds-build-self-the-request-shows-self-s-constructor
