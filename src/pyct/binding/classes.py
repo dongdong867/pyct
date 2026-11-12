@@ -73,7 +73,8 @@ def load_class(text: object, home: str) -> type:
 
 class Unread(enum.Enum):
     """Why ``plain_attribute`` gives no attribute: ``ABSENT``, no namespace ``getattr`` reads
-    holds it and no ``__getattr__`` would answer it; ``CODE``, the owner's type holds the name,
+    holds it, and neither the module's own ``__getattr__`` nor the class's type's would answer
+    it; ``CODE``, the owner's type holds the name,
     or ``getattr`` could run code to read it."""
 
     ABSENT = "absent"

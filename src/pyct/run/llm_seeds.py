@@ -248,7 +248,8 @@ class ClassGate:
         ``place: reason`` lines, as the seed checks write them. A value that
         is not a str and one badly written pass, and the seed checks report
         them. A module that fails to import is left to the seed checks too,
-        which report it; the gate reads none of that name's steps.
+        and the gate reads none of that name's steps: the seed checks report
+        a module that fails again, and build from one whose next import works.
         """
         return [line for place, text in _class_names(seed) for line in self._lines(place, text)]
 
