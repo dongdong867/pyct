@@ -23,7 +23,7 @@ LAZY = "acme_gate_lazy"
 NOT_A_CLASS = "is not a class"
 RUNS_CODE = "cannot be read without running code"
 # the reason for a name with a module among its steps
-THROUGH_A_MODULE = "must name a class by its own module before ::, got"
+THROUGH_A_MODULE = "must not step through a module, got"
 PACKAGE = "acme_gate_package"
 USER_SOURCE = """
 import concurrent.futures as cf

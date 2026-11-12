@@ -23,7 +23,7 @@ from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.llm_seeds import NOT_ITS_MODULE, NoSeedError, SeedReply
+from pyct.run.llm_seeds import NoSeedError, SeedReply
 from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import SeedCheck
@@ -285,7 +285,7 @@ def test_a_class_named_through_a_module_a_listed_module_imports_is_refused() -> 
 
     _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
 
-    said = f"x['__class__'] {NOT_ITS_MODULE} \"{named}\""
+    said = f"x['__class__'] must not step through a module, got \"{named}\""
     assert heard.notes == [SeedDropped(1, said), SeedsKept((2,))]
 
 

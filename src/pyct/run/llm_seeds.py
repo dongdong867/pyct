@@ -45,11 +45,13 @@ MOST_SEEDS = 5
 # the user's seeds a request quotes at most, and the characters of JSON each may take
 QUOTED_SEEDS = 10
 QUOTED_SEED_SIZE = 2_000
-# why an LLM seed's class is refused: a library's, one in a module the request did not list and
-# that was not imported, or one named through another module
+# why an LLM seed's class is refused, in the lines that quote the name: a library's, one in a
+# module the request did not list and that was not imported, or a name with a module among its
+# steps after ::
 NOT_THE_USER_S = "must name a class of the user's own code, got"
 NOT_LISTED = "must name a class the request listed or one already imported, got"
-NOT_ITS_MODULE = "must name a class by its own module before ::, got"
+THROUGH_A_MODULE = "must not step through a module, got"
+QUOTING = (NOT_THE_USER_S, NOT_LISTED, THROUGH_A_MODULE)
 # why a reply whose array is empty gives no seed
 NO_SEED = "the reply held no seed"
 
@@ -238,12 +240,15 @@ class ClassGate:
         that passes is imported, and the name's steps are read in it with
         ``plain_attribute``, which runs no code of the module's or a class's.
         Each step must reach a class whose own module is the user's code,
-        the last step too, and ``load_class`` then reads each step the same
-        way, to the same class. A step that reaches a module, a library's
-        class, or anything else is refused, the last two in the words the
-        seed checks use. A value that is not a str, one badly written, and a
-        module that fails to import pass, so the seed checks give their
-        lines.
+        the last step too; ``load_class`` then reads each such step the same
+        way, to the same class. A module, a step that reaches a module, and
+        a library's class are refused in lines that quote the name after
+        ``, got``. A step that is missing, one that is not a class, and one
+        that cannot be read without running code are refused in
+        ``place: reason`` lines, as the seed checks write them. A value that
+        is not a str and one badly written pass, and the seed checks report
+        them. A module that fails to import is left to the seed checks too,
+        which report it; the gate reads none of that name's steps.
         """
         return [line for place, text in _class_names(seed) for line in self._lines(place, text)]
 
@@ -261,7 +266,7 @@ class ClassGate:
             reason = _step_reason(module_name, qualname)
         if reason is None:
             return []
-        if reason.endswith(", got"):
+        if reason in QUOTING:
             return [f"{step_in(place, CLASS_KEY)} {reason} {written(text)}"]
         return [f"{step_in(place, CLASS_KEY)}: {reason}"]
 
@@ -274,11 +279,13 @@ def _step_reason(module_name: str, qualname: str) -> str | None:
     except (Exception, SystemExit):
         return None
     parts = qualname.split(".")
-    for at in range(1, len(parts) + 1):
-        found = plain_attribute(owner, parts[at - 1])
+    for at, part in enumerate(parts, start=1):
+        found = plain_attribute(owner, part)
+        if found is Unread.ABSENT:
+            return f"{module_name} has no class {qualname}"
         reason = _not_a_user_s_class(found, f"{module_name}::{'.'.join(parts[:at])}")
         if reason is not None:
-            return f"{module_name} has no class {qualname}" if found is Unread.ABSENT else reason
+            return reason
         owner = found
     return None
 
@@ -286,12 +293,10 @@ def _step_reason(module_name: str, qualname: str) -> str | None:
 def _not_a_user_s_class(found: object, reached: str) -> str | None:
     """Why the step that read ``found`` as ``reached`` is not a class of the user's code, or
     None when it is one."""
-    if found is Unread.ABSENT:
-        return "absent"
     if found is Unread.CODE:
         return f"{reached} cannot be read without running code"
     if issubclass(type(found), types.ModuleType):
-        return NOT_ITS_MODULE
+        return THROUGH_A_MODULE
     if not is_a_class(found):
         return f"{reached} is not a class"
     module = module_of(found)
