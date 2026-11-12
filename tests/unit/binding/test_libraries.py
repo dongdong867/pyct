@@ -1,5 +1,6 @@
 """A class is a library's when Python's standard library or an installed distribution holds
-it, unless the code whose hint names it is in the same top-level package."""
+it, unless the code whose hint names it is in the same top-level package. A module told by its
+name alone has no such exception."""
 
 import array
 import collections
@@ -103,7 +104,7 @@ def test_a_file_under_a_linked_spelling_of_a_root_is_a_library_s() -> None:
     ],
 )
 def test_a_module_is_told_a_library_s_by_its_name(name: str, library: bool) -> None:
-    assert library_module(name, __name__) is library
+    assert library_module(name) is library
 
 
 def test_a_module_that_is_not_loaded_is_told_by_its_top_level_name_without_importing_it(
@@ -118,11 +119,25 @@ def test_a_module_that_is_not_loaded_is_told_by_its_top_level_name_without_impor
     monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
     before = set(sys.modules)
 
-    assert library_module("acme_lib.models", __name__)
-    assert not library_module("acme_own.models", __name__)
-    assert library_module("tabnanny", __name__)
+    assert library_module("acme_lib.models")
+    assert not library_module("acme_own.models")
+    assert library_module("tabnanny")
     assert set(sys.modules) == before
 
 
-def test_a_module_of_the_owner_s_package_is_never_a_library_s() -> None:
-    assert not library_module("pluggy._hooks", "pluggy._manager")
+def test_a_library_s_module_is_a_library_s_whichever_package_asks() -> None:
+    # from_a_library excepts the hint owner's package; library_module, the LLM seeds' test, does not
+    assert not from_a_library(pluggy.PluginManager, pluggy.HookimplMarker)
+    assert library_module(pluggy.PluginManager.__module__)
+    assert library_module("subprocess")
+
+
+def test_a_module_whose_spec_has_no_file_or_folder_is_a_library_s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `__hello__` is frozen into Python and missing from sys.stdlib_module_names
+    monkeypatch.delitem(sys.modules, "__hello__", raising=False)
+    assert "__hello__" not in sys.stdlib_module_names
+
+    assert library_module("__hello__")
+    assert "__hello__" not in sys.modules

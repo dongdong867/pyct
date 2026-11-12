@@ -1,7 +1,7 @@
 """Whether a class is the user's own or a library's: Python's standard library's, or an installed
 distribution's other than the package of the code whose hint names it. A hint builds only the
-user's own classes (``hints``). A module is told the same way from its name alone
-(``library_module``), so a class an LLM seed names is refused before its module is imported."""
+user's own classes (``hints``). A module is told from its name alone (``library_module``), with
+no package excepted, so a class an LLM seed names is refused before its module is imported."""
 
 from __future__ import annotations
 
@@ -53,18 +53,20 @@ def from_a_library(cls: type, owner: object = None) -> bool:
     return _library_module(name)
 
 
-def library_module(name: str, owner: str) -> bool:
-    """Whether the module ``name`` is a library's, for code written in the module ``owner``, read
-    from the module's name, so nothing is imported and no attribute of the module is read.
+def library_module(name: str) -> bool:
+    """Whether the module ``name`` is a library's. It imports nothing: it reads a loaded
+    module's ``__file__``, or a loaded top-level module's ``__spec__``, or asks
+    ``importlib.util.find_spec`` for the top-level name, which runs the import path's finders.
 
-    A loaded module is tested as ``from_a_library`` tests a class's module.
-    A module that is not loaded is a library's when its top-level name is a
-    standard library module's, or when that name's spec, which Python finds
-    without importing the module, has its file, or else every folder it
-    spans, under ``LIBRARY_ROOTS``.
+    A loaded module is a library's when its file, as written or as its
+    links lead, lies under ``LIBRARY_ROOTS``, or, for one with no file, when
+    its top-level name is a standard library module's. A module that is not
+    loaded is a library's when its top-level name is a standard library
+    module's, or when that name's spec has its file, or else every folder it
+    spans, under ``LIBRARY_ROOTS``, or has neither a file nor a folder, as a
+    frozen or built-in module's spec has. No package is excepted, as a
+    hint's owner's is in ``from_a_library``.
     """
-    if package_of(name) == package_of(owner):
-        return False
     if name in sys.modules:
         return _library_module(name)
     top = name.partition(".")[0]
@@ -76,7 +78,7 @@ def library_module(name: str, owner: str) -> bool:
         return False
     places = [spec.origin] if spec.has_location and spec.origin else spec.submodule_search_locations
     found = list(places or ())
-    return bool(found) and all(_under_roots(place) for place in found)
+    return not found or all(_under_roots(place) for place in found)
 
 
 def package_of(name: str) -> str:

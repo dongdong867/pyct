@@ -9,22 +9,24 @@ it names must be of the user's own code, in a module the request listed or one a
 
 from __future__ import annotations
 
+import importlib
+import inspect
 import json
 import sys
 import time
+import types
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
 from pyct.binding.builds import CLASS_KEY
-from pyct.binding.classes import ClassFormError, ClassNameError, class_parts, load_class, written
-from pyct.binding.libraries import library_module
+from pyct.binding.classes import ClassFormError, class_parts, is_a_class, written
 from pyct.binding.places import step_in
 from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
 from pyct.config.llm import SEEDS_TOOL
 from pyct.results.llm_asks import AskCost, Unanswered
-from pyct.run.class_listing import class_listing
+from pyct.run.class_listing import class_listing, user_module
 from pyct.run.code_context import code_context
 from pyct.run.notes import AskSkipped, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.seed_checks import SeedCheck, parse_seed
@@ -211,10 +213,10 @@ class ClassGate:
     """The classes an LLM seed may name with ``"__class__"``: a class of the user's own code, in
     a module the request listed or one already imported.
 
-    ``home`` is the module a bare name is read in, and the code a library's
-    module is told apart from (``library_module``). ``listed`` is the
-    modules whose classes the request listed. pyct's own modules and
-    ``__main__`` are never the user's code.
+    ``home`` is the module a bare name is read in. ``listed`` is the
+    modules whose classes the request listed. A module is the user's code
+    as ``user_module`` tells it, the rule the listing follows too, so a
+    library's module is refused also when the target is inside it.
     """
 
     home: str
@@ -224,45 +226,62 @@ class ClassGate:
         """A line for each ``"__class__"`` str at any depth of ``seed`` that names a class an LLM
         seed may not, outer before inner in seed order.
 
-        Its module is tested by name before anything imports it. A class
-        whose module passes is loaded, and refused when its own module is a
-        library's, as a library's class a user's module imports is. A value
-        that is not a str, one badly written, and one that names no class
-        pass, so the seed checks give their lines.
+        Its module is tested by name before anything imports it. A module
+        that passes is imported, and the name's steps are read in it with
+        ``inspect.getattr_static``, which runs no ``__getattr__``, property
+        or other code of the module or a class. A step that reaches a module,
+        a class whose own module is not the user's code, or, before the last
+        step, anything other than a class, is refused. A value that is not a
+        str, one badly written, a module that fails to import, and a step
+        that is not found that way pass, so the seed checks give their lines.
         """
         return [line for place, text in _class_names(seed) for line in self._lines(place, text)]
 
     def _lines(self, place: str, text: str) -> list[str]:
         """The line for the ``"__class__"`` ``text`` of the object at ``place``, or none."""
         try:
-            module_name, _ = class_parts(text, self.home)
+            module_name, qualname = class_parts(text, self.home)
         except ClassFormError:
             return []
-        if self._library(module_name):
+        if not user_module(module_name):
             reason = NOT_THE_USER_S
         elif module_name not in sys.modules and module_name not in self.listed:
             reason = NOT_LISTED
-        elif self._library(_written_in(text, self.home)):
+        elif _leaves_the_user_s_code(module_name, qualname):
             reason = NOT_THE_USER_S
         else:
             return []
         return [f"{step_in(place, CLASS_KEY)} {reason} {written(text)}"]
 
-    def _library(self, module_name: str) -> bool:
-        """Whether the module is not the user's code: pyct's own, ``__main__``, or a library's."""
-        if module_name == "__main__" or module_name.partition(".")[0] == "pyct":
-            return True
-        return library_module(module_name, self.home)
 
-
-def _written_in(text: str, home: str) -> str:
-    """The module the class ``text`` names was written in, read off the loaded class; ``home``
-    for one that names no class, which the seed checks refuse."""
+def _leaves_the_user_s_code(module_name: str, qualname: str) -> bool:
+    """Whether a step of ``qualname``, read from the module without running code, reaches a
+    module, a class that is not the user's code, or, before the last step, no class. A module
+    that fails to import and a step not found that way say no."""
     try:
-        cls = load_class(text, home)
-    except ClassNameError:
-        return home
-    return cls.__module__ if isinstance(cls.__module__, str) else home
+        found: object = importlib.import_module(module_name)
+    except (Exception, SystemExit):
+        return False
+    parts = qualname.split(".")
+    for at, part in enumerate(parts, start=1):
+        try:
+            found = inspect.getattr_static(found, part)
+        except AttributeError:
+            return False
+        if not _goes_on(found, last=at == len(parts)):
+            return True
+    return False
+
+
+def _goes_on(found: object, last: bool) -> bool:
+    """Whether a step that reached ``found`` stays in the user's code: a class whose own module
+    is the user's, or, at the last step, anything but a module."""
+    if issubclass(type(found), types.ModuleType):
+        return False
+    if is_a_class(found):
+        module = found.__module__
+        return isinstance(module, str) and user_module(module)
+    return last
 
 
 def _class_names(seed: Mapping[str, object]) -> list[tuple[str, str]]:

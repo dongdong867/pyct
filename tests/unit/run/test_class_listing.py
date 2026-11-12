@@ -1,6 +1,7 @@
 """The classes a seeds ask lists: each top-level class of the target module's folder, read from
 its file without importing it, the target's module first."""
 
+import importlib
 import os
 import sys
 import time
@@ -187,6 +188,29 @@ def test_a_file_that_does_not_parse_is_too_large_or_cannot_be_read_is_skipped(
         os.chmod(made / "locked.py", 0o644)
 
     assert headings(listing) == ["# listed.t::T"]
+
+
+def test_a_module_the_gate_refuses_is_not_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = folder(
+        tmp_path,
+        {
+            "solo.py": "class S:\n    pass\n",
+            "tabnanny.py": "class Nag:\n    pass\n",
+            "__main__.py": "class Main:\n    pass\n",
+        },
+    )
+    loaded(monkeypatch, "solo", made / "solo.py")
+
+    assert headings(class_listing("solo")) == ["# solo::S"]
+
+
+@pytest.mark.parametrize("name", ["os", "subprocess", "pluggy._manager", "pyct.run.setup"])
+def test_a_target_in_a_library_or_in_pyct_gets_no_classes(name: str) -> None:
+    importlib.import_module(name)
+
+    assert class_listing(name) == ClassListing()
 
 
 def test_a_module_that_is_not_loaded_or_has_no_file_lists_nothing(

@@ -2,7 +2,8 @@
 from its file with ``ast``, so no module is imported.
 
 The target's own module comes first, then the folder's other modules by file name, but a
-``__main__.py``. Each class goes under a ``# module::Name`` heading, the name a seed's
+``__main__.py`` and a module that is not the user's own code (``user_module``), whose class an LLM
+seed may not name. Each class goes under a ``# module::Name`` heading, the name a seed's
 ``"__class__"`` writes: its decorators and class line, its class-level annotated fields, such as
 a dataclass's or a ``NamedTuple``'s, and its ``__init__``, each whole. A class goes in whole or
 is left out, while the classes stay within the limit.
@@ -15,6 +16,8 @@ import importlib.util
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+from pyct.binding.libraries import library_module
 
 # the characters the listed classes take at most, apart from the code's own limit
 CLASS_LIMIT = 8_000
@@ -43,6 +46,8 @@ def class_listing(module_name: str, limit: int = CLASS_LIMIT) -> ClassListing:
     modules: set[str] = set()
     used = 0
     for name, path in _folder_modules(module_name):
+        if not user_module(name):
+            continue
         for part in _class_parts(name, path):
             if used + len(part) > limit:
                 continue
@@ -50,6 +55,16 @@ def class_listing(module_name: str, limit: int = CLASS_LIMIT) -> ClassListing:
             modules.add(name)
             used += len(part) + 2
     return ClassListing("\n\n".join(parts), frozenset(modules))
+
+
+def user_module(name: str) -> bool:
+    """Whether the module ``name`` is the user's own code, told before anything imports it:
+    not ``__main__``, not one of pyct's own modules, and not a library's (``library_module``).
+    The listing shows only such a module's classes, and an LLM seed builds only theirs
+    (``ClassGate``)."""
+    if name == "__main__" or name.partition(".")[0] == "pyct":
+        return False
+    return not library_module(name)
 
 
 def _folder_modules(module_name: str) -> list[tuple[str, Path]]:
