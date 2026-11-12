@@ -10,7 +10,6 @@ it names must be of the user's own code, in a module the request listed or one a
 from __future__ import annotations
 
 import importlib
-import inspect
 import json
 import sys
 import time
@@ -20,7 +19,15 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from pyct.binding.builds import CLASS_KEY
-from pyct.binding.classes import ClassFormError, class_parts, is_a_class, written
+from pyct.binding.classes import (
+    ClassFormError,
+    Unread,
+    class_parts,
+    is_a_class,
+    module_of,
+    plain_attribute,
+    written,
+)
 from pyct.binding.places import step_in
 from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
@@ -38,10 +45,11 @@ MOST_SEEDS = 5
 # the user's seeds a request quotes at most, and the characters of JSON each may take
 QUOTED_SEEDS = 10
 QUOTED_SEED_SIZE = 2_000
-# why an LLM seed's class is refused: a library's, or one in a module the request did not list
-# and that was not imported
+# why an LLM seed's class is refused: a library's, one in a module the request did not list and
+# that was not imported, or one named through another module
 NOT_THE_USER_S = "must name a class of the user's own code, got"
 NOT_LISTED = "must name a class the request listed or one already imported, got"
+NOT_ITS_MODULE = "must name a class by its own module before ::, got"
 # why a reply whose array is empty gives no seed
 NO_SEED = "the reply held no seed"
 
@@ -228,12 +236,14 @@ class ClassGate:
 
         Its module is tested by name before anything imports it. A module
         that passes is imported, and the name's steps are read in it with
-        ``inspect.getattr_static``, which runs no ``__getattr__``, property
-        or other code of the module or a class. A step that reaches a module,
-        a class whose own module is not the user's code, or, before the last
-        step, anything other than a class, is refused. A value that is not a
-        str, one badly written, a module that fails to import, and a step
-        that is not found that way pass, so the seed checks give their lines.
+        ``plain_attribute``, which runs no code of the module's or a class's.
+        Each step must reach a class whose own module is the user's code,
+        the last step too, and ``load_class`` then reads each step the same
+        way, to the same class. A step that reaches a module, a library's
+        class, or anything else is refused, the last two in the words the
+        seed checks use. A value that is not a str, one badly written, and a
+        module that fails to import pass, so the seed checks give their
+        lines.
         """
         return [line for place, text in _class_names(seed) for line in self._lines(place, text)]
 
@@ -244,44 +254,48 @@ class ClassGate:
         except ClassFormError:
             return []
         if not user_module(module_name):
-            reason = NOT_THE_USER_S
+            reason: str | None = NOT_THE_USER_S
         elif module_name not in sys.modules and module_name not in self.listed:
             reason = NOT_LISTED
-        elif _leaves_the_user_s_code(module_name, qualname):
-            reason = NOT_THE_USER_S
         else:
+            reason = _step_reason(module_name, qualname)
+        if reason is None:
             return []
-        return [f"{step_in(place, CLASS_KEY)} {reason} {written(text)}"]
+        if reason.endswith(", got"):
+            return [f"{step_in(place, CLASS_KEY)} {reason} {written(text)}"]
+        return [f"{step_in(place, CLASS_KEY)}: {reason}"]
 
 
-def _leaves_the_user_s_code(module_name: str, qualname: str) -> bool:
-    """Whether a step of ``qualname``, read from the module without running code, reaches a
-    module, a class that is not the user's code, or, before the last step, no class. A module
-    that fails to import and a step not found that way say no."""
+def _step_reason(module_name: str, qualname: str) -> str | None:
+    """Why a step of ``qualname``, read in the module with ``plain_attribute``, reaches no class
+    of the user's code, or None when each does or the module fails to import."""
     try:
-        found: object = importlib.import_module(module_name)
+        owner: object = importlib.import_module(module_name)
     except (Exception, SystemExit):
-        return False
+        return None
     parts = qualname.split(".")
-    for at, part in enumerate(parts, start=1):
-        try:
-            found = inspect.getattr_static(found, part)
-        except AttributeError:
-            return False
-        if not _goes_on(found, last=at == len(parts)):
-            return True
-    return False
+    for at in range(1, len(parts) + 1):
+        found = plain_attribute(owner, parts[at - 1])
+        reason = _not_a_user_s_class(found, f"{module_name}::{'.'.join(parts[:at])}")
+        if reason is not None:
+            return f"{module_name} has no class {qualname}" if found is Unread.ABSENT else reason
+        owner = found
+    return None
 
 
-def _goes_on(found: object, last: bool) -> bool:
-    """Whether a step that reached ``found`` stays in the user's code: a class whose own module
-    is the user's, or, at the last step, anything but a module."""
+def _not_a_user_s_class(found: object, reached: str) -> str | None:
+    """Why the step that read ``found`` as ``reached`` is not a class of the user's code, or
+    None when it is one."""
+    if found is Unread.ABSENT:
+        return "absent"
+    if found is Unread.CODE:
+        return f"{reached} cannot be read without running code"
     if issubclass(type(found), types.ModuleType):
-        return False
-    if is_a_class(found):
-        module = found.__module__
-        return isinstance(module, str) and user_module(module)
-    return last
+        return NOT_ITS_MODULE
+    if not is_a_class(found):
+        return f"{reached} is not a class"
+    module = module_of(found)
+    return None if isinstance(module, str) and user_module(module) else NOT_THE_USER_S
 
 
 def _class_names(seed: Mapping[str, object]) -> list[tuple[str, str]]:

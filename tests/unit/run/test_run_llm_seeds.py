@@ -23,7 +23,7 @@ from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.llm_seeds import NoSeedError, SeedReply
+from pyct.run.llm_seeds import NOT_ITS_MODULE, NoSeedError, SeedReply
 from pyct.run.notes import AskSkipped, Note, ReplyIgnored, SeedDropped, SeedsKept
 from pyct.run.run import run
 from pyct.run.seed_checks import SeedCheck
@@ -280,12 +280,13 @@ def test_a_listed_module_s_class_or_a_loaded_user_module_s_passes(form: dict[str
     assert heard.notes[0] == SeedsKept((1,))
 
 
-def test_a_class_a_listed_module_holds_from_a_library_is_refused_after_it_loads() -> None:
+def test_a_class_named_through_a_module_a_listed_module_imports_is_refused() -> None:
     named = "targets.llm.calls::json.JSONDecoder"
 
     _, heard = run_f(replying({"x": {"__class__": named}}, {"x": 2}))
 
-    assert heard.notes == [SeedDropped(1, f"x['__class__'] {LIBRARY} \"{named}\""), SeedsKept((2,))]
+    said = f"x['__class__'] {NOT_ITS_MODULE} \"{named}\""
+    assert heard.notes == [SeedDropped(1, said), SeedsKept((2,))]
 
 
 # llm-seed-dropped-past-the-fifth

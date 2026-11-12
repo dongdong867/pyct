@@ -2,15 +2,18 @@
 
 The text is ``MODULE::QUALNAME``, as a target is written, or a bare
 ``QUALNAME``, read in the home module: the module the target function was
-written in. QUALNAME is one or more names joined by dots, each read once
-with ``getattr``.
+written in. QUALNAME is one or more names joined by dots, each read once:
+as ``plain_class`` finds it when it can, else with ``getattr``.
 """
 
 from __future__ import annotations
 
+import enum
 import importlib
 import inspect
-from typing import TypeGuard
+import types
+from collections.abc import Mapping
+from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Builds, NoOneClass, as_typed
 
@@ -40,7 +43,9 @@ class ClassFormError(ClassNameError):
 
 
 def load_class(text: object, home: str) -> type:
-    """The class ``text`` names, a bare name read in the module ``home``.
+    """The class ``text`` names, a bare name read in the module ``home``. A step
+    ``plain_class`` reads is read that way, so no code runs for it; any
+    other step is read with ``getattr``, which may run code.
 
     A raise or a ``SystemExit`` as the module imports, a name the module or
     a class on the way lacks, a raise other than AttributeError as a name is
@@ -55,7 +60,8 @@ def load_class(text: object, home: str) -> type:
         raise ClassNameError(f"cannot import {module_name}: {error!r}") from error
     try:
         for part in qualname.split("."):
-            found = getattr(found, part)
+            plain = plain_class(found, part)
+            found = getattr(found, part) if plain is None else plain
     except AttributeError as error:
         raise ClassNameError(f"{module_name} has no class {qualname}") from error
     except (Exception, SystemExit) as error:
@@ -63,6 +69,68 @@ def load_class(text: object, home: str) -> type:
     if not is_a_class(found):
         raise ClassNameError(f"{module_name}::{qualname} is not a class")
     return found
+
+
+class Unread(enum.Enum):
+    """Why ``plain_attribute`` gives no attribute: ``ABSENT``, the namespaces ``getattr`` reads
+    first lack it; ``CODE``, ``getattr`` could run code to read it or read another object."""
+
+    ABSENT = "absent"
+    CODE = "code"
+
+
+def plain_class(owner: object, name: str) -> type | None:
+    """The class ``owner``'s attribute ``name`` is, read without running code, when ``getattr``
+    would read the same class (``plain_attribute``); None otherwise."""
+    found = plain_attribute(owner, name)
+    return found if is_a_class(found) else None
+
+
+def plain_attribute(owner: object, name: str) -> object:
+    """``owner``'s attribute ``name``, read from the namespaces of a module or a class without
+    running code, or an ``Unread`` member.
+
+    The owner's type must read attributes as Python's module or class type
+    does and hold no attribute of that name itself; otherwise the read is
+    ``Unread.CODE``. A module's own namespace, or the namespaces of a
+    class's method resolution order, are read in ``getattr``'s order; a
+    name none holds is ``Unread.ABSENT``. A class found whose own type
+    defines ``__get__`` is ``Unread.CODE``. So a class this gives is the
+    one ``getattr`` gives, and ``getattr`` runs no code of the module's or
+    a class's to give it.
+    """
+    kind = type(owner)
+    reader = _defining(kind, "__getattribute__")
+    if reader not in (types.ModuleType, type) or _defining(kind, name) is not None:
+        return Unread.CODE
+    if reader is types.ModuleType:
+        spaces = [vars(types.ModuleType)["__dict__"].__get__(owner)]
+    else:
+        spaces = [_namespace(each) for each in _mro(cast(type, owner))]
+    found = next((space[name] for space in spaces if name in space), Unread.ABSENT)
+    if is_a_class(found) and _defining(type(found), "__get__") is not None:
+        return Unread.CODE
+    return found
+
+
+def module_of(cls: type) -> object:
+    """The ``__module__`` of ``cls``, read through ``type``'s own descriptor, so no code of the
+    class's own type runs."""
+    return type.__dict__["__module__"].__get__(cls)
+
+
+def _defining(cls: type, name: str) -> type | None:
+    """The first class of ``cls``'s method resolution order whose own namespace holds ``name``,
+    read so that no code runs."""
+    return next((each for each in _mro(cls) if name in _namespace(each)), None)
+
+
+def _mro(cls: type) -> tuple[type, ...]:
+    return type.__dict__["__mro__"].__get__(cls)
+
+
+def _namespace(cls: type) -> Mapping[str, object]:
+    return type.__dict__["__dict__"].__get__(cls)
 
 
 def class_parts(text: object, home: str) -> tuple[str, str]:
