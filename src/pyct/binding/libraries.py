@@ -64,9 +64,9 @@ def library_module(name: str) -> bool:
     its spec: a loaded module's own, else its top-level name's. The spec is
     a library's when its file, or else every folder it spans, lies under
     ``LIBRARY_ROOTS``, or when it has neither a file nor a folder, as a
-    frozen or built-in module's spec has. So a namespace package is told
-    the same before and after it is imported. No package is excepted, as a
-    hint's owner's is in ``from_a_library``.
+    frozen or built-in module's spec has. So a top-level namespace package
+    is told the same before and after it is imported. No package is
+    excepted, as a hint's owner's is in ``from_a_library``.
     """
     module = sys.modules.get(name)
     if module is not None and isinstance(getattr(module, "__file__", None), str):
