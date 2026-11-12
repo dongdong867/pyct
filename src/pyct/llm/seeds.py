@@ -19,11 +19,11 @@ SEED_FORM = (
     "A seed is a JSON object with one key per parameter of the signature, each holding that"
     " argument as JSON. A method's self is a JSON object of its class's constructor arguments,"
     " one key per constructor parameter. An argument the code uses as an object of a class is a"
-    ' JSON object holding "__class__": "module::QualifiedName", written as the class headings'
-    " write it, and one key per constructor parameter; such an object may sit inside a list or"
-    " dict, or be a constructor argument of another such object or of a method's self. Any"
-    " other JSON object stays a dict. pyct builds only the classes of the user's own code. An"
-    " argument may take a type its annotation does not name, when the code shows it uses one."
+    ' JSON object holding "__class__": "module::QualifiedName" and one key per constructor'
+    " parameter; such an object may sit inside a list or dict, or be a constructor argument of"
+    " another such object or of a method's self. Any other JSON object stays a dict. pyct"
+    " builds only the classes of the user's own code. An argument may take a type its"
+    " annotation does not name, when the code shows it uses one."
 )
 
 # the reason a reply with no seeds pyct can read is ignored
@@ -62,8 +62,8 @@ def request_text(request: SeedRequest) -> str:
     ]
     if request.classes:
         parts.append(
-            "The classes of the function's folder, each headed by the name a seed's"
-            f' "__class__" writes:\n```python\n{request.classes}\n```'
+            "The classes of the function's folder, each under a heading that writes its name as"
+            f' a seed\'s "__class__" writes it:\n```python\n{request.classes}\n```'
         )
     if request.seeds:
         quoted = "\n".join(request.seeds)
