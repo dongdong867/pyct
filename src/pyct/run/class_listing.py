@@ -23,6 +23,9 @@ from pyct.binding.libraries import library_module
 CLASS_LIMIT = 8_000
 # the bytes of a file the listing reads at most; a larger file is skipped
 FILE_LIMIT = 200_000
+# the characters of the shortest class a module's part can show, apart from its module's name:
+# the heading's ``# ``, ``::`` and one-letter name, a line break, and ``class A:``
+SHORTEST_CLASS = len("# ::A\nclass A:")
 
 
 @dataclass(frozen=True)
@@ -38,7 +41,8 @@ def class_listing(module_name: str, limit: int = CLASS_LIMIT) -> ClassListing:
     """The classes of the folder that holds the loaded module ``module_name``.
 
     A class that would take the text past ``limit`` is left out, and the
-    ones after it may still fit. A file that does not parse, that Python's
+    ones after it may still fit. A module whose shortest possible class no
+    longer fits is not read. A file that does not parse, that Python's
     parser cannot hold, that cannot be read, or that is larger than
     ``FILE_LIMIT`` is skipped. A module that is not loaded, or that has no
     file, lists nothing.
@@ -47,7 +51,7 @@ def class_listing(module_name: str, limit: int = CLASS_LIMIT) -> ClassListing:
     modules: set[str] = set()
     used = 0
     for name, path in _folder_modules(module_name):
-        if not user_module(name):
+        if limit - used < SHORTEST_CLASS + len(name) or not user_module(name):
             continue
         for part in _class_parts(name, path):
             if used + len(part) > limit:

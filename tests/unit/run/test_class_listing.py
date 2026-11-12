@@ -196,6 +196,34 @@ def test_a_file_that_does_not_parse_is_too_large_or_cannot_be_read_is_skipped(
     assert headings(listing) == ["# listed.t::T"]
 
 
+def test_once_the_limit_is_full_the_later_files_are_not_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    made = folder(
+        tmp_path,
+        {
+            "t.py": "class T:\n    pass\n",
+            "a.py": "class A:\n    pass\n",
+            "b.py": "class B:\n    pass\n",
+        },
+    )
+    loaded(monkeypatch, "listed.t", made / "t.py")
+    first = class_listing("listed.t").text.split("\n\n")[0]
+    read: list[str] = []
+    read_bytes = Path.read_bytes
+
+    def reading(path: Path) -> bytes:
+        read.append(path.name)
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reading)
+
+    listing = class_listing("listed.t", limit=len(first) + 2 + len("# listed.a::A\nclass A:") - 1)
+
+    assert listing.text == first
+    assert read == ["t.py"]
+
+
 def test_a_module_the_gate_refuses_is_not_listed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
