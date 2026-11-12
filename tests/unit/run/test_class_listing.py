@@ -2,7 +2,6 @@
 its file without importing it, the target's module first."""
 
 import importlib
-import os
 import sys
 import time
 import types
@@ -175,17 +174,24 @@ def test_a_file_that_does_not_parse_is_too_large_or_cannot_be_read_is_skipped(
         {
             "t.py": "class T:\n    pass\n",
             "broken.py": "class Broken(:\n",
+            # deep enough that the parser raises a RecursionError, and a MemoryError
+            "deep.py": "class Deep:\n    pass\n\n\nx = " + "1+" * 50_000 + "1\n",
+            "nested.py": "class Nested:\n    pass\n\n\nx = " + "-" * 50_000 + "1\n",
             "large.py": "class Large:\n    pass\n" + "#" * FILE_LIMIT + "\n",
             "locked.py": "class Locked:\n    pass\n",
         },
     )
-    os.chmod(made / "locked.py", 0)
     loaded(monkeypatch, "listed.t", made / "t.py")
+    read_bytes = Path.read_bytes
 
-    try:
-        listing = class_listing("listed.t")
-    finally:
-        os.chmod(made / "locked.py", 0o644)
+    def locked(path: Path) -> bytes:
+        if path.name == "locked.py":
+            raise PermissionError(13, "Permission denied", str(path))
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", locked)
+
+    listing = class_listing("listed.t")
 
     assert headings(listing) == ["# listed.t::T"]
 

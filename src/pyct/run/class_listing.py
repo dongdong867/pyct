@@ -38,9 +38,10 @@ def class_listing(module_name: str, limit: int = CLASS_LIMIT) -> ClassListing:
     """The classes of the folder that holds the loaded module ``module_name``.
 
     A class that would take the text past ``limit`` is left out, and the
-    ones after it may still fit. A file that does not parse, that cannot be
-    read, or that is larger than ``FILE_LIMIT`` is skipped. A module that is
-    not loaded, or that has no file, lists nothing.
+    ones after it may still fit. A file that does not parse, that Python's
+    parser cannot hold, that cannot be read, or that is larger than
+    ``FILE_LIMIT`` is skipped. A module that is not loaded, or that has no
+    file, lists nothing.
     """
     parts: list[str] = []
     modules: set[str] = set()
@@ -110,13 +111,14 @@ def _class_parts(module_name: str, path: Path) -> list[str]:
 
 def _read(path: Path) -> tuple[ast.Module, list[str]] | None:
     """The file's tree and its lines, or None for a file over ``FILE_LIMIT``, one that cannot be
-    read, or one that does not parse."""
+    read, or one that does not parse, a parse too deep for Python's parser among them, which
+    raises a RecursionError or a MemoryError."""
     try:
         if path.stat().st_size > FILE_LIMIT:
             return None
         source = importlib.util.decode_source(path.read_bytes())
         return ast.parse(source), source.splitlines()
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, RecursionError, MemoryError):
         return None
 
 
