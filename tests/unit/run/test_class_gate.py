@@ -206,6 +206,16 @@ def test_a_nested_class_of_the_user_s_and_one_a_package_takes_in_pass() -> None:
     assert asked(ClassGate(PACKAGE, frozenset()), f"{PACKAGE}::Thing") == []
 
 
+@pytest.mark.usefixtures("user_module")
+def test_a_class_is_told_by_the_module_python_stored_not_the_one_its_metaclass_claims() -> None:
+    claimed = sys.modules[USER].claimed
+
+    assert asked(ClassGate(USER, frozenset()), f"{USER}::Disguised") == refused(
+        f"{USER}::Disguised"
+    )
+    assert claimed == []
+
+
 @pytest.mark.parametrize(
     ("home", "text"),
     [
