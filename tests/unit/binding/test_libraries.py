@@ -141,3 +141,24 @@ def test_a_module_whose_spec_has_no_file_or_folder_is_a_library_s(
 
     assert library_module("__hello__")
     assert "__hello__" not in sys.modules
+
+
+@pytest.mark.parametrize("imported", [False, True], ids=["before-import", "after-import"])
+def test_a_namespace_package_is_told_the_same_before_and_after_it_is_imported(
+    imported: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed, own = tmp_path / "lib" / "site-packages", tmp_path / "proj"
+    for folder, name in ((installed, "acme_ns_lib"), (own, "acme_ns_own")):
+        (folder / name).mkdir(parents=True)
+        (folder / name / "part.py").write_text("")
+        monkeypatch.syspath_prepend(str(folder))
+    roots = (*libraries.LIBRARY_ROOTS, os.path.join(str(installed), ""))
+    monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
+    for name in ("acme_ns_lib", "acme_ns_own"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+        if imported:
+            importlib.import_module(name)
+            assert not isinstance(getattr(sys.modules[name], "__file__", None), str)
+
+    assert library_module("acme_ns_lib")
+    assert not library_module("acme_ns_own")
