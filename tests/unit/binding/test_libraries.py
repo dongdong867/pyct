@@ -1,5 +1,6 @@
 """A class is a library's when Python's standard library or an installed distribution holds
-it, unless the code whose hint names it is in the same top-level package."""
+it, unless the code whose hint names it is in the same top-level package. A module told by its
+name alone has no such exception."""
 
 import array
 import collections
@@ -14,7 +15,7 @@ import pluggy
 import pytest
 
 from pyct.binding import libraries
-from pyct.binding.libraries import from_a_library, package_of
+from pyct.binding.libraries import from_a_library, library_module, package_of
 from tests.unit.binding.hint_classes import Box, Coord, Pair, Spot
 from tests.unit.binding.named_classes import Point
 
@@ -90,3 +91,74 @@ def test_a_file_under_a_linked_spelling_of_a_root_is_a_library_s() -> None:
     assert all(root.endswith(os.sep) for root in libraries.LIBRARY_ROOTS)
     standard = os.path.join(os.path.realpath(os.path.dirname(os.__file__)), "")
     assert standard in libraries.LIBRARY_ROOTS
+
+
+@pytest.mark.parametrize(
+    ("name", "library"),
+    [
+        ("datetime", True),
+        ("json.decoder", True),
+        ("pluggy._hooks", True),
+        ("tests.unit.binding.named_classes", False),
+        ("no_such_module_here.inside", False),
+    ],
+)
+def test_a_module_is_told_a_library_s_by_its_name(name: str, library: bool) -> None:
+    assert library_module(name) is library
+
+
+def test_a_module_that_is_not_loaded_is_told_by_its_top_level_name_without_importing_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed, own = tmp_path / "lib" / "site-packages", tmp_path / "proj"
+    for folder, name in ((installed, "acme_lib"), (own, "acme_own")):
+        (folder / name).mkdir(parents=True)
+        (folder / name / "__init__.py").write_text("raise RuntimeError('imported')\n")
+        monkeypatch.syspath_prepend(str(folder))
+    roots = (*libraries.LIBRARY_ROOTS, os.path.join(str(installed), ""))
+    monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
+    before = set(sys.modules)
+
+    assert library_module("acme_lib.models")
+    assert not library_module("acme_own.models")
+    assert library_module("tabnanny")
+    assert set(sys.modules) == before
+
+
+def test_a_library_s_module_is_a_library_s_whichever_package_asks() -> None:
+    # from_a_library excepts the hint owner's package; library_module, the LLM seeds' test, does not
+    assert not from_a_library(pluggy.PluginManager, pluggy.HookimplMarker)
+    assert library_module(pluggy.PluginManager.__module__)
+    assert library_module("subprocess")
+
+
+def test_a_module_whose_spec_has_no_file_or_folder_is_a_library_s(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `__hello__` is frozen into Python and missing from sys.stdlib_module_names
+    monkeypatch.delitem(sys.modules, "__hello__", raising=False)
+    assert "__hello__" not in sys.stdlib_module_names
+
+    assert library_module("__hello__")
+    assert "__hello__" not in sys.modules
+
+
+@pytest.mark.parametrize("imported", [False, True], ids=["before-import", "after-import"])
+def test_a_namespace_package_is_told_the_same_before_and_after_it_is_imported(
+    imported: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    installed, own = tmp_path / "lib" / "site-packages", tmp_path / "proj"
+    for folder, name in ((installed, "acme_ns_lib"), (own, "acme_ns_own")):
+        (folder / name).mkdir(parents=True)
+        (folder / name / "part.py").write_text("")
+        monkeypatch.syspath_prepend(str(folder))
+    roots = (*libraries.LIBRARY_ROOTS, os.path.join(str(installed), ""))
+    monkeypatch.setattr(libraries, "LIBRARY_ROOTS", roots)
+    for name in ("acme_ns_lib", "acme_ns_own"):
+        monkeypatch.delitem(sys.modules, name, raising=False)
+        if imported:
+            importlib.import_module(name)
+            assert not isinstance(getattr(sys.modules[name], "__file__", None), str)
+
+    assert library_module("acme_ns_lib")
+    assert not library_module("acme_ns_own")

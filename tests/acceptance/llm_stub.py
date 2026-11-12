@@ -5,7 +5,7 @@
 after ``delay`` seconds, or with an HTTP error ``status``, and keeps each request it got.
 ``llm_env`` drops both real key variables, sets a dummy key, and points both SDKs' base URLs at
 the stub, or at a local port nothing listens on. ``llm_run`` runs ``pyct run`` in that
-environment, and ``llm_lines`` and ``sources`` read what it printed. ``write_recording``,
+environment, and ``llm_lines``, ``heads`` and ``sources`` read what it printed. ``write_recording``,
 ``read_recording`` and ``recordings`` write and read the recordings ``--llm`` makes and
 ``--llm-replay`` reads, and ``NO_RECORDING`` is a connection's recording for a test that reads
 none back.
@@ -227,6 +227,12 @@ def llm_lines(stderr: str) -> list[str]:
     """Each ``llm:`` line: the start line first, and with a usable LLM the counts and the
     recording's two last."""
     return [line for line in stderr.splitlines() if line.startswith("llm: ")]
+
+
+def heads(stderr: str) -> list[str]:
+    """Each input's trace head: its first line, the one that names its source."""
+    starts = ("seed ", "llm seed ", "solver ")
+    return [line for line in stderr.splitlines() if line.startswith(starts)]
 
 
 def sources(stdout: str) -> list[object]:

@@ -18,8 +18,12 @@ SEEDS = Tool(SEEDS_TOOL, 4000)
 SEED_FORM = (
     "A seed is a JSON object with one key per parameter of the signature, each holding that"
     " argument as JSON. A method's self is a JSON object of its class's constructor arguments,"
-    " one key per constructor parameter. An argument may take a type its annotation does not"
-    " name, when the code shows it uses one."
+    " one key per constructor parameter. An argument the code uses as an object of a class is a"
+    ' JSON object holding "__class__": "module::QualifiedName" and one key per constructor'
+    " parameter; such an object may sit inside a list or dict, or be a constructor argument of"
+    " another such object or of a method's self. Any other JSON object stays a dict. pyct"
+    " builds only the classes of the user's own code. An argument may take a type its"
+    " annotation does not name, when the code shows it uses one."
 )
 
 # the reason a reply with no seeds pyct can read is ignored
@@ -44,7 +48,8 @@ class LlmSeeds:
 
 def request_text(request: SeedRequest) -> str:
     """The exact text a seeds ask sends: what the seeds are for, the target, its code, the
-    user's seeds when there are any, the seed form, and the answer's form."""
+    classes of its folder and the user's seeds when there are any, the seed form, and the
+    answer's form."""
     parts = [
         "pyct tests one Python function by running it on starting inputs, called seeds, then on"
         " inputs a solver finds by flipping the branches each input took. Suggest seeds that"
@@ -55,6 +60,11 @@ def request_text(request: SeedRequest) -> str:
         "The function's code, then the code of the functions it calls in its package:\n"
         f"```python\n{request.code}\n```",
     ]
+    if request.classes:
+        parts.append(
+            "The classes of the function's folder, each under a heading that writes its name as"
+            f' a seed\'s "__class__" writes it:\n```python\n{request.classes}\n```'
+        )
     if request.seeds:
         quoted = "\n".join(request.seeds)
         parts.append(f"The user's seeds, which already run, one per line:\n{quoted}")
