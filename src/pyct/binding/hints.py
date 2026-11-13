@@ -42,9 +42,6 @@ _NAME_IT = 'name the class to build with "__class__"'
 # a union's count of classes as a word, from two
 _COUNTS = ("two", "three", "four", "five", "six", "seven", "eight", "nine")
 
-# the parameters a key never fills by its own name
-_STARRED = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-
 # each class's inside, by the class's identity; the class is kept beside it, so its identity
 # is not reused
 _INSIDES: dict[int, tuple[type, Inside]] = {}
@@ -205,7 +202,9 @@ def _read_inside(cls: type) -> Inside:
         return NOTHING
     checks = checked_annotations(signature, cls, hints_of(cls))
     parameters = signature.parameters
-    keys = {name: each for name, each in checks.items() if parameters[name].kind not in _STARRED}
+    # checked_annotations leaves out *args; **kwargs is no key of its own name either
+    gathers = inspect.Parameter.VAR_KEYWORD
+    keys = {name: each for name, each in checks.items() if parameters[name].kind is not gathers}
     items = {
         at: checks[parameter.name]
         for at, parameter in enumerate(by_position(signature))
