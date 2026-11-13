@@ -45,6 +45,17 @@ def test_the_request_holds_the_code_the_signature_the_seeds_the_goal_and_the_for
     assert "JSON array of at most 5 seed objects" in text
 
 
+def test_the_classes_section_says_a_class_is_written_as_its_heading_writes_it() -> None:
+    listed = dataclasses.replace(REQUEST, classes="# m::Point\nclass Point:")
+
+    assert (
+        "```\n\nThe classes of the function's folder, each under a heading that writes its name"
+        ' as a seed\'s "__class__" writes it:\n```python\n# m::Point\nclass Point:\n```\n\n'
+    ) in request_text(listed)
+    assert "heading" not in request_text(REQUEST)
+    assert '"__class__": "module::QualifiedName"' in SEED_FORM
+
+
 def test_a_request_with_no_seeds_of_the_user_s_quotes_none() -> None:
     text = request_text(SeedRequest("m::f", "def f(x): pass", "(x)", (), goal=Goal.BUGS))
 
