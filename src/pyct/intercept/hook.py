@@ -179,6 +179,6 @@ class _Loader(importlib.machinery.SourceFileLoader):
             self.interception.cache,
             path,
             lambda: own(self.get_data, path),
-            lambda source: substituted_code(source, path),
+            lambda source: substituted_code(source, path, pieces=self.interception.pieces),
             "pieces" if self.interception.pieces else "",
         )

@@ -333,6 +333,10 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_called__": "called",
         "__pyct_given__": "given",
         "__pyct_answer__": "answer",
+        "__pyct_piece_over__": "piece_over",
+        "__pyct_piece_in__": "piece_in",
+        "__pyct_piece_out__": "piece_out",
+        "__pyct_piece_value__": "piece_value",
     }
     assert all(hasattr(substitutes, function) for function in BOUND.values())
 

@@ -48,6 +48,7 @@ from pyct.intercept import (
     calls,
     compiled,
     constants,
+    loops,
     operators,
     percents,
     positions,
@@ -55,7 +56,7 @@ from pyct.intercept import (
     unpacks,
     watch,
 )
-from pyct.results import sources
+from pyct.results import pieces, sources
 
 logger = logging.getLogger(__name__)
 
@@ -133,14 +134,15 @@ def _entries(root: Path) -> str | None:
 def _version() -> str:
     """A digest of the code that decides what an entry holds: the transform and each of its
     rules, the `math`, `builtins` and `operator` names and the range and view method names it
-    takes, each other module of pyct's a rule takes a name, a size or a text from, its
+    takes, each other module of pyct's a rule takes a name, a size, a text or a piece from, its
     compile, and this module's format."""
     digest = hashlib.sha256()
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
     rules += (unpacks.__file__, percents.__file__, bool_returns.__file__, watch.__file__)
-    # what the rules take from outside the transform: a size, and the callee's text
-    rules += (hashed.__file__, sources.__file__)
+    rules += (loops.__file__,)
+    # what the rules take from outside the transform: a size, the callee's text, and a piece
+    rules += (hashed.__file__, sources.__file__, pieces.__file__)
     for file in (*rules, compiled.__file__, __file__):
         digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]

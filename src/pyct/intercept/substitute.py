@@ -69,7 +69,7 @@ from __future__ import annotations
 import ast
 
 from pyct.core.entry.hashed import SEARCHED_MOST
-from pyct.intercept import bool_returns, calls, operators, percents, unpacks, watch
+from pyct.intercept import bool_returns, calls, loops, operators, percents, unpacks, watch
 from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
@@ -96,6 +96,7 @@ BOUND: dict[str, str] = {
     **bool_returns.BOUND,
     **unpacks.BOUND,
     **watch.BOUND,
+    **loops.BOUND,
 }
 # every name pyct binds, which no rule takes a call of
 _RESERVED = frozenset(BOUND)
@@ -120,8 +121,12 @@ _ANNOTATIONS: dict[type[ast.AST], str] = {
 }
 
 
-def substitute(tree: ast.Module) -> ast.Module:
+def substitute(tree: ast.Module, *, pieces: bool = False) -> ast.Module:
     """Replace every operation a rule takes in the tree, in place, and return the tree.
+
+    With ``pieces``, each loop and comprehension assignment of a function
+    gets pyct's hooks first (`loops`), placed by the tree as written, and
+    the walk then meets them as any other code.
 
     The walk keeps its own stack rather than recursing, so a deeply nested
     expression, such as a long chain of `+`, needs no deeper Python stack
@@ -131,25 +136,33 @@ def substitute(tree: ast.Module) -> ast.Module:
     substitutes.
     """
     parts = Parts(tree)
+    if pieces:
+        loops.hooked(tree, parts)
     pending: list[ast.AST] = [tree]
     classes: list[ast.ClassDef] = []
     called: set[str] = set()
     while pending:
         node = pending.pop()
         _met_statement(node, classes, parts)
-        skipped = _ANNOTATIONS.get(type(node))
-        for field, value in ast.iter_fields(node):
-            if field == skipped:
-                continue
-            if isinstance(value, list):
-                value[:] = [_visited(item, pending, parts) for item in value]
-            elif isinstance(value, ast.AST):
-                setattr(node, field, _visited(value, pending, parts))
+        _visit_fields(node, pending, parts)
         if isinstance(node, ast.Name) and node.id in BOUND:
             called.add(node.id)
     if called:
         _bind(tree, classes, [name for name in BOUND if name in called])
     return tree
+
+
+def _visit_fields(node: ast.AST, pending: list[ast.AST], parts: Parts) -> None:
+    """Replace each part of the node a rule takes, and queue each part for the walk, but for an
+    annotation."""
+    skipped = _ANNOTATIONS.get(type(node))
+    for field, value in ast.iter_fields(node):
+        if field == skipped:
+            continue
+        if isinstance(value, list):
+            value[:] = [_visited(item, pending, parts) for item in value]
+        elif isinstance(value, ast.AST):
+            setattr(node, field, _visited(value, pending, parts))
 
 
 def _met_statement(node: ast.AST, classes: list[ast.ClassDef], parts: Parts) -> None:

@@ -267,8 +267,9 @@ def _a_literal_s_format(node: ast.AST) -> TypeGuard[ast.BinOp]:
     return isinstance(node.left, ast.Constant) and type(node.left.value) is str
 
 
-def lined_up(source: str, name: str) -> bool:
-    """Whether the source compiled as written and as pyct substitutes it lines up."""
+def lined_up(source: str, name: str, *, pieces: bool = False) -> bool:
+    """Whether the source compiled as written and as pyct substitutes it lines up, with pyct's
+    loop hooks when ``pieces`` says so."""
     written = written_code(source, name)
-    tree = substitute(ast.parse(source))
+    tree = substitute(ast.parse(source), pieces=pieces)
     return layout(written) == layout(compile(tree, name, "exec"), negations(tree))

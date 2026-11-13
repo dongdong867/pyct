@@ -6,7 +6,8 @@ the corpus is compiled as written and as pyct substitutes it, and the two must l
 
 The corpus is v2's own targets, modules of the standard library, and a sample of real
 libraries: two whole, and the core of a large one with its tests, whose asserts spread one
-compare over several lines.
+compare over several lines. Each file is checked as a run substitutes it, and again with the
+loop hooks a run that records loops adds (`pyct.intercept.loops`).
 """
 
 import ast
@@ -66,9 +67,9 @@ def files_of(group: str) -> list[Path]:
     return [root] if root.is_file() else sorted(root.rglob("*.py"))
 
 
-def compared(path: Path) -> tuple[bool, bool] | None:
-    """Whether the file lines up, and whether pyct substituted anything in it; None if it does
-    not compile as written."""
+def compared(path: Path, *, pieces: bool = False) -> tuple[bool, bool] | None:
+    """Whether the file lines up, and whether pyct substituted anything in it, with its loop hooks
+    when ``pieces`` says so; None if it does not compile as written."""
     source = path.read_bytes()
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
@@ -76,15 +77,16 @@ def compared(path: Path) -> tuple[bool, bool] | None:
             written = written_code(source, str(path))
         except SyntaxError:
             return None
-        substituted = substituted_code(source, str(path))
-    tree = substitute(ast.parse(source))
+        substituted = substituted_code(source, str(path), pieces=pieces)
+    tree = substitute(ast.parse(source), pieces=pieces)
     changed = ast.dump(ast.parse(source)) != ast.dump(tree)
     return layout(written) == layout(substituted, negations(tree)), changed
 
 
+@pytest.mark.parametrize("pieces", [False, True], ids=["as run", "with loop hooks"])
 @pytest.mark.parametrize("group", CORPUS)
-def test_each_substituted_module_lines_up_with_the_original(group: str) -> None:
-    results = {path: compared(path) for path in files_of(group)}
+def test_each_substituted_module_lines_up_with_the_original(group: str, pieces: bool) -> None:
+    results = {path: compared(path, pieces=pieces) for path in files_of(group)}
 
     compiled = {path: result for path, result in results.items() if result is not None}
     assert [str(path) for path, (same, _) in compiled.items() if not same] == []

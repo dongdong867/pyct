@@ -30,7 +30,8 @@ the target's runs with no frame of pyct's above it. An operator's right side
 goes through `handed` (`pyct.core.entry.handed`) before Python's own operator runs,
 so no frame of pyct's is above the target's own operator either.
 Any other call with an argument is watched (`pyct.core.entry.watch`), for an
-answer that lost a tracked value.
+answer that lost a tracked value. The hooks around a loop or an assignment
+of a comprehension are `pyct.core.entry.pieces`'.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -52,6 +53,10 @@ from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.handed import PASSING as HANDED_PASSING
 from pyct.core.entry.handed import handed as handed  # substituted modules import it from here
 from pyct.core.entry.hashed import Tracked, hashed, looked_up, tracked
+from pyct.core.entry.pieces import piece_in as piece_in  # substituted modules import these
+from pyct.core.entry.pieces import piece_out as piece_out
+from pyct.core.entry.pieces import piece_over as piece_over
+from pyct.core.entry.pieces import piece_value as piece_value
 from pyct.core.entry.watch import answer as answer  # substituted modules import these
 from pyct.core.entry.watch import called as called
 from pyct.core.entry.watch import given as given
