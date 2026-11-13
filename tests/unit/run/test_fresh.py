@@ -1,6 +1,7 @@
 """One input in a fresh interpreter, for real: each test starts a new Python."""
 
 import os
+import pickle
 import random
 import subprocess
 import sys
@@ -140,6 +141,23 @@ def test_the_new_interpreter_s_side_runs_the_input_it_is_handed() -> None:
     assert reading.ended
     assert reading.end is None
     assert [branch.taken for branch in reading.branches] == [True]
+
+
+def test_a_fresh_interpreter_is_handed_the_interception_with_its_switches(
+    tmp_path: Path,
+) -> None:
+    held = Interception(module="targets.intercept.identity", cache=tmp_path, pieces=True)
+    target = load_target(IDENTITY)
+
+    with (
+        intercepting(held),
+        _request(target.spec, target.file, {"x": 3}, None) as request,
+        os.fdopen(os.dup(request), "rb") as handed,
+    ):
+        pickle.load(handed)
+        *_, interception = pickle.load(handed)
+
+    assert interception == held
 
 
 def test_the_new_interpreter_s_side_keeps_no_import_lines(monkeypatch: pytest.MonkeyPatch) -> None:

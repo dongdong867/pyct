@@ -7,8 +7,9 @@ the folder pyct runs from, as pytest keeps ``.pytest_cache``, or the one
 ``PYCT_CACHE_DIR`` names. Nothing is written inside the target's package
 or its ``__pycache__``.
 
-An entry is one file per module path, in a folder per version of the
-transform, so a changed pyct never reads code an older one made. It holds
+An entry is one file per module path, and per variant of the transform
+such as pyct's loop hooks, in a folder per version of the transform, so a
+changed pyct never reads code an older one made. It holds
 the digest of the source it was made from, the source file's stat when it
 was read, then the code. The digest decides: a different one is a miss, so
 an edit is substituted again whatever its size and time. An unchanged stat
@@ -92,18 +93,22 @@ def cached(
     path: str,
     read: Callable[[], bytes],
     build: Callable[[bytes], types.CodeType],
+    variant: str = "",
 ) -> types.CodeType:
     """The substituted code for the module's source as it is now: kept under ``root``, or built.
 
     ``read`` gives the source and ``build`` substitutes it; each raises what
     it raises, and nothing is kept then. What ``build`` makes is kept for the
     next run. The stat is taken before the read, so an edit between the two
-    leaves a stat the next run does not match.
+    leaves a stat the next run does not match. ``variant`` names code
+    ``build`` makes another way, such as with pyct's loop hooks, which is kept
+    in an entry of its own; the empty one is the entry plain substitution
+    has always had.
     """
     folder = _entries(root)
     if folder is None:
         return build(read())
-    entry = os.path.join(folder, _name(path))
+    entry = os.path.join(folder, _name(path, variant))
     held = _held(entry)
     stat = _stat(path)
     if held is not None and stat is not None and _settled(held, stat):
@@ -141,11 +146,11 @@ def _version() -> str:
     return digest.hexdigest()[:16]
 
 
-def _name(path: str) -> str:
-    """The entry's file name: the module's path, the Python that compiles it, its optimize level."""
-    key = b"\0".join(
-        (os.fsencode(path), importlib.util.MAGIC_NUMBER, str(sys.flags.optimize).encode())
-    )
+def _name(path: str, variant: str) -> str:
+    """The entry's file name: the module's path, the Python that compiles it, its optimize level,
+    and the variant when there is one."""
+    parts = [os.fsencode(path), importlib.util.MAGIC_NUMBER, str(sys.flags.optimize).encode()]
+    key = b"\0".join([*parts, variant.encode()] if variant else parts)
     return hashlib.sha256(key).hexdigest()[:32]
 
 
