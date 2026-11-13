@@ -37,8 +37,10 @@ def checked_annotations(
     parameter and no other. An annotation that asks nothing, such as
     ``str | None`` or a class, is not kept.
 
-    The ``*args`` parameter is left out: a seed names parameters by key, and
-    a key with its name reaches ``**kwargs``, or does not fit.
+    The ``*args`` parameter is left out. No seed key fills it: a key with its
+    name reaches ``**kwargs``, or does not fit. And an ``"__args__"`` item
+    past the parameters that take a position, which does fill it, is not
+    checked.
 
     The parameters come from ``signature``, the one the caller already read
     for ``fn``, the same one the seed's fit check reads, so a class target is

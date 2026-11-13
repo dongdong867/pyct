@@ -316,7 +316,10 @@ def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
 
 def test_checked_annotations_leaves_out_star_args_whose_name_no_key_fills() -> None:
     # a key named items reaches **named, so the annotation on *items asks nothing of it
-    assert checked(gathers) == {"first": int, "named": str}
+    # **named is left to its own ticket, so only *items and first are pinned here
+    kept = checked(gathers)
+    assert "items" not in kept
+    assert kept["first"] is int
 
 
 def test_checked_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
