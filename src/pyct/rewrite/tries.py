@@ -35,7 +35,14 @@ from pyct.results.record import InputRecord, Stop
 from pyct.rewrite.ask import GivenUp, in_place, recorded, takes
 from pyct.rewrite.condition import NO_EXPRESSION, expression_in, holds_object, rewrite_code
 from pyct.rewrite.kept import Kept
-from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteSkipped, RewriteTook
+from pyct.rewrite.notes import (
+    RewriteFailed,
+    RewriteGivenUp,
+    RewriteNote,
+    RewriteRead,
+    RewriteSkipped,
+    RewriteTook,
+)
 from pyct.rewrite.provider import EarlierTry, RewriteProvider, RewriteReply
 from pyct.rewrite.request import About, request_for, value_text
 from pyct.solver.answer import Answer, Error, Sat
@@ -115,14 +122,19 @@ class Asking:
         args = self.given.origin.args
         return tuple(name for name in self.parameters if holds_object(args[name]))
 
+    @property
+    def readable(self) -> bool:
+        """Whether some parameter holds no object, so a rewrite may read it."""
+        return len(self.objects) < len(self.parameters)
+
     def tries(self, around: Around) -> Tried:
         """Ask up to ``ASKS`` times, each carrying the earlier tries, until a rewrite's input
         takes the wanted side or the tries end; with no parameter a rewrite may read, ask
         nothing, say so and give the condition up."""
-        if len(self.objects) < len(self.parameters):
-            return self._tries(around)
-        around.note(RewriteSkipped(self.given.condition.site, NOTHING_READABLE))
-        return Tried(False, False)
+        if not self.readable:
+            around.note(RewriteGivenUp(self.given.condition.site, NOTHING_READABLE))
+            return Tried(False, False)
+        return self._tries(around)
 
     def _tries(self, around: Around) -> Tried:
         """The asks, each carrying the earlier tries."""

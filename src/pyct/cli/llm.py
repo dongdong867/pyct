@@ -14,6 +14,7 @@ from pyct.results.llm_asks import LlmUse, Why
 from pyct.rewrite.notes import (
     RewriteDropped,
     RewriteFailed,
+    RewriteGivenUp,
     RewriteNote,
     RewriteRead,
     RewriteSkipped,
@@ -193,6 +194,8 @@ def _rewrite_text(note: RewriteNote) -> str:
             return f"{at}, try {attempt}: {reason}"
         case RewriteSkipped(_, reason):
             return f"{at} skipped: {reason}"
+        case RewriteGivenUp(_, reason):
+            return f"{at} given up: {reason}"
         case RewriteDropped(_, number):
             return f"{at} dropped at input {number}: took the other side"
 

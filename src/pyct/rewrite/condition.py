@@ -62,9 +62,10 @@ _FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.DOTALL)
 # what the parser raises on text it refuses, a reply too deep for it included
 _REFUSALS = (SyntaxError, ValueError, RecursionError, MemoryError)
 _CONSTANTS = (int, float, str, bool, type(None))
-# the types of the values a rewrite may read, and of those it may read into
+# the types of the values a rewrite may read, and of those it may read into, which
+# ``holds_object`` walks
 _SCALARS = frozenset({type(None), bool, int, float, str})
-_HOLDERS = frozenset({list, tuple, dict})
+HOLDERS = frozenset({list, tuple, dict})
 _PLAIN = (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Tuple, ast.List, ast.Slice)
 _REFUSED_AS: dict[type[ast.AST], str] = {
     ast.Lambda: "a lambda",
@@ -92,8 +93,7 @@ def expression_in(text: str, parameters: Sequence[str]) -> str | None:
         tree = ast.parse(body, mode="eval")
     except _REFUSALS:
         return None
-    names = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-    if not names & set(parameters):
+    if not _names(tree) & set(parameters):
         return None
     if body.isprintable():
         return body
@@ -138,14 +138,20 @@ def rewrite_code(
 
 
 def _reads(expression: str, parameters: Sequence[str]) -> tuple[str, ...]:
-    """The parameters ``expression`` names, in their order; none when it does not parse, which
-    no expression ``expression_in`` read does."""
+    """The parameters ``expression`` names, in their order; none when it does not parse, as when
+    ``expression_in`` wrote it again with more parentheses than the parser takes, such as one
+    around each generator handed to a call, which the compile then refuses."""
     try:
         tree = ast.parse(expression, mode="eval")
     except _REFUSALS:
         return ()
-    named = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    named = _names(tree)
     return tuple(name for name in parameters if name in named)
+
+
+def _names(tree: ast.AST) -> set[str]:
+    """Each name the tree reads or writes."""
+    return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
 
 
 def holds_object(value: object) -> bool:
@@ -160,7 +166,7 @@ def holds_object(value: object) -> bool:
         kind = type(each)
         if kind in _SCALARS:
             continue
-        if kind not in _HOLDERS or object_form(each):
+        if kind not in HOLDERS or object_form(each):
             return True
         if id(each) not in seen:
             seen.add(id(each))

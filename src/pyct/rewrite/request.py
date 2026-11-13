@@ -13,17 +13,16 @@ from dataclasses import dataclass
 
 from pyct.core.foundation.branch import Site
 from pyct.rewrite.ask import GivenUp
-from pyct.rewrite.condition import holds_object
+from pyct.rewrite.condition import HOLDERS, holds_object
 from pyct.rewrite.provider import EarlierTry, RewriteRequest, Side
 
 # the earlier conditions a request holds at most, the nearest the condition
 EARLIER = 30
-# the characters each parameter's value may take
+# the characters each parameter's value may take, in a request and in a try's reason alike
 VALUE_SIZE = 2_000
 # a value that holds an object other than as an instance of its own: a seed's object form, or a
 # list, tuple or dict holding an object
 HOLDS_OBJECT = "<holds an object>"
-_HOLDERS = (list, tuple, dict)
 
 
 @dataclass(frozen=True)
@@ -51,9 +50,7 @@ def request_for(
         condition=Side(_text(given.condition.site, about), given.condition.side),
         earlier=tuple(Side(_text(site, about), side) for site, side in sides),
         code=about.code,
-        args=tuple(
-            (name, value_text(value)[:VALUE_SIZE]) for name, value in given.origin.args.items()
-        ),
+        args=tuple((name, value_text(value)) for name, value in given.origin.args.items()),
         answer=given.answer.value,
         tries=tries,
         unreadable=unreadable,
@@ -96,14 +93,14 @@ def _starting(file: str) -> dict[tuple[int, int], str]:
 
 
 def value_text(value: object) -> str:
-    """A parameter's value as JSON, or as Python writes it when JSON cannot. A value that holds
-    an object (``holds_object``) is never handed to ``json`` or ``repr``, which can run the
-    target's code: an instance of ``Name`` is ``<Name object>``, and any other such value
-    ``HOLDS_OBJECT``."""
+    """A parameter's value as JSON, or as Python writes it when JSON cannot, cut to
+    ``VALUE_SIZE`` characters. A value that holds an object (``holds_object``) is never handed
+    to ``json`` or ``repr``, which can run the target's code: an instance of ``Name`` is
+    ``<Name object>``, and any other such value ``HOLDS_OBJECT``."""
     if holds_object(value):
         kind = type(value)
-        return HOLDS_OBJECT if kind in _HOLDERS else f"<{kind.__name__} object>"
+        return HOLDS_OBJECT if kind in HOLDERS else f"<{kind.__name__} object>"
     try:
-        return json.dumps(value)
+        return json.dumps(value)[:VALUE_SIZE]
     except (TypeError, ValueError, RecursionError):
-        return repr(value)
+        return repr(value)[:VALUE_SIZE]

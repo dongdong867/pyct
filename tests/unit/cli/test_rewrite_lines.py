@@ -7,6 +7,7 @@ from pyct.core.foundation.branch import Site
 from pyct.rewrite.notes import (
     RewriteDropped,
     RewriteFailed,
+    RewriteGivenUp,
     RewriteNote,
     RewriteRead,
     RewriteSkipped,
@@ -26,6 +27,10 @@ SITE = Site("/t/m.py", 7, 7)
             "llm: rewrite for /t/m.py:7:7, try 2: the solver answered unknown",
         ),
         (RewriteSkipped(SITE, "cannot fork"), "llm: rewrite for /t/m.py:7:7 skipped: cannot fork"),
+        (
+            RewriteGivenUp(SITE, "no argument a rewrite may read"),
+            "llm: rewrite for /t/m.py:7:7 given up: no argument a rewrite may read",
+        ),
         (
             RewriteDropped(SITE, 5),
             "llm: rewrite for /t/m.py:7:7 dropped at input 5: took the other side",

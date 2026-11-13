@@ -238,3 +238,11 @@ def test_a_deep_reply_over_several_lines_is_read_and_then_refused_for_its_depth(
 
     assert expression is not None
     assert refusal(expression) == f"the rewrite nests more than {MOST_DEPTH} deep"
+
+
+def test_a_reply_written_again_past_the_parser_s_nesting_is_refused() -> None:
+    nested = "f(s for s in " * 101 + "s" + ")" * 101
+    expression = expression_in(f"{nested} ==\t1", PARAMETERS)
+
+    assert expression is not None
+    assert refusal(expression).startswith("does not parse")

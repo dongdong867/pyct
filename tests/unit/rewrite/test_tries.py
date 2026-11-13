@@ -17,9 +17,15 @@ from pyct.rewrite import tries
 from pyct.rewrite.ask import GivenUp
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
-from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteSkipped
+from pyct.rewrite.notes import (
+    RewriteFailed,
+    RewriteGivenUp,
+    RewriteNote,
+    RewriteRead,
+    RewriteSkipped,
+)
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
-from pyct.rewrite.request import About
+from pyct.rewrite.request import VALUE_SIZE, About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.solver.answer import Answer, Error, Sat
 
@@ -159,7 +165,7 @@ def test_an_input_whose_every_argument_holds_an_object_gives_up_before_any_ask()
 
     assert found == Tried(False, False)
     assert fake.asked == 0
-    assert fake.notes == [RewriteSkipped(SITE, "no argument a rewrite may read")]
+    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
 
 
 def test_a_method_that_takes_only_self_gives_up_before_any_ask() -> None:
@@ -170,7 +176,7 @@ def test_a_method_that_takes_only_self_gives_up_before_any_ask() -> None:
 
     assert found == Tried(False, False)
     assert fake.asked == 0
-    assert fake.notes == [RewriteSkipped(SITE, "no argument a rewrite may read")]
+    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
 
 
 def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_in_the_ask() -> None:
@@ -256,6 +262,17 @@ def test_a_rewrite_the_input_already_meets_fails() -> None:
     tried(fake)
 
     assert failed(fake) == ['the input {"s": "0"} already meets it, yet took the other side'] * 4
+
+
+def test_a_try_s_reason_cuts_a_long_value_as_the_request_does() -> None:
+    given = GivenUp(CONDITION, PLAN, Seed.of({"s": "x" * 5_000}), MissWhy.TIMEOUT)
+    fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
+
+    Asking(fake, given, ABOUT, ("s",), Kept()).tries(fake)
+
+    reason = failed(fake)[0]
+    assert reason.endswith(" already meets it, yet took the other side")
+    assert reason.count("x") <= VALUE_SIZE
 
 
 def test_a_rewrite_with_no_fork_of_its_own_and_no_downgrade_reads_no_argument() -> None:
