@@ -68,9 +68,10 @@ class InputRecord:
     and ``reach`` the functions it entered and the ways their branches went,
     neither of which a line prints.
 
-    ``solver_seconds`` is how long the ask that gave a solver's input took,
-    from the start of writing it to its answer; a seed's is ``None``. It is a
-    measurement, which no two runs share, so two records compare without it.
+    ``solver_seconds`` is how long the ask that gave the input took, from the
+    start of writing it to its answer. It is set exactly for an input a pass's
+    ask gave, a kept rewrite's included, and None for every other input. It is
+    a measurement, which no two runs share, so two records compare without it.
     ``first_covered`` is the lines this input covered that no earlier input
     and not the import did, keyed by file as coverage is.
     """
@@ -222,12 +223,13 @@ class RunResult:
 
     @property
     def solver(self) -> SolverCounts:
-        """What the solver answered, derived so the counts can never disagree with the misses.
+        """What the solver answered to the passes' asks, derived so the counts can never
+        disagree with the misses.
 
         An input a pass's sat ask gave is its one ``sat``, whether the solver
-        or a kept rewrite's ask gave it; a rewrite's input a try ran between
-        passes carries no seconds and no pass's ask. Every other answer gave
-        no input and is already a miss.
+        or a kept rewrite's ask gave it. Every other answer of a pass's ask gave
+        no input and is already a miss. The asks a rewrite's try makes between
+        passes are not counted, and neither is the input such a try runs.
         """
         whys = [miss.why for miss in self.misses]
         return SolverCounts(
@@ -239,8 +241,9 @@ class RunResult:
 
     @property
     def solver_seconds(self) -> SolverSeconds:
-        """The seconds of the asks, summed by answer: the ask of an input a pass's ask gave was
-        sat, and every other ask is a miss."""
+        """The seconds of the passes' asks, summed by answer: the ask of an input a pass's ask
+        gave was sat, and every other pass's ask is a miss. The asks a rewrite's try makes
+        between passes are not counted."""
         given = [record.solver_seconds for record in self.records]
         by_why = {why: 0.0 for why in MissWhy}
         for miss in self.misses:

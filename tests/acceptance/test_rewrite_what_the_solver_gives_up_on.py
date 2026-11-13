@@ -135,7 +135,7 @@ def test_a_budget_spent_between_two_tries_ends_the_tries_unasked(
     paused = rewrites_module._Around.pause
 
     def spent_after(around: rewrites_module._Around, seconds: float) -> None:
-        # the first ask's wait is paused as usual, then the budget runs out during the try
+        # the first ask's wait is paused as usual, then the budget runs out before the next ask
         paused(around, seconds)
         run = around.run
         run.bounds = dataclasses.replace(run.bounds, until=time.monotonic() - 0.001)  # type: ignore[attr-defined]

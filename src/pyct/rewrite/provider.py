@@ -34,10 +34,11 @@ class RewriteRequest:
     """What a rewrites ask is about.
 
     ``place`` is the condition's site as the request and the recording name it,
-    ``module:line:col`` with the module's dotted name. ``condition`` is the condition and the
-    side the missed line needs; ``earlier`` the distinct conditions the path took before it,
+    ``module:line:col`` with the module as the run names it. ``condition`` is the condition and
+    the side the missed line needs; ``earlier`` the distinct conditions the path took before it,
     each at its last place, nearest last; ``code`` the source of the function that holds it;
-    ``args`` each parameter with the input's value as JSON; ``answer`` what the solver said,
+    ``args`` each parameter with the input's value as JSON, or as Python writes it when JSON
+    cannot hold it; ``answer`` what the solver said,
     ``timeout`` or ``unknown``; and ``tries`` this moment's earlier tries, oldest first.
     """
 

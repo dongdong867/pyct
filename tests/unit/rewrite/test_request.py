@@ -1,5 +1,5 @@
 """A request writes the condition and the path's earlier conditions as Python writes them, and the
-input's values as JSON, each cut."""
+input's values as JSON, or as Python writes them when JSON cannot hold them, each cut."""
 
 from pathlib import Path
 
@@ -11,7 +11,7 @@ from pyct.results.record import MissWhy
 from pyct.rewrite.ask import GivenUp
 from pyct.rewrite.request import EARLIER, VALUE_SIZE, About, condition_text, request_for
 
-ABOUT = About("m:2:7", "code")
+ABOUT = About("m:2:7", "code", {"nowhere.py": "nowhere"})
 
 
 def test_the_condition_is_the_outermost_expression_at_its_site_an_and_aside(tmp_path: Path) -> None:
@@ -30,22 +30,22 @@ def test_a_site_whose_file_does_not_read_is_written_out_by_its_module(tmp_path: 
     assert condition_text(Site(missing, 2, 7), "pkg.gone") == "the condition at pkg.gone:2:7"
 
 
-def test_an_earlier_condition_is_named_by_its_module_or_its_file_s_stem(tmp_path: Path) -> None:
-    named = Branch(["<", "n", 1], True, Site(str(tmp_path / "a.py"), 3, 4))
-    unnamed = Branch(["<", "n", 2], True, Site(str(tmp_path / "b.py"), 5, 6))
+def test_each_condition_is_named_by_the_module_about_gives_its_file(tmp_path: Path) -> None:
+    first = Branch(["<", "n", 1], True, Site(str(tmp_path / "a.py"), 3, 4))
+    second = Branch(["<", "n", 2], True, Site(str(tmp_path / "b.py"), 5, 6))
     aimed = Branch([">", "n", 0], False, Site(str(tmp_path / "c.py"), 7, 8))
-    wanted = plan((named, unnamed, aimed))
+    wanted = plan((first, second, aimed))
     assert wanted is not None
     given = GivenUp(Condition(aimed.site, True), wanted, Seed.of({"n": 0}), MissWhy.UNKNOWN)
-    about = About("pkg.c:7:8", "code", {str(tmp_path / "a.py"): "pkg.a"})
+    modules = {str(tmp_path / f"{name}.py"): f"pkg.{name}" for name in "abc"}
 
-    request = request_for(given, about, ())
+    request = request_for(given, About("pkg.c:7:8", "code", modules), ())
 
     assert [each.text for each in request.earlier] == [
         "the condition at pkg.a:3:4",
-        "the condition at b:5:6",
+        "the condition at pkg.b:5:6",
     ]
-    assert request.condition.text == "the condition at c:7:8"
+    assert request.condition.text == "the condition at pkg.c:7:8"
     assert str(tmp_path) not in repr(request)
 
 

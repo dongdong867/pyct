@@ -29,7 +29,7 @@ FORK = Branch(["==", ["float", "s"], 1e-30], False, SITE)
 PLAN = plan((FORK,))
 assert PLAN is not None
 GIVEN = GivenUp(CONDITION, PLAN, Seed.of({"s": "0"}), MissWhy.TIMEOUT)
-ABOUT = About("m:2:7", "def f(s):\n    ...")
+ABOUT = About("m:2:7", "def f(s):\n    ...", {"m.py": "m"})
 FILE = "<rewrite m:2:7>"
 
 

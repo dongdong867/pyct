@@ -1,6 +1,6 @@
 """The request a rewrites ask sends, built from the source: the condition and the earlier
-conditions of its path as Python writes them, and the input's values as JSON. It names a file by
-its module, never by its path."""
+conditions of its path as Python writes them, and the input's values as JSON, or as Python writes
+them when JSON cannot hold them. It names a file by its module, never by its path."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ import ast
 import functools
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
-from pathlib import PurePath
+from dataclasses import dataclass
 
 from pyct.core.foundation.branch import Site
 from pyct.rewrite.ask import GivenUp
@@ -17,18 +16,18 @@ from pyct.rewrite.provider import EarlierTry, RewriteRequest, Side
 
 # the earlier conditions a request holds at most, the nearest the condition
 EARLIER = 30
-# the characters of JSON each parameter's value may take
+# the characters each parameter's value may take
 VALUE_SIZE = 2_000
 
 
 @dataclass(frozen=True)
 class About:
     """Where the condition sits: its place, ``module:line:col``, the source of the function
-    that holds it, and the dotted name of the module each file of the path holds."""
+    that holds it, and each file of the path with its module as the run names it."""
 
     place: str
     code: str
-    modules: Mapping[str, str] = field(default_factory=dict)
+    modules: Mapping[str, str]
 
 
 def request_for(given: GivenUp, about: About, tries: tuple[EarlierTry, ...]) -> RewriteRequest:
@@ -59,8 +58,8 @@ def condition_text(site: Site, module: str) -> str:
 
 
 def _text(site: Site, about: About) -> str:
-    """The condition at ``site``, its module named as ``about`` names it, or by the file's stem."""
-    return condition_text(site, about.modules.get(site.file, PurePath(site.file).stem))
+    """The condition at ``site``, its module named as ``about`` names it."""
+    return condition_text(site, about.modules[site.file])
 
 
 @functools.lru_cache(maxsize=16)

@@ -1,8 +1,8 @@
 """The rewrites tool: the request text a rewrites ask sends, and its reply handed back as it came.
 
 It implements ``pyct.rewrite.provider.RewriteProvider`` on top of ``Connection.ask``. The place
-is the condition's site, ``module:line:col``, so the connection numbers each condition's tries
-across the run; the request text names the condition by its place too, never by its file's path.
+is the condition's site, ``module:line:col``, so the connection numbers each place's tries across
+the run; the request text names the condition by its place too, never by its file's path.
 """
 
 from __future__ import annotations
@@ -48,7 +48,10 @@ def request_text(request: RewriteRequest) -> str:
         parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
     values = "\n".join(f"{name} = {value}" for name, value in request.args)
-    parts.append(f"The input whose path the solver extended, each value as JSON:\n{values}")
+    parts.append(
+        "The input whose path the solver extended, each value as JSON, or as Python writes it"
+        f" when JSON cannot hold it:\n{values}"
+    )
     parts.append(f"The solver's answer for the condition: {request.answer}")
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)

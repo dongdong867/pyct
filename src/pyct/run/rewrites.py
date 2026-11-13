@@ -90,9 +90,9 @@ class Rewrites(Asker):
     def solved(self, wanted: Plan, origin: Seed, limit: float) -> Solved:
         """The ask with each kept rewrite the plan holds in its condition's place first; then,
         when it gives no input, the plan's own, each within what is left of ``limit``. When
-        the kept rewrite's ask used up ``limit``, the plan's own does not run and the pick ends
-        as a ``timeout``, its limit run out. The first plan at a condition whose ask ended in
-        ``timeout`` or ``unknown`` is kept."""
+        the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
+        and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
+        whose ask ended in ``timeout`` or ``unknown`` is kept."""
         started = time.monotonic()
         self._used = ()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
@@ -217,8 +217,8 @@ class _Child:
 
 
 def _out_of_time(wanted: Plan) -> Solved:
-    """The answer for a plan whose limit a kept rewrite's ask used up: a ``timeout``, since the
-    pick's limit ran out before the plan's own ask could run."""
+    """The answer for a plan whose limit a kept rewrite used up, in its run or its ask: a
+    ``timeout``, since the pick's limit ran out before the plan's own ask could run."""
     return Solved(Timeout(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
 
 
