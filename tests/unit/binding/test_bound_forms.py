@@ -6,8 +6,8 @@ from collections.abc import Mapping
 import pytest
 
 from pyct.binding.annotations import Builds, Check, Fields, Items
-from pyct.binding.bind import bind, bind_call
-from pyct.binding.builds import BuildError, CallPlan, SelfBuild, plan_call
+from pyct.binding.bind import bind_call
+from pyct.binding.builds import SelfBuild, form_class, object_forms, plan_call
 from tests.unit.binding.hint_classes import Spot
 from tests.unit.binding.named_classes import Holder, Point
 
@@ -25,9 +25,15 @@ class Rows(list[object]):
     pass
 
 
-def built(plan: CallPlan) -> list[tuple[type, str, list[object], dict[str, object]]]:
-    """Each build of a plan: its class, its place, and what it is called with."""
-    return [(each.cls, each.place, each.positional, each.keywords) for each in plan.builds]
+def by_the_seed(
+    seed: dict[str, object], checks: Mapping[str, Check] | None, self_build: SelfBuild | None
+) -> list[tuple[type, str]]:
+    """The class and place of each object the seed's keys and hints make a form, and of the
+    instance a method runs on, last."""
+    name = None if self_build is None else self_build.name
+    found = object_forms(seed, name, checks, HOME).found
+    lasts = [] if self_build is None else [(self_build.cls, self_build.name)]
+    return [*((form_class(each.form, each.check, HOME), each.place) for each in found), *lasts]
 
 
 @pytest.mark.parametrize(
@@ -57,14 +63,12 @@ def built(plan: CallPlan) -> list[tuple[type, str, list[object], dict[str, objec
         "tuple and list subclass",
     ],
 )
-def test_the_walk_s_forms_plan_the_builds_the_seed_s_keys_and_hints_plan(
+def test_the_walk_s_forms_plan_the_builds_the_seed_s_keys_and_hints_make(
     seed: dict[str, object], checks: Mapping[str, Check] | None, self_build: SelfBuild | None
 ) -> None:
-    today = plan_call(seed, (), self_build, HOME, checks)
+    plan = plan_call(bind_call(seed, [], checks, HOME), (), self_build, HOME, checks)
 
-    bound = plan_call(bind_call(seed, [], checks, HOME), (), self_build, HOME, checks)
-
-    assert built(bound) == built(today)
+    assert [(each.cls, each.place) for each in plan.builds] == by_the_seed(seed, checks, self_build)
 
 
 def test_a_plain_dict_holding_an_object_and_an_escaped_key_stays_a_dict() -> None:
@@ -75,8 +79,6 @@ def test_a_plain_dict_holding_an_object_and_an_escaped_key_stays_a_dict() -> Non
     assert [(each.cls, each.place) for each in plan.builds] == [(Point, "box['b']")]
     box = plan.keywords["box"]
     assert isinstance(box, dict) and list(box) == ["__class__", "b"]
-    with pytest.raises(BuildError):
-        plan_call(bind(seed, [], None, HOME), (), None, HOME)
 
 
 def test_a_dict_of_a_class_holding_an_escaped_key_builds_each_value() -> None:

@@ -5,9 +5,9 @@ on the object under ``self``, what the walk is given, and what each input builds
 import inspect
 
 from pyct.binding.annotations import Fields
-from pyct.binding.builds import plan_call
 from pyct.run.seed_checks import seed_refusals
 from pyct.run.target import Target, argument_checks
+from tests.unit.binding.plans import planned
 
 HOME = __name__
 
@@ -82,7 +82,7 @@ def test_the_walk_is_given_no_check_under_self_for_the_constructor_s_star_args()
 def test_a_class_hint_on_star_args_builds_no_object_under_a_key_of_that_name() -> None:
     args = {"items": {"owner": "a"}}
 
-    plan = plan_call(args, (), None, HOME, argument_checks(target_for(spread_carts)))
+    plan = planned(args, (), None, HOME, argument_checks(target_for(spread_carts)))
 
     assert plan.builds == []
     assert plan.keywords == {"items": {"owner": "a"}}
@@ -91,7 +91,7 @@ def test_a_class_hint_on_star_args_builds_no_object_under_a_key_of_that_name() -
 def test_a_class_hint_on_a_built_object_s_star_args_builds_nothing_inside_it() -> None:
     args = {"g": {"items": {"owner": "a"}}}
 
-    plan = plan_call(args, (), None, HOME, argument_checks(target_for(holds)))
+    plan = planned(args, (), None, HOME, argument_checks(target_for(holds)))
 
     assert [(build.cls, build.place) for build in plan.builds] == [(GathersCarts, "g")]
     assert plan.builds[0].keywords == {"items": {"owner": "a"}}

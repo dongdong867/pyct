@@ -6,12 +6,16 @@ from collections.abc import Mapping
 
 import pytest
 
-from pyct.binding.builds import BuildError, SelfBuild, holding_forms, object_forms, plan_call
+from pyct.binding.annotations import Fields
+from pyct.binding.builds import BuildError, SelfBuild, holding_forms, object_forms
 from pyct.binding.call import positional_only
 from tests.unit.binding.named_classes import Holder, Pinned, Point
+from tests.unit.binding.plans import planned
 
 HOME = "tests.unit.binding.named_classes"
 POINT = {"__class__": "Point", "x": 1, "y": 2}
+# what a method's target gives the dict under self (``argument_checks``)
+SELF_CHECKS = {"self": Fields({})}
 
 
 def places(args: Mapping[str, object], self_name: str | None = None) -> list[str]:
@@ -92,7 +96,7 @@ def test_a_list_reached_again_stays_as_it_came_so_a_cycle_ends() -> None:
 def test_the_plan_builds_an_object_into_its_list_or_dict() -> None:
     args = {"rows": [{"c": dict(POINT)}], "d": {"ann": dict(POINT)}}
 
-    plan = plan_call(args, (), None, HOME)
+    plan = planned(args, (), None, HOME)
 
     in_row, in_dict = plan.builds
     assert (in_row.place, in_row.slot) == ("rows[0]['c']", "c")
@@ -101,7 +105,7 @@ def test_the_plan_builds_an_object_into_its_list_or_dict() -> None:
 
 
 def test_dropping_the_plan_lets_go_of_each_build_and_leaves_the_target_s_list() -> None:
-    plan = plan_call({"rows": [dict(POINT)]}, (), None, HOME)
+    plan = planned({"rows": [dict(POINT)]}, (), None, HOME)
     rows = plan.keywords["rows"]
 
     plan.drop()
@@ -125,7 +129,7 @@ def test_the_caller_s_seed_never_changes() -> None:
 
 
 def test_the_plan_builds_inner_objects_into_the_outer_one_s_arguments() -> None:
-    plan = plan_call({"h": {"__class__": "Holder", "inner": dict(POINT)}}, (), None, HOME)
+    plan = planned({"h": {"__class__": "Holder", "inner": dict(POINT)}}, (), None, HOME)
 
     inner, outer = plan.builds
     assert (inner.cls, inner.place, inner.keywords) == (Point, "h['inner']", {"x": 1, "y": 2})
@@ -138,7 +142,7 @@ def test_args_items_go_first_then_positional_only_parameters_by_position() -> No
     form = {"__class__": "Pinned", "b": 5, "a": 4}
     by_args = {"__class__": "Pinned", "__args__": [4], "b": 5}
 
-    plan = plan_call({"p": form, "q": by_args}, (), None, HOME)
+    plan = planned({"p": form, "q": by_args}, (), None, HOME)
 
     first, second = plan.builds
     assert first.cls is second.cls is Pinned
@@ -153,7 +157,7 @@ def test_the_instance_a_method_runs_on_is_built_last_and_goes_first() -> None:
     self_build = SelfBuild(Holder, "self")
     args = {"self": {"inner": dict(POINT)}, "n": 3}
 
-    plan = plan_call(args, positional, self_build, HOME)
+    plan = planned(args, positional, self_build, HOME, SELF_CHECKS)
 
     point, built = plan.builds
     assert (built.cls, built.place, built.into, built.slot) == (Holder, "self", plan.positional, 0)
@@ -161,18 +165,20 @@ def test_the_instance_a_method_runs_on_is_built_last_and_goes_first() -> None:
     assert plan.positional == [None, 3]
 
 
-def test_a_value_under_self_other_than_a_dict_is_passed_as_given() -> None:
+def test_a_value_under_self_other_than_a_dict_is_passed_as_bind_copied_it() -> None:
     given = Holder(1)
 
-    plan = plan_call({"self": given}, (), SelfBuild(Holder, "self"), HOME)
+    plan = planned({"self": given}, (), SelfBuild(Holder, "self"), HOME, SELF_CHECKS)
 
     assert plan.builds == []
-    assert plan.keywords == {"self": given}
+    passed = plan.keywords["self"]
+    assert isinstance(passed, Holder) and passed is not given
+    assert (passed.inner, passed.other) == (1, None)
 
 
 def test_a_class_that_does_not_load_is_a_build_error_at_its_place() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"c": {"__class__": "Nothing"}}, (), None, HOME)
+        planned({"c": {"__class__": "Nothing"}}, (), None, HOME)
 
     assert (raised.value.place, raised.value.reason) == ("c", f"{HOME} has no class Nothing")
 
@@ -181,20 +187,20 @@ def test_the_first_object_that_cannot_be_built_is_the_innermost() -> None:
     args = {"c": {"__class__": "Nothing", "inner": {"__class__": "Missing"}}}
 
     with pytest.raises(BuildError) as raised:
-        plan_call(args, (), None, HOME)
+        planned(args, (), None, HOME)
 
     assert raised.value.place == "c['inner']"
 
 
 def test_args_that_is_not_a_list_is_a_build_error() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"c": {"__class__": "Point", "__args__": "ann"}}, (), None, HOME)
+        planned({"c": {"__class__": "Point", "__args__": "ann"}}, (), None, HOME)
 
     assert raised.value.reason == "'__args__' must be a list, got \"ann\""
 
 
 def test_dropping_the_plan_lets_go_of_every_object() -> None:
-    plan = plan_call({"h": {"__class__": "Holder", "inner": dict(POINT)}}, (), None, HOME)
+    plan = planned({"h": {"__class__": "Holder", "inner": dict(POINT)}}, (), None, HOME)
 
     plan.drop()
 

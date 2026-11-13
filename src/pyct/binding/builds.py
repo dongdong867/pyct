@@ -377,13 +377,13 @@ class CallPlan:
 
 
 def plan_call(
-    args: Mapping[str, object] | Bound,
+    bound: Bound,
     positional: Sequence[inspect.Parameter],
     self_build: SelfBuild | None,
     home: str,
     checks: Mapping[str, Check] | None = None,
 ) -> CallPlan:
-    """How one call builds each object form ``args`` holds, and calls the target.
+    """How one call builds each object form ``bound`` holds, and calls the target.
 
     ``positional`` is the target's parameters passed by position, a bare
     class name is read in the module ``home``, and ``checks`` says which
@@ -395,14 +395,14 @@ def plan_call(
     innermost first, whose class does not load or whose ``"__args__"`` is not
     a list, or whose hint names no one class, is the ``BuildError``.
 
-    ``args`` is seed JSON, whose forms its keys and hints say, or what ``bind``
-    made of it, whose forms are the ones its walk copied as forms (``Bound``).
+    ``bound`` is what ``bind_call`` made of the seed: the plan builds the forms its walk
+    copied as forms, and no other dict.
     """
-    values, is_form = (args.args, args.is_form) if isinstance(args, Bound) else (args, seed_form)
+    values = bound.args
     if self_build is not None and type(values.get(self_build.name)) is not dict:
         self_build = None
     self_name = None if self_build is None else self_build.name
-    forms = object_forms(values, self_name, checks, home, is_form)
+    forms = object_forms(values, self_name, checks, home, bound.is_form)
     loaded = [(found, _class_of(found, home)) for found in forms.found]
     calls = {id(found.form): _arguments(found.form, cls) for found, cls in loaded}
     call, last = _target_call(forms.args, positional, self_build)
