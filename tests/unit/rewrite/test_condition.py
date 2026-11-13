@@ -2,7 +2,6 @@
 compiled with its `and`, `or`, `not` and chained compares written on bools."""
 
 import time
-import types
 
 import pytest
 
@@ -14,6 +13,7 @@ from pyct.rewrite.condition import (
     HELD_LINE,
     MOST_CHARACTERS,
     MOST_DEPTH,
+    Rewrite,
     expression_in,
     holds_object,
     rewrite_code,
@@ -37,10 +37,11 @@ def refusal(expression: str) -> str:
 
 
 def own_fork(expression: str, args: dict[str, object]) -> tuple[object, bool]:
-    """The expression and side of the rewrite's own fork, run on ``args``."""
-    code = rewrite_code(expression, PARAMETERS, FILE)
-    assert isinstance(code, types.CodeType), code
-    done = run_model(ModelCall(code, FUNCTION, args), time.monotonic() + 5)
+    """The expression and side of the rewrite's own fork, run on the names it reads in ``args``."""
+    rewrite = rewrite_code(expression, PARAMETERS, FILE)
+    assert isinstance(rewrite, Rewrite), rewrite
+    handed = {name: args[name] for name in rewrite.reads}
+    done = run_model(ModelCall(rewrite.code, FUNCTION, handed), time.monotonic() + 5)
     assert isinstance(done, ModelRun)
     [fork] = [
         fork
@@ -115,11 +116,21 @@ def test_a_rewrite_that_reads_a_parameter_holding_an_object_is_refused() -> None
 
 
 def test_a_rewrite_that_reads_only_the_plain_parameters_beside_an_object_passes() -> None:
-    code = rewrite_code('s.upper() == "X" and a > 1.5', PARAMETERS, FILE, ("n",))
+    rewrite = rewrite_code('s.upper() == "X" and a > 1.5', PARAMETERS, FILE, ("n",))
 
-    assert isinstance(code, types.CodeType)
+    assert isinstance(rewrite, Rewrite)
     # the rewrite's function takes no parameter that holds an object
-    done = run_model(ModelCall(code, FUNCTION, {"s": "x", "a": 2.0}), time.monotonic() + 5)
+    done = run_model(ModelCall(rewrite.code, FUNCTION, {"s": "x", "a": 2.0}), time.monotonic() + 5)
+    assert isinstance(done, ModelRun)
+    assert done.result.failure is None
+
+
+def test_the_rewrite_s_function_takes_exactly_the_parameters_the_expression_reads() -> None:
+    rewrite = rewrite_code("math.sqrt(a) > 2 and a < len(s)", PARAMETERS, FILE)
+
+    assert isinstance(rewrite, Rewrite)
+    assert rewrite.reads == ("s", "a")
+    done = run_model(ModelCall(rewrite.code, FUNCTION, {"s": "x", "a": 9.0}), time.monotonic() + 5)
     assert isinstance(done, ModelRun)
     assert done.result.failure is None
 

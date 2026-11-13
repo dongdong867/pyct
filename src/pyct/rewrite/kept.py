@@ -9,7 +9,6 @@ put in its place, keeps its own fork in that ask.
 
 from __future__ import annotations
 
-import types
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -19,7 +18,7 @@ from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
 from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, takes
-from pyct.rewrite.condition import holds_object
+from pyct.rewrite.condition import Rewrite, holds_object
 
 
 @dataclass(frozen=True)
@@ -31,13 +30,13 @@ class Reused:
 
 
 class Kept:
-    """The rewrite kept for each condition: its code, and the names it may read."""
+    """The rewrite kept for each condition, with the names it reads."""
 
     def __init__(self) -> None:
-        self.codes: dict[Condition, tuple[types.CodeType, tuple[str, ...]]] = {}
+        self.rewrites: dict[Condition, Rewrite] = {}
 
-    def keep(self, condition: Condition, code: types.CodeType, parameters: tuple[str, ...]) -> None:
-        self.codes[condition] = (code, parameters)
+    def keep(self, condition: Condition, rewrite: Rewrite) -> None:
+        self.rewrites[condition] = rewrite
 
     def reused(self, plan: Plan, origin: Seed, run: RunRewrite) -> Reused | None:
         """The plan's ask with each kept rewrite the plan holds in its condition's place, each
@@ -45,11 +44,11 @@ class Kept:
         name the input does not hold, or one that holds an object there, takes none."""
         asked = plan.asked
         used: list[Condition] = []
-        for condition, (code, parameters) in self.codes.items():
-            if not holding(plan, condition) or not _readable(origin.args, parameters):
+        for condition, rewrite in self.rewrites.items():
+            if not holding(plan, condition) or not _readable(origin.args, rewrite.reads):
                 continue
-            ran = run(code, {name: origin.args[name] for name in parameters})
-            items = None if isinstance(ran, str) else recorded(ran, code.co_filename)
+            ran = run(rewrite.code, {name: origin.args[name] for name in rewrite.reads})
+            items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
             if items is None or isinstance(items, str):
                 continue
             asked = in_place(asked, condition, items.items)
@@ -61,7 +60,7 @@ class Kept:
         wanted side of, and name those conditions."""
         dropped = tuple(each for each in conditions if not takes(record, each))
         for condition in dropped:
-            self.codes.pop(condition, None)
+            self.rewrites.pop(condition, None)
         return dropped
 
 

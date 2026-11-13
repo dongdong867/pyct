@@ -38,7 +38,8 @@ class RewriteRequest:
     the side the missed line needs; ``earlier`` the distinct conditions the path took before it,
     each at its last place, nearest last; ``code`` the source of the function that holds it;
     ``args`` each parameter with the input's value as JSON, or as Python writes it when JSON
-    cannot hold it; ``answer`` what the solver said,
+    cannot hold it, and a value that holds an object as a placeholder written without running
+    the target's code (``pyct.rewrite.request.value_text``); ``answer`` what the solver said,
     ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first; and
     ``unreadable`` the parameters a rewrite may not read, since each holds an object.
     """

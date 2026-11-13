@@ -17,7 +17,9 @@ from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, Unanswered, Why
-from pyct.rewrite.condition import rewrite_code
+from pyct.results.record import MissWhy
+from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.condition import Rewrite, rewrite_code
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.run import loop as loop_module
 from pyct.run import model_runs
@@ -116,9 +118,10 @@ def test_a_child_pyct_cannot_start_is_said_as_the_reason(monkeypatch: pytest.Mon
         raise InputStartError("no memory")
 
     monkeypatch.setattr(rewrites_module, "run_model", refused)
-    code = rewrite_code("n > 0", ("n",), "<rewrite m:1:1>")
+    rewrite = rewrite_code("n > 0", ("n",), "<rewrite m:1:1>")
+    assert isinstance(rewrite, Rewrite)
 
-    ran = _Child(time.monotonic() + 1).run(code, {"n": 0})  # pyrefly: ignore[bad-argument-type]
+    ran = _Child(time.monotonic() + 1).run(rewrite.code, {"n": 0})
 
     assert ran == "cannot start a child: no memory"
 
@@ -137,8 +140,9 @@ def kept_at_line_2() -> tuple[Rewrites, Site]:
     target = loaded(COUNTED)
     tool = Rewrites(FakeRewrites([]), target, Told(Scope.of_module(target.file), Tell()))
     site = Site(target.file, 2, 7)
-    code = rewrite_code('s == "1e-30"', ("s", "n"), "<rewrite counted:2:7>")
-    tool.kept.keep(Condition(site, True), code, ("s", "n"))  # pyrefly: ignore[bad-argument-type]
+    rewrite = rewrite_code('s == "1e-30"', ("s", "n"), "<rewrite counted:2:7>")
+    assert isinstance(rewrite, Rewrite)
+    tool.kept.keep(Condition(site, True), rewrite)
     return tool, site
 
 
@@ -223,6 +227,27 @@ def test_an_entry_with_no_plan_kept_for_its_condition_is_skipped() -> None:
     handled = tool.take((entry,), Moment(1, (entry,), run=None))  # pyrefly: ignore[bad-argument-type]
 
     assert handled == Handled((Outcome.SKIPPED,), asked=False)
+
+
+def test_a_condition_with_no_argument_a_rewrite_may_read_is_given_up_unasked() -> None:
+    target = loaded(COUNTED)
+    provider = FakeRewrites(['s == "1e-30"'])
+    tool = Rewrites(provider, target, Told(Scope.of_module(target.file), Tell()))
+    site = Site(target.file, 2, 7)
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, site),))
+    assert wanted is not None
+    order = {"__class__": "m::Order"}
+    origin = Seed.of({"s": order, "n": [order]})
+    tool.given_up[Condition(site, True)] = GivenUp(
+        Condition(site, True), wanted, origin, MissWhy.TIMEOUT
+    )
+    entry = WhyEntry(site.file, (3,), Reason.NOT_TAKEN, condition=Condition(site, True))
+    going = types.SimpleNamespace(stopped=None, bounds=types.SimpleNamespace(until=None))
+
+    handled = tool.take((entry,), Moment(1, (entry,), run=going))  # pyrefly: ignore[bad-argument-type]
+
+    assert handled == Handled((Outcome.GAVE_UP,), asked=False)
+    assert provider.requests == []
 
 
 def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:

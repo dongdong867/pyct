@@ -50,7 +50,8 @@ def request_text(request: RewriteRequest) -> str:
     values = "\n".join(f"{name} = {value}" for name, value in request.args)
     parts.append(
         "The input whose path the solver extended, each value as JSON, or as Python writes it"
-        f" when JSON cannot hold it:\n{values}"
+        " when JSON cannot hold it, and one that holds an object as a placeholder in angle"
+        f" brackets:\n{values}"
     )
     if request.unreadable:
         parts.append(

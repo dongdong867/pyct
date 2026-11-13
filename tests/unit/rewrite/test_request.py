@@ -1,11 +1,13 @@
 """A request writes the condition and the path's earlier conditions as Python writes them, and the
-input's values as JSON, or as Python writes them when JSON cannot hold them, each cut."""
+input's values as JSON, or as Python writes them when JSON cannot hold them, each cut, and a value
+that holds an object as a placeholder."""
 
 from pathlib import Path
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.core.foundation.branch import Branch, Site
+from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition
 from pyct.results.record import MissWhy
 from pyct.rewrite.ask import GivenUp
@@ -83,11 +85,40 @@ def test_each_value_is_json_cut_or_python_s_words_for_one_json_cannot_write() ->
     aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
     wanted = plan((aimed,))
     assert wanted is not None
-    origin = Seed.of({"n": 0, "s": "x" * (VALUE_SIZE * 2), "o": frozenset({1})})
+    origin = Seed.of({"n": 0, "s": "x" * (VALUE_SIZE * 2), "d": {(1, 2): 3}})
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
     args = dict(request_for(given, ABOUT, ()).args)
 
     assert args["n"] == "0"
     assert len(args["s"]) == VALUE_SIZE
-    assert args["o"] == "frozenset({1})"
+    assert args["d"] == "{(1, 2): 3}"
+
+
+class Loud:
+    """An object whose ``__repr__`` raises, and whose contents no request may hold."""
+
+    def __init__(self) -> None:
+        self.secret = "hunter2"
+
+    def __repr__(self) -> str:
+        raise RuntimeError("repr ran")
+
+
+def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_code() -> None:
+    aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
+    wanted = plan((aimed,))
+    assert wanted is not None
+    form = {"__class__": "m::Order", "secret": "hunter2"}
+    origin = Seed.of({"n": 0, "o": Loud(), "l": [1, Loud()], "f": form})
+    given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
+
+    request = request_for(given, ABOUT, ())
+
+    assert dict(request.args) == {
+        "n": "0",
+        "o": "<Loud object>",
+        "l": "<holds an object>",
+        "f": "<holds an object>",
+    }
+    assert "hunter2" not in request_text(request)

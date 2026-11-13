@@ -11,6 +11,8 @@ so. A rewrite runs only in a child forked from pyct's process: while pyct's
 process runs another thread, before an ask or when the rewrite would run,
 the condition is skipped at this moment
 (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all).
+A condition with no parameter a rewrite may read is given up at this
+moment, unasked, so a later tool may take it.
 A rewrite's run, as each solver ask, gets the solver timeout, or less when
 the budget has less.
 

@@ -42,7 +42,10 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
     assert "Condition at m:3:11: float(s) == -1e-30\nWanted side: true" in text
     assert 'nearest last:\ns.startswith("-"): true' in text
     assert REQUEST.code in text
-    assert 'each value as JSON, or as Python writes it when JSON cannot hold it:\ns = "-1"' in text
+    assert (
+        "each value as JSON, or as Python writes it when JSON cannot hold it, and one that holds"
+        ' an object as a placeholder in angle brackets:\ns = "-1"'
+    ) in text
     assert "The solver's answer for the condition: timeout" in text
     assert "earlier rewrites" not in text
     assert text.endswith(FORM)

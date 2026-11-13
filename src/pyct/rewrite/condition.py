@@ -11,9 +11,11 @@ rewrite outside the form ``FORM`` gives the model; otherwise ``and``,
 `pyct.intercept.model_code` then compiles it under the target's
 substitutions, and it runs only in a forked child (`pyct.run.model_runs`).
 
-A rewrite reads no parameter that holds an object (``holds_object``): the
-check refuses one that names such a parameter, and ``__rewrite__`` does not
-take it, so the child is handed plain values alone.
+``__rewrite__`` takes exactly the parameters the expression names
+(``Rewrite.reads``); the child is handed those arguments, and a kept rewrite
+is checked against those names. A rewrite reads no parameter that holds an
+object (``holds_object``): the check refuses one that names such a
+parameter, so the child is handed plain values alone.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import math
 import re
 import types
 from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
 
 from pyct.binding.builds import object_form
 from pyct.intercept.model_code import Refused, compile_model_code
@@ -101,26 +104,48 @@ def expression_in(text: str, parameters: Sequence[str]) -> str | None:
         return body
 
 
+@dataclass(frozen=True)
+class Rewrite:
+    """A rewrite's module code, and the parameters its expression reads, in the function's
+    order: what ``__rewrite__`` takes, what its child is handed, and what a kept rewrite needs
+    an input to hold."""
+
+    code: types.CodeType
+    reads: tuple[str, ...]
+
+
 def rewrite_code(
     expression: str, parameters: Sequence[str], file: str, objects: Sequence[str] = ()
-) -> types.CodeType | Refused:
-    """The module code of ``__rewrite__`` on ``parameters`` but ``objects``, those that hold an
-    object, which branches on ``expression``, each code object named ``file``; or why the
-    rewrite is refused.
+) -> Rewrite | Refused:
+    """The module code of ``__rewrite__`` on the ``parameters`` that ``expression`` reads,
+    which branches on it, each code object named ``file``; or why the rewrite is refused, one
+    reading any of ``objects``, those that hold an object, included.
 
     ``expression`` is one that ``expression_in`` read, so it sits inside parentheses of its
     own and cannot reach past them.
     """
     if len(expression) > MOST_CHARACTERS:
         return Refused(f"the rewrite is longer than {MOST_CHARACTERS:,} characters")
-    readable = [name for name in parameters if name not in objects]
+    reads = _reads(expression, parameters)
     text = (
         "import math\n\n\n"
         f"def {_BRANCH}(held):\n    if held:\n        return True\n    return False\n\n\n"
-        f"def {FUNCTION}({', '.join(readable)}):\n"
+        f"def {FUNCTION}({', '.join(reads)}):\n"
         f"    return {_BRANCH}((\n{expression}\n    ))\n"
     )
-    return compile_model_code(text, file, _Check(frozenset(parameters), frozenset(objects)))
+    code = compile_model_code(text, file, _Check(frozenset(parameters), frozenset(objects)))
+    return code if isinstance(code, Refused) else Rewrite(code, reads)
+
+
+def _reads(expression: str, parameters: Sequence[str]) -> tuple[str, ...]:
+    """The parameters ``expression`` names, in their order; none when it does not parse, which
+    no expression ``expression_in`` read does."""
+    try:
+        tree = ast.parse(expression, mode="eval")
+    except _REFUSALS:
+        return ()
+    named = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+    return tuple(name for name in parameters if name in named)
 
 
 def holds_object(value: object) -> bool:

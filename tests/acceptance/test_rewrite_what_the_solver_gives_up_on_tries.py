@@ -12,7 +12,7 @@ import pytest
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition
 from pyct.results.record import Source, StopKind
-from pyct.rewrite.condition import rewrite_code
+from pyct.rewrite.condition import Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
 from pyct.run import loop as loop_module
 from pyct.run import rewrites as rewrites_module
@@ -130,9 +130,10 @@ def test_a_kept_rewrite_whose_input_took_the_other_side_is_dropped(
 ) -> None:
     # a rewrite kept at line 2 that is wrong: its inputs never take line 2's true side
     condition = Condition(Site(file_of("counted"), 2, 7), True)
-    code = rewrite_code('s == "1e-29"', ("s", "n"), "<rewrite kept>")
+    rewrite = rewrite_code('s == "1e-29"', ("s", "n"), "<rewrite kept>")
+    assert isinstance(rewrite, Rewrite)
     kept = Kept()
-    kept.keep(condition, code, ("s", "n"))  # pyrefly: ignore[bad-argument-type]
+    kept.keep(condition, rewrite)
     made = rewrites_module.Rewrites.__init__
 
     def with_kept(self: rewrites_module.Rewrites, *args: object) -> None:
@@ -149,7 +150,7 @@ def test_a_kept_rewrite_whose_input_took_the_other_side_is_dropped(
     number = ran.records.index(rewritten) + 1
     assert rewritten.args == {"s": "1e-29", "n": 1}
     assert f"{at} dropped at input {number}: took the other side" in llm_said(ran.said)
-    assert kept.codes == {}
+    assert kept.rewrites == {}
     # the next input aimed at a fork under line 2's true side asks the original condition
     assert all(record.source is not Source.REWRITE for record in ran.records[number:])
 
