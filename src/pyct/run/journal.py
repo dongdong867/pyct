@@ -47,6 +47,11 @@ kind) and its payload, padded to 8 bytes:
   it to the entry before when that one has its name.
 - end: JSON ``null`` for a call that returned, else ``[kind, detail,
   traceback]``.
+- piece: a recorded run of a piece of the target's code (``PieceRun``):
+  its site's line and column as two i64, how many names went in and how
+  many changed as two u32, then its file and, for each name going in, its
+  name, ``1`` or ``0`` for whether it was tracked, and its value's JSON
+  text, then each changed name and its value's text, a NUL between each.
 
 A record's bytes go first and the committed mark moves past them after, so
 the journal holds a readable prefix at every instant. Every word the
@@ -66,7 +71,7 @@ given before it was written, and a count grows in place only on the entry
 it was written for: whatever the writer's own notes lost, a later fact
 still reads back as written.
 
-A journal past ``CAPACITY`` is a bound on what pyct keeps for one input,
+A journal past its own bytes is a bound on what pyct keeps for one input,
 as the tally's bound on forks is: the writer notes it and writes nothing
 more, while the input runs on until it ends or its deadline ends it. The
 tally's bound is noted too (``bound``), while the writer goes on with the
@@ -78,6 +83,17 @@ A fact the writer cannot encode stops the writer too, and a record the
 reader cannot read stops the reading at its byte; either way the input's
 line says pyct failed, since its facts are known to be incomplete. In every
 case the facts before the stop stay.
+
+The recorded runs of an input's pieces have bytes of their own past the
+journal's, ``PIECE_ROOM`` in the journal pyct maps, so that whether the
+pieces switch is on never moves where an input's journal fills: the other
+records end where they would with no run written, and the note names the
+journal's own bytes. A run that does not fit in what is left of that room
+is dropped, and the writer goes on. The room holds every run one input
+records: a run's record takes at most 4 bytes for each it counts against
+``MOST_TEXT`` (``pyct.core.entry.pieces.size``), its UTF-8 at most 4 a
+character and its head and NULs within what the count adds, so the runs a
+journal holds are the runs the input recorded, however it ran.
 """
 
 from __future__ import annotations
@@ -88,11 +104,14 @@ import struct
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.foundation.branch import Branch, Expression, Fact, Site
+from pyct.core.entry.pieces import MOST_TEXT
+from pyct.core.foundation.branch import Branch, Expression, Fact, PieceRun, Site
 from pyct.results.failure import Failure
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes
 CAPACITY = 256 * 1024 * 1024
+# the bytes past those that hold the recorded runs of the input's pieces, theirs alone
+PIECE_ROOM = 4 * MOST_TEXT
 
 type Journal = mmap.mmap | bytearray
 
@@ -110,8 +129,10 @@ NUMBER = struct.Struct("<q")
 WAY = struct.Struct("<qq")
 # a downgrade's count, then its site's line and column
 COUNTED = struct.Struct("=Qqq")
+# a recorded run's site's line and column, and how many names went in and how many changed
+PIECE_HEAD = struct.Struct("<qqII")
 
-LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT = range(1, 11)
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT, PIECE = range(1, 12)
 OPEN, FULL, UNENCODABLE, BOUNDED = 0, 1, 2, 3
 
 # the bytes at a journal's end that only the call's ending may take, a long traceback's included;
@@ -127,17 +148,22 @@ class JournalWriter:
     """Writes one input's facts into its journal as they happen. It is the call's ``Watch``.
 
     It never raises into the target: a fact it cannot keep stops it, with a
-    note the reader turns into the input's failure.
+    note the reader turns into the input's failure. ``pieces`` is how many of
+    the buffer's last bytes are the room of the recorded runs of the input's
+    pieces, ``PIECE_ROOM`` in the journal pyct maps.
     """
 
-    def __init__(self, buffer: Journal) -> None:
+    def __init__(self, buffer: Journal, pieces: int = 0) -> None:
         self._buffer = buffer
+        # the bytes the runs have of their own, and those their records took
+        self._piece_room = pieces
+        self._pieces = 0
         self._words = memoryview(buffer)[: len(buffer) // WORD.size * WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
         self._detached = False
         self._full = False
-        self._room = min(END_ROOM, (len(buffer) - RECORDS) // 4)
+        self._room = min(END_ROOM, (len(buffer) - pieces - RECORDS) // 4)
         # where the last downgrade entry's count sits, and the name and site it counts
         self._count_at: int | None = None
         self._counting: tuple[str, Site] | None = None
@@ -201,6 +227,17 @@ class JournalWriter:
         if self._record(kind, head + f"{name}\0{site.file}".encode(errors="surrogatepass")):
             self._count_at = at + HEAD.size
             self._counting = (name, site)
+
+    def piece(self, run: PieceRun) -> None:
+        """Write a recorded run of a piece into the room the runs have of their own, or drop it
+        when it does not fit there."""
+        site = run.site
+        fields = [site.file]
+        for held in run.going_in:
+            fields += [held.name, "1" if held.tracked else "0", held.value]
+        fields += [text for changed in run.changed for text in (changed.name, changed.value)]
+        head = PIECE_HEAD.pack(site.line, site.col, len(run.going_in), len(run.changed))
+        self._record(PIECE, head + "\0".join(fields).encode(errors="surrogatepass"))
 
     def bound(self, note: str) -> None:
         """Note that the call went past the forks it keeps, and go on with what it still keeps."""
@@ -273,20 +310,39 @@ class JournalWriter:
         """Write one record and commit it. False when the writer is stopped or it does not fit.
 
         Only the ending may still be written once the journal is full, and only
-        it may take the last ``END_ROOM`` bytes.
+        it may take the last ``END_ROOM`` bytes. A recorded run takes the room
+        the runs have of their own, and one that does not fit there stops
+        nothing.
         """
         if self._detached or (not self._open and not (kind == END and self._full)):
             return False
         at = self._at
-        after = at + HEAD.size + padded(len(payload))
-        if after > len(self._buffer) - (0 if kind == END else self._room):
-            self._stop(FULL, f"the journal is full at {len(self._buffer)} bytes")
+        taken = HEAD.size + padded(len(payload))
+        if kind == PIECE and self._pieces + taken > self._piece_room:
+            return False
+        if at + taken > self._end_of(kind):
+            if kind != PIECE:
+                own = len(self._buffer) - self._piece_room
+                self._stop(FULL, f"the journal is full at {own} bytes")
             return False
         HEAD.pack_into(self._buffer, at, len(payload), kind)
         self._buffer[at + HEAD.size : at + HEAD.size + len(payload)] = payload
-        self._at = after
-        self._words[COMMITTED] = after
+        self._at = at + taken
+        self._words[COMMITTED] = at + taken
+        # counted once committed, so the alarm landing before then moves the others' end no later
+        if kind == PIECE:
+            self._pieces += taken
         return True
+
+    def _end_of(self, kind: int) -> int:
+        """Where a record of the kind must end by: the ending's at the buffer's end, a recorded
+        run's before ``END_ROOM``, and any other's before that and what the runs' room has
+        left."""
+        if kind == END:
+            return len(self._buffer)
+        if kind == PIECE:
+            return len(self._buffer) - self._room
+        return len(self._buffer) - self._room - self._piece_room + self._pieces
 
     def _stop(self, state: int, note: str) -> None:
         """Note why nothing more is written, and write nothing more. A bound noted before stays

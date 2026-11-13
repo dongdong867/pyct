@@ -10,6 +10,8 @@ import types
 
 import pytest
 
+from pyct.core.foundation.branch import Changed
+from pyct.intercept.compiled import substituted_code
 from pyct.intercept.model_code import compile_model_code
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import model_runs
@@ -144,3 +146,16 @@ def test_a_process_running_a_second_thread_cannot_fork() -> None:
         thread.join()
 
     assert done == CannotFork()
+
+
+def test_a_recorded_run_of_a_piece_in_the_child_s_journal_passes_through() -> None:
+    # model-written code has no hooks, but the child's journal is an input's, so code with them
+    # writes its runs there and they come back with the rest
+    code = substituted_code(
+        b"def f(n):\n    i = 0\n    while i < n:\n        i += 1\n    return i\n", FILE, pieces=True
+    )
+    done = run_model(ModelCall(code, "f", {"n": 2}), time.monotonic() + 5.0)
+
+    assert isinstance(done, ModelRun)
+    assert done.answer == "2"
+    assert [run.changed for run in done.result.pieces] == [(Changed("i", "2"),)]

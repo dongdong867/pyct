@@ -7,7 +7,6 @@ nothing is recorded and no method of the value runs.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from pyct.core.lists.list_state import plain
@@ -25,12 +24,18 @@ def plain_json(value: object, *, tuples: bool = True, most: int | None = None) -
     return _Reading(tuples, most).of(value)
 
 
-@dataclass
 class _Reading:
-    """One value's reading: whether a tuple is a list, and what is left of the count to read."""
+    """One value's reading: whether a tuple is a list, and what is left of the count to read.
 
-    tuples: bool
-    left: int | None
+    A plain class, as a dataclass takes long to make, and every substituted
+    module imports this one as it first loads.
+    """
+
+    __slots__ = ("left", "tuples")
+
+    def __init__(self, tuples: bool, left: int | None) -> None:  # noqa: FBT001
+        self.tuples = tuples
+        self.left = left
 
     def of(self, value: object) -> object:
         """One part, and those inside it."""

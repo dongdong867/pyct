@@ -6,7 +6,7 @@ import pytest
 
 from pyct.core.entry import bound
 from pyct.core.entry.substitutes import PASSING, call, in_, is_, is_not, method, not_in, truth
-from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.core.lists.ranges import ConcolicRange
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
@@ -17,7 +17,9 @@ from pyct.core.strs.strs import ConcolicStr
 def expressions(sink: list[SinkItem]) -> list[object]:
     """What the sink holds, each fork as its expression and side, each downgrade by name."""
     return [
-        item.name if isinstance(item, Downgrade) else (item.expression, item.taken) for item in sink
+        (item.expression, item.taken) if isinstance(item, Branch | Fact) else item.name
+        for item in sink
+        if isinstance(item, Branch | Fact | Downgrade)
     ]
 
 
