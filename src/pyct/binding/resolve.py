@@ -37,6 +37,9 @@ def checked_annotations(
     parameter and no other. An annotation that asks nothing, such as
     ``str | None`` or a class, is not kept.
 
+    The ``*args`` parameter is left out: a seed names parameters by key, and
+    a key with its name reaches ``**kwargs``, or does not fit.
+
     The parameters come from ``signature``, the one the caller already read
     for ``fn``, the same one the seed's fit check reads, so a class target is
     read at its ``__init__`` and the signature is not read again.
@@ -44,6 +47,8 @@ def checked_annotations(
     hints: dict[str, Check] = {}
     for name, parameter in signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
+            continue
+        if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
             continue
         check = resolved(parameter.annotation, fn, read)
         if check is not None:
