@@ -35,7 +35,7 @@ class RewriteFailed:
 @dataclass(frozen=True)
 class RewriteSkipped:
     """No rewrite runs for the condition at ``site`` at this moment, and why: pyct's process could
-    not fork a child for it."""
+    not fork a child for it, or every parameter holds an object."""
 
     site: Site
     reason: str

@@ -15,6 +15,7 @@ from pyct.rewrite.condition import (
     MOST_CHARACTERS,
     MOST_DEPTH,
     expression_in,
+    holds_object,
     rewrite_code,
 )
 from pyct.run import model_runs
@@ -93,6 +94,61 @@ def test_a_reply_with_no_expression_on_the_parameters_holds_none(reply: str) -> 
 )
 def test_a_rewrite_outside_the_form_is_refused(expression: str, reason: str) -> None:
     assert refusal(expression) == reason
+
+
+class Thing:
+    def __init__(self) -> None:
+        self.n = 5
+
+
+FORM_OF_THING = {"__class__": "m::Thing", "n": 5}
+
+
+def test_a_rewrite_that_reads_a_parameter_holding_an_object_is_refused() -> None:
+    method = rewrite_code("n.save() == 1", PARAMETERS, FILE, ("n",))
+    item = rewrite_code('s == "x" and n[0] > 1', PARAMETERS, FILE, ("n",))
+
+    assert isinstance(method, Refused)
+    assert method.reason == "a rewrite may not read n, which holds an object"
+    assert isinstance(item, Refused)
+    assert item.reason == "a rewrite may not read n, which holds an object"
+
+
+def test_a_rewrite_that_reads_only_the_plain_parameters_beside_an_object_passes() -> None:
+    code = rewrite_code('s.upper() == "X" and a > 1.5', PARAMETERS, FILE, ("n",))
+
+    assert isinstance(code, types.CodeType)
+    # the rewrite's function takes no parameter that holds an object
+    done = run_model(ModelCall(code, FUNCTION, {"s": "x", "a": 2.0}), time.monotonic() + 5)
+    assert isinstance(done, ModelRun)
+    assert done.result.failure is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        FORM_OF_THING,
+        Thing(),
+        [1, {"k": FORM_OF_THING}],
+        {"k": [Thing()]},
+        {Thing(): 1},
+        (1, ("x", Thing())),
+        {1, 2},
+        b"x",
+    ],
+)
+def test_a_value_that_is_or_holds_an_object_or_any_other_kind_holds_an_object(
+    value: object,
+) -> None:
+    assert holds_object(value)
+
+
+def test_none_bools_numbers_strs_and_lists_tuples_and_dicts_of_them_hold_no_object() -> None:
+    cycle: list[object] = [1]
+    cycle.append(cycle)
+
+    assert not holds_object({"k": [1, (2.5, "x", None, True)], "j": {"__args__": [1]}})
+    assert not holds_object(cycle)
 
 
 def test_a_rewrite_called_through_another_call_is_refused() -> None:

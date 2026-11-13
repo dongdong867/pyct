@@ -30,8 +30,11 @@ class About:
     modules: Mapping[str, str]
 
 
-def request_for(given: GivenUp, about: About, tries: tuple[EarlierTry, ...]) -> RewriteRequest:
-    """The request for a condition the solver gave up on, with this moment's earlier tries."""
+def request_for(
+    given: GivenUp, about: About, tries: tuple[EarlierTry, ...], unreadable: tuple[str, ...] = ()
+) -> RewriteRequest:
+    """The request for a condition the solver gave up on, with this moment's earlier tries and
+    the parameters a rewrite may not read, since each holds an object."""
     plan = given.plan
     earlier = [fork for fork in plan.prefix[:-1] if not fork.raising]
     # each condition at its last place on the path, so the nearest ones stay
@@ -45,6 +48,7 @@ def request_for(given: GivenUp, about: About, tries: tuple[EarlierTry, ...]) -> 
         args=tuple((name, _value(value)) for name, value in given.origin.args.items()),
         answer=given.answer.value,
         tries=tries,
+        unreadable=unreadable,
     )
 
 

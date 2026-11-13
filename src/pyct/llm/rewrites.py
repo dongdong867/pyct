@@ -32,8 +32,8 @@ class LlmRewrites:
 
 def request_text(request: RewriteRequest) -> str:
     """The exact text a rewrites ask sends: the task, the condition and the side its line needs,
-    the path's earlier conditions, the function's code, the input, the solver's answer, this
-    moment's earlier tries, and the answer's form."""
+    the path's earlier conditions, the function's code, the input, the parameters a rewrite may
+    not read, the solver's answer, this moment's earlier tries, and the answer's form."""
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
         " branches each input took. The solver could not answer for the condition below."
@@ -52,6 +52,11 @@ def request_text(request: RewriteRequest) -> str:
         "The input whose path the solver extended, each value as JSON, or as Python writes it"
         f" when JSON cannot hold it:\n{values}"
     )
+    if request.unreadable:
+        parts.append(
+            "Parameters your condition may not read, since each holds an object: "
+            + ", ".join(request.unreadable)
+        )
     parts.append(f"The solver's answer for the condition: {request.answer}")
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)

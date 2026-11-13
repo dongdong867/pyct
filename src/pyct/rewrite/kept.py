@@ -10,7 +10,7 @@ put in its place, keeps its own fork in that ask.
 from __future__ import annotations
 
 import types
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from pyct.binding.bind import Seed
@@ -19,6 +19,7 @@ from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
 from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, takes
+from pyct.rewrite.condition import holds_object
 
 
 @dataclass(frozen=True)
@@ -30,7 +31,7 @@ class Reused:
 
 
 class Kept:
-    """The rewrite kept for each condition: its code, and the names it reads."""
+    """The rewrite kept for each condition: its code, and the names it may read."""
 
     def __init__(self) -> None:
         self.codes: dict[Condition, tuple[types.CodeType, tuple[str, ...]]] = {}
@@ -41,11 +42,11 @@ class Kept:
     def reused(self, plan: Plan, origin: Seed, run: RunRewrite) -> Reused | None:
         """The plan's ask with each kept rewrite the plan holds in its condition's place, each
         run on ``origin``; None when no kept rewrite takes a place in it. A rewrite reading a
-        name the input does not hold takes none."""
+        name the input does not hold, or one that holds an object there, takes none."""
         asked = plan.asked
         used: list[Condition] = []
         for condition, (code, parameters) in self.codes.items():
-            if not holding(plan, condition) or not set(parameters) <= origin.args.keys():
+            if not holding(plan, condition) or not _readable(origin.args, parameters):
                 continue
             ran = run(code, {name: origin.args[name] for name in parameters})
             items = None if isinstance(ran, str) else recorded(ran, code.co_filename)
@@ -62,3 +63,8 @@ class Kept:
         for condition in dropped:
             self.codes.pop(condition, None)
         return dropped
+
+
+def _readable(args: Mapping[str, object], names: Sequence[str]) -> bool:
+    """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
+    return all(name in args and not holds_object(args[name]) for name in names)

@@ -48,6 +48,16 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
     assert text.endswith(FORM)
 
 
+def test_the_request_names_the_parameters_a_rewrite_may_not_read() -> None:
+    request = dataclasses.replace(REQUEST, unreadable=("o", "l"))
+
+    assert "may not read" not in request_text(REQUEST)
+    assert (
+        's = "-1"\n\nParameters your condition may not read, since each holds an object: o, l'
+        in request_text(request)
+    )
+
+
 def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
     tried = (EarlierTry('s == "1e-29"', 'the input {"s": "1e-29"} took the other side'),)
     request = dataclasses.replace(REQUEST, earlier=(), tries=tried)

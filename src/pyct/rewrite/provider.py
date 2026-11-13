@@ -39,7 +39,8 @@ class RewriteRequest:
     each at its last place, nearest last; ``code`` the source of the function that holds it;
     ``args`` each parameter with the input's value as JSON, or as Python writes it when JSON
     cannot hold it; ``answer`` what the solver said,
-    ``timeout`` or ``unknown``; and ``tries`` this moment's earlier tries, oldest first.
+    ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first; and
+    ``unreadable`` the parameters a rewrite may not read, since each holds an object.
     """
 
     place: str
@@ -49,6 +50,7 @@ class RewriteRequest:
     args: tuple[tuple[str, str], ...]
     answer: str
     tries: tuple[EarlierTry, ...] = ()
+    unreadable: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

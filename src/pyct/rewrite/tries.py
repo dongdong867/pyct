@@ -2,18 +2,20 @@
 the same path, and run its input on the real code, up to 4 asks.
 
 A try fails, and the next ask carries it with its reason, when the reply
-holds no expression, the rewrite breaks the form, pyct follows no value
-through an operation in it, it reads no argument, it raised on the input,
-the input whose path it extends already meets it, the solver gives no
-input for it, or its input took the other side. A reply that got no answer
-ends the condition's tries at this moment, and so does a rewrite pyct cannot
-run, found before an ask or after it, a spent budget and an input that met
-the run's stop. Decision
+holds no expression, the rewrite breaks the form or reads a parameter that
+holds an object, pyct follows no value through an operation in it, it
+reads no argument, it raised on the input, the input whose path it extends
+already meets it, the solver gives no input for it, or its input took the
+other side. A reply that got no answer ends the condition's tries at this
+moment, and so does a rewrite pyct cannot run, found before an ask or after
+it, a spent budget and an input that met the run's stop. An input whose
+every parameter holds an object ends them before the first ask. Decision
 llm-rewrites-retry-three-times-after-the-first-ask.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import time
 import types
@@ -30,7 +32,7 @@ from pyct.intercept.model_code import Refused
 from pyct.results.llm_asks import Unanswered
 from pyct.results.record import InputRecord, Stop
 from pyct.rewrite.ask import GivenUp, in_place, recorded, takes
-from pyct.rewrite.condition import NO_EXPRESSION, expression_in, rewrite_code
+from pyct.rewrite.condition import NO_EXPRESSION, expression_in, holds_object, rewrite_code
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteFailed, RewriteNote, RewriteRead, RewriteSkipped, RewriteTook
 from pyct.rewrite.provider import EarlierTry, RewriteProvider, RewriteReply
@@ -41,6 +43,8 @@ from pyct.solver.answer import Answer, Error, Sat
 ASKS = 4
 # the characters of a reply with no expression an earlier try quotes
 QUOTED = 200
+# why the tries end before an ask when every parameter holds an object
+NOTHING_READABLE = "no argument a rewrite may read"
 
 
 class Around(Protocol):
@@ -93,13 +97,25 @@ class _Ended:
 @dataclass(frozen=True)
 class Asking:
     """One condition's tries: the provider, what the solver gave up on, where it sits, the
-    names a rewrite may read, and the rewrites kept."""
+    function's parameters, and the rewrites kept."""
 
     provider: RewriteProvider
     given: GivenUp
     about: About
     parameters: tuple[str, ...]
     kept: Kept
+
+    @functools.cached_property
+    def objects(self) -> tuple[str, ...]:
+        """The parameters whose input value holds an object (``holds_object``), which a rewrite
+        may not read."""
+        args = self.given.origin.args
+        return tuple(name for name in self.parameters if holds_object(args[name]))
+
+    @functools.cached_property
+    def readable(self) -> tuple[str, ...]:
+        """The parameters a rewrite may read."""
+        return tuple(name for name in self.parameters if name not in self.objects)
 
     def tries(self, around: Around) -> Tried:
         """Ask up to ``ASKS`` times, each carrying the earlier tries, until a rewrite's input
@@ -126,13 +142,14 @@ class Asking:
     def _ask(
         self, earlier: tuple[EarlierTry, ...], around: Around
     ) -> RewriteReply | Unanswered | _Ended:
-        """The provider's reply, its wait paused; no ask, said, when no rewrite could run."""
-        blocked = around.blocked()
+        """The provider's reply, its wait paused; no ask, said, when no rewrite could run or
+        none may read any parameter."""
+        blocked = around.blocked() if self.readable else NOTHING_READABLE
         if blocked is not None:
             around.note(RewriteSkipped(self.given.condition.site, blocked))
             return _Ended(blocked)
         started = time.monotonic()
-        answer = self.provider.rewrite(request_for(self.given, self.about, earlier))
+        answer = self.provider.rewrite(request_for(self.given, self.about, earlier, self.objects))
         around.pause(time.monotonic() - started)
         return answer
 
@@ -143,18 +160,19 @@ class Asking:
         if expression is None:
             return EarlierTry(reply.text.strip()[:QUOTED], NO_EXPRESSION)
         around.note(RewriteRead(site, expression))
-        code = rewrite_code(expression, self.parameters, f"<rewrite {self.about.place}>")
+        file = f"<rewrite {self.about.place}>"
+        code = rewrite_code(expression, self.parameters, file, self.objects)
         if isinstance(code, Refused):
             return EarlierTry(expression, code.reason)
         args = self.given.origin.args
-        ran = around.run_rewrite(code, {name: args[name] for name in self.parameters})
+        ran = around.run_rewrite(code, {name: args[name] for name in self.readable})
         if isinstance(ran, str):
             around.note(RewriteSkipped(site, ran))
             return _Ended(ran)
         failed = self._input(code, ran, around)
         if failed is None:
             around.note(RewriteTook(site))
-            self.kept.keep(self.given.condition, code, self.parameters)
+            self.kept.keep(self.given.condition, code, self.readable)
             return None
         return failed if isinstance(failed, _Ended) else EarlierTry(expression, failed)
 

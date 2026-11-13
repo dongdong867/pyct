@@ -42,6 +42,14 @@ def test_an_input_without_a_name_the_rewrite_reads_takes_no_rewrite() -> None:
     assert kept().reused(wanted, Seed.of({"t": "0"}), never) is None
 
 
+def test_an_input_where_a_name_the_rewrite_reads_holds_an_object_takes_no_rewrite() -> None:
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
+    assert wanted is not None
+    origin = Seed.of({"s": [{"__class__": "m::Order"}]})
+
+    assert kept().reused(wanted, origin, never) is None
+
+
 def test_a_rewrite_that_does_not_run_or_records_no_fork_takes_no_place() -> None:
     wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
     assert wanted is not None

@@ -5,6 +5,8 @@ condition in later asks until one of its inputs takes the other side.
 Each runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text.
 """
 
+from pathlib import Path
+
 import pytest
 
 from pyct.core.foundation.branch import Site
@@ -150,3 +152,28 @@ def test_a_kept_rewrite_whose_input_took_the_other_side_is_dropped(
     assert kept.codes == {}
     # the next input aimed at a fork under line 2's true side asks the original condition
     assert all(record.source is not Source.REWRITE for record in ran.records[number:])
+
+
+def test_a_rewrite_that_calls_a_method_of_an_object_argument_fails_and_never_calls_it(
+    tmp_path: Path,
+) -> None:
+    saved = tmp_path / "saved"
+
+    class Saver:
+        """An object whose method writes a file outside pyct's process."""
+
+        def save(self) -> int:
+            saved.write_text("saved")
+            return 1
+
+    provider = FakeRewrites(["n.save() == 1"])
+
+    ran = run_rewrites(COUNTED, {"s": "0", "n": Saver()}, provider)
+
+    at = f"llm: rewrite for {file_of('counted')}:2:7"
+    assert tries_said(ran.said, at) == [
+        f"{at}, try {number}: a rewrite may not read n, which holds an object"
+        for number in range(1, 5)
+    ]
+    assert [request.unreadable for request in provider.requests] == [("n",)] * 4
+    assert not saved.exists()

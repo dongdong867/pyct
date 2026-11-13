@@ -56,9 +56,13 @@ class Fake:
     asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
     asked: int = 0
+    requests: list[RewriteRequest] = field(default_factory=list)
+    # the arguments each rewrite's run was handed
+    handed: list[Mapping[str, object]] = field(default_factory=list)
 
     def rewrite(self, request: RewriteRequest) -> RewriteReply | Unanswered:
         self.asked += 1
+        self.requests.append(request)
         if isinstance(self.reply, Unanswered):
             return self.reply
         return RewriteReply(self.reply, AskCost(self.asked))
@@ -82,6 +86,7 @@ class Fake:
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
     ) -> ExecutionResult | str:
+        self.handed.append(dict(args))
         if self.ran is None:
             fork = Branch(
                 ["==", "s", "'1e-30'"], False, Site(code.co_filename, HELD_LINE, HELD_COL)
@@ -143,6 +148,39 @@ def test_a_rewrite_that_cannot_run_by_the_next_ask_ends_the_tries_unasked() -> N
     assert tried(fake) == Tried(False, True, ended="cannot fork")
     assert fake.asked == 1
     assert fake.notes[-1] == RewriteSkipped(SITE, "cannot fork")
+
+
+def test_an_input_whose_every_argument_holds_an_object_ends_the_tries_before_any_ask() -> None:
+    origin = Seed.of({"o": {"__class__": "m::Order"}, "l": [{"__class__": "m::Order"}]})
+    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
+    fake = Fake()
+
+    found = Asking(fake, given, ABOUT, ("o", "l"), Kept()).tries(fake)
+
+    assert found == Tried(False, False, ended="no argument a rewrite may read")
+    assert fake.asked == 0
+    assert fake.notes == [RewriteSkipped(SITE, "no argument a rewrite may read")]
+
+
+def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_in_the_ask() -> None:
+    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
+    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
+    fake = Fake(reply="o.cancel() == 1")
+
+    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
+
+    assert failed(fake) == ["a rewrite may not read o, which holds an object"] * 4
+    assert [request.unreadable for request in fake.requests] == [("o",)] * 4
+    assert fake.handed == []
+
+
+def test_a_rewrite_beside_an_argument_that_holds_an_object_runs_without_it() -> None:
+    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
+    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
+    fake = Fake()
+
+    assert Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake) == Tried(True, True)
+    assert fake.handed == [{"s": "0"}]
 
 
 def test_a_budget_spent_before_the_solver_asks_ends_the_tries() -> None:
