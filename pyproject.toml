@@ -133,7 +133,7 @@ layers = [
   "pyct.sweep",
   "pyct.llm",
   "pyct.run",
-  "(pyct.rewrite)",
+  "pyct.rewrite",
   "pyct.intercept",
   "pyct.solver",
   "pyct.branches",

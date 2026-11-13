@@ -126,7 +126,7 @@ def test_names_its_home_in_the_layout() -> None:
     layout = (REPO_ROOT / "CLAUDE.md").read_text().split("```")[1]
     entries = dict(re.findall(r"├── (\w+)/\s+(.*?)(?=\n│   ├──|\n│   └──)", layout, re.S))
     assert "len" in entries["intercept"] and "`is True`" in entries["intercept"]
-    assert "LLM source rewrite" in entries["rewrite"]
+    assert "LLM rewrite of a condition" in entries["rewrite"]
     assert not re.search(r"builtin|intercept|substitut|len", entries["rewrite"])
 
 

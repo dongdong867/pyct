@@ -1,10 +1,12 @@
-"""The code a seeds ask sends: the target's, then its same-package callees, breadth first."""
+"""The code a seeds ask sends: the target's, then its same-package callees, breadth first; and the
+code a rewrites ask sends: the function around one line."""
 
 import inspect
+from pathlib import Path
 
 import pytest
 
-from pyct.run.code_context import code_context
+from pyct.run.code_context import code_around, code_context
 from pyct.run.target import Target, load_target
 
 
@@ -129,3 +131,38 @@ def test_code_python_cannot_parse_alone_leads_to_no_callee(monkeypatch: pytest.M
     code = code_context(here("calls_nowhere", calls_nowhere))
 
     assert code == f"# {__name__}.calls_nowhere\nx = ("
+
+
+def write(tmp_path: Path, text: str) -> str:
+    file = tmp_path / "m.py"
+    file.write_text(text)
+    return str(file)
+
+
+def test_the_code_around_a_line_is_its_innermost_function_dedented(tmp_path: Path) -> None:
+    file = write(
+        tmp_path,
+        "x = 1\n\n\nclass C:\n    @staticmethod\n    def f(s):\n"
+        "        def g(n):\n            return n > 0\n        return g\n",
+    )
+
+    assert code_around(file, 8) == "def g(n):\n    return n > 0"
+    assert code_around(file, 9).startswith("@staticmethod\ndef f(s):")
+    assert code_around(file, 1).startswith("x = 1\n")
+
+
+def test_the_code_around_a_line_in_a_long_function_is_cut_to_the_lines_around_it(
+    tmp_path: Path,
+) -> None:
+    body = "".join(f"    n += {at}\n" for at in range(1, 400))
+    file = write(tmp_path, f"def f(n):\n{body}    return n\n")
+
+    middle = code_around(file, 201, most=10).splitlines()
+    end = code_around(file, 401, most=10).splitlines()
+
+    assert middle == [f"n += {at}" for at in range(195, 205)]
+    assert end[-1] == "return n" and len(end) == 10
+
+
+def test_a_file_that_does_not_read_gives_no_code(tmp_path: Path) -> None:
+    assert code_around(str(tmp_path / "gone.py"), 1) == ""

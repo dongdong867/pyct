@@ -59,8 +59,11 @@ class FakeRun:
         self.stops.append(stop_at)
         return self.causes_given
 
-    def run_input(self, seed: Seed, source: object) -> InputRecord | Stop:
+    def run_input(self, seed: Seed, source: object, wanted: object = None) -> InputRecord | Stop:
         raise AssertionError("no fake tool here runs an input")
+
+    def tell_ask(self, ask: object) -> None:
+        pass
 
     def pause(self, seconds: float) -> None:
         self.bounds = self.bounds.paused(seconds)
