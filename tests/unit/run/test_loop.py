@@ -12,7 +12,7 @@ from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.coverage import Progress, Scope
 from pyct.results.record import Stop, StopKind
 from pyct.run.bounds import Bounds
-from pyct.run.loop import _attempt
+from pyct.run.loop import Ways, _attempt
 from pyct.run.run import run
 from pyct.run.target import load_target
 
@@ -34,7 +34,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
     attempt = _attempt(
-        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), no_input_yet()
+        Ways(call), {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), no_input_yet()
     )
 
     assert attempt.record is None

@@ -26,12 +26,14 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from pyct.binding.bind import Seed
+from pyct.branches.plan import Plan
 from pyct.config.goal import Goal
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Progress, no_gain
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Source, Stop
 from pyct.run.bounds import Bounds
+from pyct.run.tell import Ask
 
 # the most moments of a run in which a tool asked the LLM
 MOMENTS = 3
@@ -71,7 +73,8 @@ class Handled:
 class Running(Protocol):
     """The run as a moment and its tools see it part way through: its bounds, the inputs so
     far, the stop one of them met, the causes of the lines still missed, an input run between
-    two passes, and the clock paused for a wait that is not the run's own work."""
+    two passes, aimed at a plan when one is given, a solver ask a tool made handed out, and the
+    clock paused for a wait that is not the run's own work."""
 
     @property
     def bounds(self) -> Bounds: ...
@@ -84,7 +87,11 @@ class Running(Protocol):
 
     def causes(self, stop_at: float | None) -> tuple[WhyEntry, ...]: ...
 
-    def run_input(self, seed: Seed, source: Source) -> InputRecord | Stop: ...
+    def run_input(
+        self, seed: Seed, source: Source, wanted: Plan | None = None
+    ) -> InputRecord | Stop: ...
+
+    def tell_ask(self, ask: Ask) -> None: ...
 
     def pause(self, seconds: float) -> None: ...
 

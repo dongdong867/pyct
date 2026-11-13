@@ -10,8 +10,11 @@ from pyct.config.command_line import UsageError
 
 # the seeds tool's name, as ``--llm``, stderr and the code that builds it write it
 SEEDS_TOOL = "seeds"
-# every LLM tool this version has, in the order ``--llm all`` lists them
-TOOLS = (SEEDS_TOOL,)
+# the rewrites tool's name, written the same ways
+REWRITES_TOOL = "rewrites"
+# every LLM tool this version has, in the order ``--llm all`` lists them: seeds, summaries,
+# rewrites, guesses, as each lands
+TOOLS = (SEEDS_TOOL, REWRITES_TOOL)
 # the word ``--llm`` takes for every tool in TOOLS
 ALL = "all"
 # the providers ``--llm-model`` takes, each with an adapter of its own

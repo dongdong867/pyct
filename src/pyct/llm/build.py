@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import os
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.config.llm import LlmSettings, Model
@@ -14,15 +13,11 @@ from pyct.llm.ledger import Ledger
 from pyct.llm.providers import PROVIDERS, Provider
 from pyct.llm.recording import Recording
 from pyct.llm.replay import ReplayCaller, read_replay
+from pyct.llm.rewrites import REWRITES, LlmRewrites
 from pyct.llm.seeds import SEEDS, LlmSeeds
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
-from pyct.run.llm_seeds import SeedProvider
 from pyct.run.tell import Noted
-
-# each tool's implementation over the run's connection, by its name, which is also the
-# ``Helpers`` field it fills
-HELPERS: Mapping[str, Callable[[Connection], SeedProvider]] = {SEEDS.name: LlmSeeds}
 
 
 @dataclass(frozen=True)
@@ -74,5 +69,9 @@ def _built(settings: LlmSettings, model: Model, caller: Caller, noted: Noted | N
     switched-on tool on it."""
     recording = Recording.start(model, settings.tools)
     connection = Connection(caller, recording, Ledger(settings.limit), noted)
-    made = {name: HELPERS[name](connection) for name in settings.tools}
-    return Built(Helpers(**made), model, connection)
+    tools = settings.tools
+    helpers = Helpers(
+        seeds=LlmSeeds(connection) if SEEDS.name in tools else None,
+        rewrites=LlmRewrites(connection) if REWRITES.name in tools else None,
+    )
+    return Built(helpers, model, connection)
