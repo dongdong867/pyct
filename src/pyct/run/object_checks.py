@@ -30,8 +30,7 @@ _FORM_KEYS = frozenset({CLASS_KEY, ARGS_KEY})
 @dataclass(frozen=True)
 class ObjectCheck:
     """A class, its constructor's signature as the caller read it or None, and what the
-    constructor's annotations ask of the values under their keys: ``seed_annotations``
-    less the ``*args`` parameter's."""
+    constructor's annotations ask of the values under their keys (``seed_annotations``)."""
 
     built: type
     signature: inspect.Signature | None
@@ -39,16 +38,10 @@ class ObjectCheck:
 
     @classmethod
     def of(cls, owner: type, signature: inspect.Signature | None) -> ObjectCheck:
-        """The check for ``owner`` built through ``signature``, which the caller read.
-
-        A ``*args`` parameter's annotation checks no key: a key of that name
-        reaches the constructor through ``**kwargs``, or does not fit.
-        """
+        """The check for ``owner`` built through ``signature``, which the caller read."""
         if signature is None:
             return cls(owner, None, {})
-        starred = _star_args(signature)
-        checks = seed_annotations(signature, owner)
-        return cls(owner, signature, {key: each for key, each in checks.items() if key != starred})
+        return cls(owner, signature, seed_annotations(signature, owner))
 
     def lines(
         self,
@@ -220,12 +213,6 @@ def fit_failure(
     except TypeError as error:
         return str(error)
     return None
-
-
-def _star_args(signature: inspect.Signature) -> str | None:
-    """The ``*args`` parameter's name, or None for a signature without one."""
-    var = inspect.Parameter.VAR_POSITIONAL
-    return next((name for name, each in signature.parameters.items() if each.kind is var), None)
 
 
 def _bound_keys(value: Mapping[str, object], positional: Sequence[object]) -> str:
