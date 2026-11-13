@@ -115,7 +115,8 @@ class _Tracker:
     ) -> tuple[dict[object, object], dict[object, object]]:
         # a dict the solver adds int keys to, named or made up: its annotation says int
         keyed = int_keys(place.check)
-        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink, int_keyed=keyed)
+        keys: dict[object, object] = {self.copy_key(key): None for key in value}
+        made = ConcolicDict.made(keys, place.access, self.sink, int_keyed=keyed)
         self.dicts.append(made)
         return made, dict(value)
 
