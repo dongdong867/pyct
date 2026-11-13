@@ -22,9 +22,9 @@ SEED_FORM = (
     ' JSON object holding "__class__": "module::QualifiedName" and one key per constructor'
     " parameter; such an object may sit inside a list or dict, or be a constructor argument of"
     " another such object or of a method's self. Any other JSON object stays a dict."
-    ' A dict that holds the key "__class__" writes it "!__class__". pyct builds only the'
-    " classes of the user's own code. An argument may take a type its annotation does not"
-    " name, when the code shows it uses one."
+    ' An argument the code uses as a dict writes a key "__class__" it holds as "!__class__".'
+    " pyct builds only the classes of the user's own code. An argument may take a type its"
+    " annotation does not name, when the code shows it uses one."
 )
 
 # the reason a reply with no seeds pyct can read is ignored
