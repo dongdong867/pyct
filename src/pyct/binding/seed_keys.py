@@ -1,10 +1,11 @@
 """The keys pyct gives a meaning in seed JSON, and how a plain dict writes a key that would
 otherwise make it an object form.
 
-A JSON object holding ``"__class__"`` is an object form. A plain dict that holds that key, one
-the solver added it to say, writes it ``"!__class__"``, and a key of one or more ``!`` then
-``__class__`` takes one ``!`` more, so every such key reads back as it was. No other key is
-escaped. A form's and ``self``'s keys are a constructor's arguments, and are never escaped.
+A JSON object holding ``"__class__"`` is an object form. A plain dict that holds that key,
+whether the seed gave it or the solver added it, writes it ``"!__class__"``, and a key of one
+or more ``!`` then ``__class__`` takes one ``!`` more, so every such key reads back as it was.
+No other key is escaped. A form's and ``self``'s keys are a constructor's arguments, and are
+never escaped.
 """
 
 # the key that names an object form's class, and the key of the items it passes by position

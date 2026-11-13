@@ -238,7 +238,9 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     """The name and type of every value ``bind`` tracks, in the seed's order.
 
     Each is named as ``leaf_name`` names it: the leaves the solver declares and the items of
-    the lists it declares, every value a fork can name by its access.
+    the lists it declares, every value a fork can name by its access. The names follow the
+    seed JSON read with no annotations, so under ``self`` or a ``dict[int, X]`` a key may be
+    named here other than as ``bind`` names it.
     """
     noted = Noted()
     Walk(noted).rebuilt(seed)
