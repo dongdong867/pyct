@@ -35,16 +35,24 @@ def test_a_for_loop_reads_its_iterable_and_changes_what_the_function_reads_after
     """
 
     assert read(source) == [
-        Piece(line=3, col=4, going_in=("t", "x", "xs"), changed=("t",), lines=(3, 4))
+        Piece(line=3, col=4, going_in=("t", "xs"), changed=("t",), lines=(3, 4))
     ]
+
+
+def test_a_for_loop_s_own_variables_go_in_only_when_its_iterable_reads_them() -> None:
+    bound_first = "def f(xs, t):\n    for i, (x, *y) in xs:\n        t += x + i\n    return t\n"
+    read_by_iterable = "def f(x):\n    for x in g(x):\n        h(x)\n    return x\n"
+
+    assert names(bound_first) == [(("t", "xs"), ("t",))]
+    assert names(read_by_iterable) == [(("x",), ("x",))]
 
 
 def test_a_loop_variable_nothing_reads_later_is_not_a_changed_name() -> None:
     unread = "def f(xs):\n    for x in xs:\n        g(x)\n"
     read_after = "def f(xs):\n    for x in xs:\n        g(x)\n    return x\n"
 
-    assert names(unread) == [(("x", "xs"), ())]
-    assert names(read_after) == [(("x", "xs"), ("x",))]
+    assert names(unread) == [(("xs",), ())]
+    assert names(read_after) == [(("xs",), ("x",))]
 
 
 def test_a_while_loop_reads_its_test_and_its_else_is_part_of_it() -> None:
@@ -75,7 +83,7 @@ def test_a_read_before_the_piece_counts_inside_a_loop_around_it() -> None:
     """
 
     # the outer loop reads n before the inner one on its next pass
-    assert names(source) == [(("n", "xs", "xss"), ()), (("n", "xs"), ("n",))]
+    assert names(source) == [(("n", "xss"), ()), (("n", "xs"), ("n",))]
 
 
 def test_globals_nonlocals_attributes_and_items_are_neither() -> None:
@@ -90,7 +98,7 @@ def test_globals_nonlocals_attributes_and_items_are_neither() -> None:
     """
 
     # the names the attribute and the item hang off are read, and nothing the loop binds is local
-    assert names(source) == [(("d", "self", "x", "xs"), ())]
+    assert names(source) == [(("d", "self", "xs"), ())]
 
 
 def test_a_nonlocal_name_is_not_the_function_s() -> None:
@@ -107,7 +115,7 @@ def test_a_nonlocal_name_is_not_the_function_s() -> None:
     tree = ast.parse(textwrap.dedent(source))
     inner = next(n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "f")
 
-    assert [(p.going_in, p.changed) for _, p in pieces(inner)] == [(("x", "xs"), ())]
+    assert [(p.going_in, p.changed) for _, p in pieces(inner)] == [(("xs",), ())]
 
 
 def test_a_comprehension_s_own_variables_and_a_nested_function_s_names_are_not_the_function_s() -> (
@@ -123,8 +131,8 @@ def test_a_comprehension_s_own_variables_and_a_nested_function_s_names_are_not_t
         return ys, g, c, z
     """
 
-    # c inside the comprehension is its own; y and z are g's; x is read inside g and is f's
-    assert names(source)[0] == (("x", "xs"), ("g", "ys"))
+    # c inside the comprehension is its own; y and z are g's; x is f's, which the loop binds first
+    assert names(source)[0] == (("xs",), ("g", "ys"))
 
 
 def test_a_name_a_comprehension_s_walrus_binds_is_the_function_s() -> None:
@@ -136,7 +144,7 @@ def test_a_name_a_comprehension_s_walrus_binds_is_the_function_s() -> None:
         return last
     """
 
-    assert names(source) == [(("xs", "xss"), ("last",))]
+    assert names(source) == [(("xss",), ("last",))]
 
 
 def test_a_comprehension_assignment_changes_its_target_whatever_reads_it() -> None:
@@ -265,7 +273,7 @@ def test_each_way_a_loop_binds_a_name_changes_it() -> None:
     # the lambda's default is read where it is written; its parameters are its own
     assert names(source) == [
         (
-            ("v", "x", "xs"),
+            ("v", "xs"),
             ("C", "error", "fh", "first", "g", "load", "os", "others", "rest", "text"),
         )
     ]

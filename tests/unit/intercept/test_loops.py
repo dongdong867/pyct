@@ -84,12 +84,12 @@ def test_with_the_switch_off_no_shape_gets_a_hook(shape: str) -> None:
 def test_a_for_hands_its_iterable_over_and_ends_in_its_else_and_at_each_break() -> None:
     assert hooked(LOOPS["for_else_break"]) == (
         "def f(xs):\n"
-        "    for x in __pyct_piece_over__(xs, 2, 4, ('x', 'xs'), ('x',)):\n"
+        "    for x in __pyct_piece_over__(xs, 2, 4, ('xs',), ('x',)):\n"
         "        if x == 3:\n"
-        "            __pyct_piece_out__(2, 4, ('x', 'xs'), ('x',))\n"
+        "            __pyct_piece_out__(2, 4, ('xs',), ('x',))\n"
         "            break\n"
         "    else:\n"
-        "        __pyct_piece_out__(2, 4, ('x', 'xs'), ('x',))\n"
+        "        __pyct_piece_out__(2, 4, ('xs',), ('x',))\n"
         "        x = None\n"
         "    return x"
     )

@@ -11,7 +11,8 @@ read off the function's AST, without running it:
   in the order written, which is where `pyct.results.sources` places a loop
   source, so a condition's loop source names the piece it came from;
 - the names going in: the function's local names, its parameters among
-  them, that the piece reads;
+  them, that the piece reads, less a ``for`` loop's own variables, which
+  it binds before its body reads them, unless its iterable reads them;
 - the changed names: for a loop, the function's local names it binds that
   the function reads anywhere outside the loop, a loop around it included;
   for an assignment, its target;
@@ -79,6 +80,7 @@ def _piece(
     """One piece read off its statement, given every read of the function's own scope."""
     met = list(walk.met([statement]))
     going_in = {name for bound, name, _ in met if not bound and name in local}
+    going_in -= _bound_first(statement, walk)
     assigned = _assigned(statement)
     if assigned is not None:
         target, comprehension = assigned
@@ -96,6 +98,15 @@ def _piece(
         changed=tuple(sorted(changed)),
         lines=(statement.lineno, statement.end_lineno or statement.lineno),
     )
+
+
+def _bound_first(statement: ast.stmt, walk: _Walk) -> set[str]:
+    """The names a ``for`` binds before its body can read them: its target's, less those its
+    iterable reads. Any other piece binds none first."""
+    if not isinstance(statement, ast.For | ast.AsyncFor):
+        return set()
+    read = {name for bound, name, _ in walk.met([statement.iter]) if not bound}
+    return set(names_in(statement.target)) - read
 
 
 def _own_statements(function: Function) -> Iterator[ast.stmt]:
