@@ -90,6 +90,7 @@
     {"set": "v2", "target": "targets.dicts.changes::reversed_keys", "seed": {"config": {"a": 1, "b": 2}}},
     {"set": "v2", "target": "targets.dicts.changes::updated", "seed": {"config": {"a": 1, "b": 2}}},
     {"set": "v2", "target": "targets.dicts.changes::values", "seed": {"config": {"a": 1, "b": 2}}},
+    {"set": "v2", "module": "targets.dicts.class_key", "left_out": "its seeds name classes with \"__class__\", write a plain dict's \"__class__\" key as \"!__class__\", or hold a tuple, which legacy does not read as pyct does"},
     {"set": "v2", "target": "targets.dicts.compared::check", "seed": {"config": {}}},
     {"set": "v2", "target": "targets.dicts.decided::found_truth", "seed": {"d": {"a": 1}}},
     {"set": "v2", "target": "targets.dicts.decided::looked_up_twice", "seed": {"d": {}}},

@@ -61,7 +61,11 @@ class Visitor(Protocol):
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
         """The copy that stands for a tracked dict, and the items it takes, in order: the copy
-        holds each of their keys, in the same order."""
+        holds each of their keys, in the same order, each as ``copy_key`` writes it."""
+        ...
+
+    def copy_key(self, key: object) -> object:
+        """A plain dict's key, as the walk read it, as this walk's copy of the dict holds it."""
         ...
 
 
@@ -268,11 +272,12 @@ class Walk:
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
         elif access is not None and not fixed:
-            made, items = self._visitor.mapped(keyed(value, check), place)
+            made, items = self._visitor.mapped(keyed(value, check, plain=True), place)
         else:
-            # a dict under no access, or of fixed shape: a plain copy, its keys and length fixed
-            items = keyed(value, check)
-            made = dict.fromkeys(items)
+            # a dict under no access, or of fixed shape: a copy, its keys and length fixed
+            plain = not isinstance(check, Fields)
+            items = keyed(value, check, plain=plain)
+            made = {self._visitor.copy_key(key) if plain else key: None for key in items}
         if fixed:
             self._fixed.add(id(made))
         self._copies[id(value)] = made
@@ -414,9 +419,10 @@ class Walk:
             return list(list.__iter__(value))
         if type(value) is not dict and isinstance(value, dict):
             by_key = {id(key): item for key, item in dict.items(value)}
-            return keyed({key: by_key[id(key)] for key in self._keys[id(value)]}, check)
+            ordered = {key: by_key[id(key)] for key in self._keys[id(value)]}
+            return keyed(ordered, check, plain=False)
         if isinstance(value, dict):
-            return keyed(value, check)
+            return keyed(value, check, plain=not isinstance(check, Fields))
         return objects.attributes(value, made)
 
 

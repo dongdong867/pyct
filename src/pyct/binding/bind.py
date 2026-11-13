@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Check, Items, int_keys
+from pyct.binding.seed_keys import written_key
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.dicts.dicts import ConcolicDict
@@ -56,6 +57,9 @@ def bind(
     fixed too, its values tracked by their places. So is a dict or list a
     class hint builds, and each value in an object form takes its
     constructor's hint, the class a bare name names read in ``home``.
+
+    The seed is seed JSON: a plain dict's key ``"!__class__"`` reaches the target as
+    ``"__class__"``, and is named by that key (``seed_keys``).
     """
     tracker = _Tracker(sink)
     args = Walk(tracker, home).rebuilt(seed, checks)
@@ -102,6 +106,10 @@ class _Tracker:
         self.dicts.append(made)
         return made, dict(value)
 
+    def copy_key(self, key: object) -> object:
+        # the target's dict holds each key as the walk read it
+        return key
+
 
 @dataclass(frozen=True)
 class Seed:
@@ -116,7 +124,9 @@ class Seed:
     adds to a list with none to go by, for this input and each answer made from it. The target
     is never called with the arguments here: ``bind`` copies them again for each call. So
     they stay as the walk made them, and every solve and every answer on the input's path reads
-    them rather than walking the input again.
+    them rather than walking the input again. They are seed JSON, as a person would type
+    them: a plain dict writes its key ``"__class__"`` as ``"!__class__"``, a key the solver
+    added too, while the leaves and dicts name the key as the target reads it.
     """
 
     args: Mapping[str, object]
@@ -191,7 +201,11 @@ class Noted:
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
         self.dicts[leaf_name(place.access)] = dict_shaped(value, place.check)
-        return dict.fromkeys(value), dict(value)
+        return {self.copy_key(key): None for key in value}, dict(value)
+
+    def copy_key(self, key: object) -> object:
+        """An input holds seed JSON: a plain dict's key as the seed writes it (``seed_keys``)."""
+        return written_key(key)
 
     def shapes(self) -> dict[str, ListShape]:
         """Each list's shape, its rows first: the walk made every row after its list."""

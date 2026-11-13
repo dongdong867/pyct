@@ -20,10 +20,7 @@ from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.classes import ClassNameError, load_class, signature_of, written
 from pyct.binding.hints import NOTHING, Inside, inside_of
 from pyct.binding.places import step_in
-
-# the key that names an object form's class, and the key of the items it passes by position
-CLASS_KEY = "__class__"
-ARGS_KEY = "__args__"
+from pyct.binding.seed_keys import ARGS_KEY, CLASS_KEY
 
 # where a value sits in the seed as the traversal copies it, the place it is written at, and
 # what its hint asks
