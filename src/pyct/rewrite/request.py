@@ -1,12 +1,15 @@
 """The request a rewrites ask sends, built from the source: the condition and the earlier
-conditions of its path as Python writes them, and the input's values as JSON."""
+conditions of its path as Python writes them, and the input's values as JSON. It names a file by
+its module, never by its path."""
 
 from __future__ import annotations
 
 import ast
 import functools
 import json
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from pathlib import PurePath
 
 from pyct.core.foundation.branch import Site
 from pyct.rewrite.ask import GivenUp
@@ -20,24 +23,25 @@ VALUE_SIZE = 2_000
 
 @dataclass(frozen=True)
 class About:
-    """Where the condition sits: its place as the recording keys it, its site as stderr writes
-    it, and the source of the function that holds it."""
+    """Where the condition sits: its place, ``module:line:col``, the source of the function
+    that holds it, and the dotted name of the module each file of the path holds."""
 
     place: str
-    site: str
     code: str
+    modules: Mapping[str, str] = field(default_factory=dict)
 
 
 def request_for(given: GivenUp, about: About, tries: tuple[EarlierTry, ...]) -> RewriteRequest:
     """The request for a condition the solver gave up on, with this moment's earlier tries."""
     plan = given.plan
     earlier = [fork for fork in plan.prefix[:-1] if not fork.raising]
-    sides = list(dict.fromkeys((fork.site, fork.taken) for fork in earlier))[-EARLIER:]
+    # each condition at its last place on the path, so the nearest ones stay
+    last = {(fork.site, fork.taken): at for at, fork in enumerate(earlier)}
+    sides = sorted(last, key=last.__getitem__)[-EARLIER:]
     return RewriteRequest(
         place=about.place,
-        site=about.site,
-        condition=Side(condition_text(given.condition.site), given.condition.side),
-        earlier=tuple(Side(condition_text(site), side) for site, side in sides),
+        condition=Side(_text(given.condition.site, about), given.condition.side),
+        earlier=tuple(Side(_text(site, about), side) for site, side in sides),
         code=about.code,
         args=tuple((name, _value(value)) for name, value in given.origin.args.items()),
         answer=given.answer.value,
@@ -45,12 +49,18 @@ def request_for(given: GivenUp, about: About, tries: tuple[EarlierTry, ...]) -> 
     )
 
 
-def condition_text(site: Site) -> str:
+def condition_text(site: Site, module: str) -> str:
     """The condition at ``site`` as Python writes it: the outermost expression that starts
     there, an ``and`` or ``or`` aside, since each of its operands forks at its own start. The
-    site written out when its file does not read or holds no expression there."""
+    site written out by ``module``'s name when its file does not read or holds no expression
+    there."""
     found = _starting(site.file).get((site.line, site.col))
-    return f"the condition at {site.file}:{site.line}:{site.col}" if found is None else found
+    return f"the condition at {module}:{site.line}:{site.col}" if found is None else found
+
+
+def _text(site: Site, about: About) -> str:
+    """The condition at ``site``, its module named as ``about`` names it, or by the file's stem."""
+    return condition_text(site, about.modules.get(site.file, PurePath(site.file).stem))
 
 
 @functools.lru_cache(maxsize=16)

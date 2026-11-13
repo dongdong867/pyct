@@ -116,6 +116,10 @@ def test_a_kept_rewrite_stands_in_for_its_condition_in_a_later_ask() -> None:
     assert line_4.source is Source.REWRITE
     assert line_4.args == {"s": "1e-30", "n": 1}
     assert len(provider.requests) == 1
+    # the pass's sat ask counts as the solver's sat, as its seconds do
+    asked = [record for record in ran.records if record.solver_seconds is not None]
+    assert line_4 in asked
+    assert ran.result.solver.sat == len(asked)
 
 
 # llm-rewrite-input-drops-a-rewrite-that-took-the-other-side

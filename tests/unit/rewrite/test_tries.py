@@ -29,7 +29,7 @@ FORK = Branch(["==", ["float", "s"], 1e-30], False, SITE)
 PLAN = plan((FORK,))
 assert PLAN is not None
 GIVEN = GivenUp(CONDITION, PLAN, Seed.of({"s": "0"}), MissWhy.TIMEOUT)
-ABOUT = About("m:2:7", "m.py:2:7", "def f(s):\n    ...")
+ABOUT = About("m:2:7", "def f(s):\n    ...")
 FILE = "<rewrite m:2:7>"
 
 
@@ -50,6 +50,8 @@ class Fake:
         )
     )
     goes: list[bool] = field(default_factory=lambda: [True] * 10)
+    # why no rewrite can run at each ask, None when one can
+    blocks: list[str | None] = field(default_factory=lambda: list[str | None]([None] * 10))
     answer: Answer | None = field(default_factory=lambda: Sat({"s": "1e-30"}))
     asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
@@ -63,6 +65,9 @@ class Fake:
 
     def going(self) -> bool:
         return self.goes.pop(0)
+
+    def blocked(self) -> str | None:
+        return self.blocks.pop(0)
 
     def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
         self.asks.append(asked)
@@ -122,6 +127,22 @@ def test_a_rewrite_that_cannot_run_ends_the_tries_and_says_so() -> None:
 
     assert tried(fake) == Tried(False, True, ended="cannot fork")
     assert fake.notes == [RewriteRead(SITE, 's == "1e-30"'), RewriteSkipped(SITE, "cannot fork")]
+
+
+def test_a_rewrite_that_cannot_run_ends_the_tries_before_any_ask() -> None:
+    fake = Fake(blocks=["cannot fork"])
+
+    assert tried(fake) == Tried(False, False, ended="cannot fork")
+    assert fake.asked == 0
+    assert fake.notes == [RewriteSkipped(SITE, "cannot fork")]
+
+
+def test_a_rewrite_that_cannot_run_by_the_next_ask_ends_the_tries_unasked() -> None:
+    fake = Fake(reply="no rewrite", blocks=[None, "cannot fork"])
+
+    assert tried(fake) == Tried(False, True, ended="cannot fork")
+    assert fake.asked == 1
+    assert fake.notes[-1] == RewriteSkipped(SITE, "cannot fork")
 
 
 def test_a_budget_spent_before_the_solver_asks_ends_the_tries() -> None:

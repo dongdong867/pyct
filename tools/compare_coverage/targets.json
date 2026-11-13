@@ -694,7 +694,7 @@
     {"set": "v2", "target": "targets.ranges.untaught::use", "seed": {"n": 2}},
     {"set": "v2", "target": "targets.ranges.zero_step::f", "seed": {"k": 2}},
     {"set": "v2", "target": "targets.rewrites.counted::exponent", "seed": {"s": "0", "n": 0}},
-    {"set": "v2", "target": "targets.rewrites.loops::loops", "seed": {"s": "0", "n": 0}},
+    {"set": "v2", "target": "targets.rewrites.loops::loops", "seed": {"s": "0", "n": 1}},
     {"set": "v2", "target": "targets.rewrites.never::never", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.rewrites.odd::odd", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.rewrites.path::negative", "seed": {"s": "-1"}},

@@ -5,16 +5,20 @@ import json
 import sys
 import time
 import types
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.core.foundation.branch import Branch, Site
+from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.rewrite.condition import rewrite_code
+from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.run import loop as loop_module
 from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
@@ -25,6 +29,7 @@ from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver.answer import Sat, Timeout, Unsat
+from tests.acceptance.harness import REPO_ROOT
 from tests.acceptance.llm_rewrites import FakeRewrites, file_of, llm_said, run_rewrites
 
 TEXT = "targets.rewrites.text::exponent"
@@ -43,15 +48,54 @@ def loaded(spec: str) -> Target:
         return load_target(spec)
 
 
-def test_a_rewrite_beside_a_second_thread_is_skipped(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_condition_beside_a_second_thread_is_skipped_before_any_ask(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(model_runs, "running", lambda: 2)
     provider = FakeRewrites(['s == "1e-30"'])
 
     ran = run_rewrites(TEXT, {"s": "0"}, provider)
 
     at = f"llm: rewrite for {file_of('text')}:2:7"
+    assert llm_said(ran.said) == [f"{at} skipped: cannot fork"]
+    assert provider.requests == []
+
+
+@dataclass
+class StartsAThread(FakeRewrites):
+    """A provider during whose wait pyct's process starts a second thread."""
+
+    started: Callable[[], None] = lambda: None
+
+    def rewrite(self, request: RewriteRequest) -> RewriteReply | Unanswered:
+        self.started()
+        return super().rewrite(request)
+
+
+def test_a_thread_started_during_the_ask_skips_the_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_runs, "running", lambda: 1)
+    provider = StartsAThread(
+        ['s == "1e-30"'], started=lambda: monkeypatch.setattr(model_runs, "running", lambda: 2)
+    )
+
+    ran = run_rewrites(TEXT, {"s": "0"}, provider)
+
+    at = f"llm: rewrite for {file_of('text')}:2:7"
     assert llm_said(ran.said) == [f'{at}: s == "1e-30"', f"{at} skipped: cannot fork"]
     assert len(provider.requests) == 1
+
+
+def test_the_request_text_holds_no_absolute_path(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(model_runs, "running", lambda: 1)
+    provider = FakeRewrites(['s == "-1e-30"'])
+
+    run_rewrites("targets.rewrites.path::negative", {"s": "-1"}, provider)
+
+    text = request_text(provider.requests[0])
+    assert "Condition at targets.rewrites.path:3:11: float(s) == -1e-30" in text
+    assert str(REPO_ROOT) not in text
 
 
 def test_an_ask_past_the_token_limit_ends_every_later_ask_unsaid(

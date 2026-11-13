@@ -2,7 +2,7 @@
 
 It implements ``pyct.rewrite.provider.RewriteProvider`` on top of ``Connection.ask``. The place
 is the condition's site, ``module:line:col``, so the connection numbers each condition's tries
-across the run.
+across the run; the request text names the condition by its place too, never by its file's path.
 """
 
 from __future__ import annotations
@@ -36,11 +36,11 @@ def request_text(request: RewriteRequest) -> str:
     moment's earlier tries, and the answer's form."""
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
-        " branches each input took. The solver could not answer for the condition below in"
-        " time. Rewrite it as an easier condition on the parameters that the inputs taking"
+        " branches each input took. The solver could not answer for the condition below."
+        " Rewrite it as an easier condition on the parameters that the inputs taking"
         " the wanted side meet. pyct solves your condition instead, then runs its input on the"
         " real code, and keeps it only when the input takes the wanted side.",
-        f"Condition at {request.site}: {request.condition.text}\n"
+        f"Condition at {request.place}: {request.condition.text}\n"
         f"Wanted side: {_side(request.condition)}",
     ]
     if request.earlier:
@@ -48,7 +48,7 @@ def request_text(request: RewriteRequest) -> str:
         parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
     values = "\n".join(f"{name} = {value}" for name, value in request.args)
-    parts.append(f"The input whose path the solver extended, as JSON:\n{values}")
+    parts.append(f"The input whose path the solver extended, each value as JSON:\n{values}")
     parts.append(f"The solver's answer for the condition: {request.answer}")
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)

@@ -8,7 +8,8 @@ ask about each up to 4 times (``pyct.rewrite.tries``). An ask that got no
 answer is said and ends that condition's tries; once the token limit is
 reached no rewrite is asked for again this run, and the connection has said
 so. A rewrite runs only in a child forked from pyct's process: while pyct's
-process runs another thread, the condition is skipped at this moment
+process runs another thread, before an ask or when the rewrite would run,
+the condition is skipped at this moment
 (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all).
 A rewrite's run, as each solver ask, gets the solver timeout, or less when
 the budget has less.
@@ -44,7 +45,7 @@ from pyct.rewrite.request import About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.run.code_context import code_around
 from pyct.run.loop import Asker, Solved, solver_answer
-from pyct.run.model_runs import CannotFork, ModelCall, run_model
+from pyct.run.model_runs import CannotFork, ModelCall, can_fork, run_model
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running
@@ -88,9 +89,10 @@ class Rewrites(Asker):
 
     def solved(self, wanted: Plan, origin: Seed, limit: float) -> Solved:
         """The ask with each kept rewrite the plan holds in its condition's place first; then,
-        when it gives no input, the plan's own, each within what is left of ``limit``. The
-        first plan at a condition whose ask ended in ``timeout`` or ``unknown``, or had no time
-        left, is kept."""
+        when it gives no input, the plan's own, each within what is left of ``limit``. When
+        the kept rewrite's ask used up ``limit``, the plan's own does not run and the pick ends
+        as a ``timeout``, its limit run out. The first plan at a condition whose ask ended in
+        ``timeout`` or ``unknown`` is kept."""
         started = time.monotonic()
         self._used = ()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
@@ -127,10 +129,12 @@ class Rewrites(Asker):
 
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
+        files = {site.file, *(fork.site.file for fork in given.plan.prefix)}
+        modules = {file: _module_of(file, self.target) for file in files}
         about = About(
-            place=f"{_module_of(site.file, self.target)}:{site.line}:{site.col}",
-            site=f"{site.file}:{site.line}:{site.col}",
+            place=f"{modules[site.file]}:{site.line}:{site.col}",
             code=code_around(site.file, site.line),
+            modules=modules,
         )
         self_name = self.target.self_name
         parameters = tuple(name for name in given.origin.args if name != self_name)
@@ -160,6 +164,10 @@ class _Around:
 
     def going(self) -> bool:
         return _going(self.run)
+
+    def blocked(self) -> str | None:
+        """Why no rewrite can run now: pyct's process runs another thread; None when one can."""
+        return None if can_fork() else CANNOT_FORK
 
     def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
         """The solver's answer within the seconds one ask gets, its programs handed out as the
@@ -209,7 +217,8 @@ class _Child:
 
 
 def _out_of_time(wanted: Plan) -> Solved:
-    """The answer for a plan whose limit a kept rewrite's ask used up: no time left."""
+    """The answer for a plan whose limit a kept rewrite's ask used up: a ``timeout``, since the
+    pick's limit ran out before the plan's own ask could run."""
     return Solved(Timeout(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
 
 

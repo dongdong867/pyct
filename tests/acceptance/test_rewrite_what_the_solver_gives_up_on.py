@@ -6,6 +6,9 @@ Each runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text; the
 the command line's words for the notes the run gave.
 """
 
+import dataclasses
+import time
+
 import pytest
 
 from pyct.config.budget import Budget
@@ -14,6 +17,7 @@ from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import Source, StopKind
+from pyct.run import rewrites as rewrites_module
 from tests.acceptance.llm_rewrites import (
     FakeRewrites,
     file_of,
@@ -52,7 +56,6 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_ans
     assert request.args == (("s", '"-1"'),)
     assert request.answer in ("unknown", "timeout")
     assert request.place == "targets.rewrites.path:3:11"
-    assert request.site == f"{file_of('path')}:3:11"
 
 
 # llm-rewrite-when-the-solver-gives-up-skips-a-condition-that-is-unsat
@@ -123,6 +126,28 @@ def test_a_run_whose_budget_is_spent_when_it_would_be_stuck_asks_nothing() -> No
 
     assert ran.result.stopped.kind is StopKind.BUDGET
     assert provider.requests == []
+
+
+# llm-rewrite-when-the-solver-gives-up-asks-nothing-past-the-budget
+def test_a_budget_spent_between_two_tries_ends_the_tries_unasked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    paused = rewrites_module._Around.pause
+
+    def spent_after(around: rewrites_module._Around, seconds: float) -> None:
+        # the first ask's wait is paused as usual, then the budget runs out during the try
+        paused(around, seconds)
+        run = around.run
+        run.bounds = dataclasses.replace(run.bounds, until=time.monotonic() - 0.001)  # type: ignore[attr-defined]
+
+    monkeypatch.setattr(rewrites_module._Around, "pause", spent_after)
+    provider = FakeRewrites(["I cannot rewrite it."])
+    limits = Limits(budget=Budget(60), solver_timeout=SolverTimeout(1.0))
+
+    ran = run_rewrites(TEXT, {"s": "0"}, provider, limits)
+
+    assert len(provider.requests) == 1
+    assert ran.result.stopped.kind is StopKind.BUDGET
 
 
 # llm-rewrite-when-the-solver-gives-up-goes-on-after-a-failed-ask

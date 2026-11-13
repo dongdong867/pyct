@@ -7,7 +7,8 @@ through an operation in it, it reads no argument, it raised on the input,
 the input whose path it extends already meets it, the solver gives no
 input for it, or its input took the other side. A reply that got no answer
 ends the condition's tries at this moment, and so does a rewrite pyct cannot
-run, a spent budget and an input that met the run's stop. Decision
+run, found before an ask or after it, a spent budget and an input that met
+the run's stop. Decision
 llm-rewrites-retry-three-times-after-the-first-ask.
 """
 
@@ -43,11 +44,16 @@ QUOTED = 200
 
 
 class Around(Protocol):
-    """The run as a condition's tries see it: whether to go on, the solver's answer to an ask on
-    a plan's path, the clock paused for the model's wait, a note said, a rewrite run in a child
-    of pyct's process, and a real input run aimed at a plan."""
+    """The run as a condition's tries see it: whether to go on, why no rewrite could run now,
+    the solver's answer to an ask on a plan's path, the clock paused for the model's wait, a
+    note said, a rewrite run in a child of pyct's process, and a real input run aimed at a
+    plan."""
 
     def going(self) -> bool: ...
+
+    def blocked(self) -> str | None:
+        """Why no rewrite could run now, so no ask is worth its wait; None when one could."""
+        ...
 
     def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
         """The solver's answer to ``asked``, aimed at ``plan``'s fork from ``origin``, within
@@ -101,10 +107,9 @@ class Asking:
         earlier: list[EarlierTry] = []
         asked = False
         while len(earlier) < ASKS and around.going():
-            request = request_for(self.given, self.about, tuple(earlier))
-            started = time.monotonic()
-            answer = self.provider.rewrite(request)
-            around.pause(time.monotonic() - started)
+            answer = self._ask(tuple(earlier), around)
+            if isinstance(answer, _Ended):
+                return Tried(False, asked, ended=answer.reason)
             asked = True
             if isinstance(answer, Unanswered):
                 return Tried(False, asked, unanswered=answer)
@@ -117,6 +122,19 @@ class Asking:
             around.note(RewriteFailed(site, answer.cost.attempt, outcome.reason))
             earlier.append(outcome)
         return Tried(False, asked)
+
+    def _ask(
+        self, earlier: tuple[EarlierTry, ...], around: Around
+    ) -> RewriteReply | Unanswered | _Ended:
+        """The provider's reply, its wait paused; no ask, said, when no rewrite could run."""
+        blocked = around.blocked()
+        if blocked is not None:
+            around.note(RewriteSkipped(self.given.condition.site, blocked))
+            return _Ended(blocked)
+        started = time.monotonic()
+        answer = self.provider.rewrite(request_for(self.given, self.about, earlier))
+        around.pause(time.monotonic() - started)
+        return answer
 
     def _try(self, reply: RewriteReply, around: Around) -> EarlierTry | _Ended | None:
         """One try: None when its input took the wanted side, else how it failed."""

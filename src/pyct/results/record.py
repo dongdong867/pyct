@@ -224,12 +224,14 @@ class RunResult:
     def solver(self) -> SolverCounts:
         """What the solver answered, derived so the counts can never disagree with the misses.
 
-        An input the solver gave is its one ``sat``; every other answer gave
+        An input a pass's sat ask gave is its one ``sat``, whether the solver
+        or a kept rewrite's ask gave it; a rewrite's input a try ran between
+        passes carries no seconds and no pass's ask. Every other answer gave
         no input and is already a miss.
         """
         whys = [miss.why for miss in self.misses]
         return SolverCounts(
-            sat=sum(1 for record in self.records if record.source is Source.SOLVER),
+            sat=sum(1 for record in self.records if _from_a_pass(record)),
             unsat=whys.count(MissWhy.UNSAT),
             unknown=whys.count(MissWhy.UNKNOWN),
             timeout=whys.count(MissWhy.TIMEOUT),
@@ -237,8 +239,8 @@ class RunResult:
 
     @property
     def solver_seconds(self) -> SolverSeconds:
-        """The seconds of the asks, summed by answer: a solver input's ask was sat, and every
-        other ask is a miss."""
+        """The seconds of the asks, summed by answer: the ask of an input a pass's ask gave was
+        sat, and every other ask is a miss."""
         given = [record.solver_seconds for record in self.records]
         by_why = {why: 0.0 for why in MissWhy}
         for miss in self.misses:
@@ -304,6 +306,14 @@ def why_uncovered(
         for file, lines in coverage.uncovered.items()
         for entry in explain(file, lines, ran & coverage.lines[file], run)
     )
+
+
+def _from_a_pass(record: InputRecord) -> bool:
+    """Whether a pass's sat ask gave the input: the solver's, or a kept rewrite's, which carries
+    its ask's seconds as a try's input does not."""
+    if record.source is Source.REWRITE:
+        return record.solver_seconds is not None
+    return record.source is Source.SOLVER
 
 
 def _lost(records: Sequence[InputRecord], pace: Pace) -> dict[Site, tuple[str, ...]]:

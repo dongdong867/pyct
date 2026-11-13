@@ -33,16 +33,15 @@ class EarlierTry:
 class RewriteRequest:
     """What a rewrites ask is about.
 
-    ``place`` is the condition's site as the recording keys it, ``module:line:col`` with the
-    module's dotted name; ``site`` is how stderr names it, ``file:line:col``. ``condition`` is
-    the condition and the side the missed line needs; ``earlier`` the distinct conditions the
-    path took before it, nearest last; ``code`` the source of the function that holds it;
+    ``place`` is the condition's site as the request and the recording name it,
+    ``module:line:col`` with the module's dotted name. ``condition`` is the condition and the
+    side the missed line needs; ``earlier`` the distinct conditions the path took before it,
+    each at its last place, nearest last; ``code`` the source of the function that holds it;
     ``args`` each parameter with the input's value as JSON; ``answer`` what the solver said,
     ``timeout`` or ``unknown``; and ``tries`` this moment's earlier tries, oldest first.
     """
 
     place: str
-    site: str
     condition: Side
     earlier: tuple[Side, ...]
     code: str

@@ -15,7 +15,6 @@ from tests.acceptance.llm_stub import NO_RECORDING
 
 REQUEST = RewriteRequest(
     place="m:3:11",
-    site="/t/m.py:3:11",
     condition=Side("float(s) == -1e-30", True),
     earlier=(Side('s.startswith("-")', True),),
     code='def negative(s):\n    if s.startswith("-"):\n        if float(s) == -1e-30:',
@@ -39,10 +38,11 @@ class Answering:
 def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_form() -> None:
     text = request_text(REQUEST)
 
-    assert "Condition at /t/m.py:3:11: float(s) == -1e-30\nWanted side: true" in text
+    assert "could not answer for the condition below." in text
+    assert "Condition at m:3:11: float(s) == -1e-30\nWanted side: true" in text
     assert 'nearest last:\ns.startswith("-"): true' in text
     assert REQUEST.code in text
-    assert 's = "-1"' in text
+    assert 'each value as JSON:\ns = "-1"' in text
     assert "The solver's answer for the condition: timeout" in text
     assert "earlier rewrites" not in text
     assert text.endswith(FORM)
