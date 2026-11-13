@@ -130,20 +130,21 @@ def test_a_run_that_ends_by_return_or_a_raise_records_nothing_and_still_counts()
         with pytest.raises(ValueError):
             f([None])
         assert f([0, 0]) == 0
-        assert f([]) == 0
+        assert f([0]) == 0
 
     # the first two runs ended early; the third ran out, and the fourth is past the three
-    assert sink == [run(2, 4, {"xs": "[0, 0]"}, {})]
+    assert sink == [run(2, 4, {"xs": "[0, 0]"}, {"x": "0"})]
 
 
 def test_a_name_not_bound_when_the_piece_starts_or_ends_is_left_out() -> None:
     source = (
-        "def f(xs, c):\n    if c:\n        t = 0\n    for x in xs:\n        t += x\n    return 0\n"
+        "def f(xs, c):\n    if c:\n        t = 0\n    for x in xs:\n        t += x\n    return t\n"
     )
     with_t = "def f(xs):\n    for x in xs:\n        t = x\n    return t\n"
 
     with live() as sink:
-        hooked(source)([], False)
+        with contextlib.suppress(UnboundLocalError):
+            hooked(source)([], False)
         with contextlib.suppress(UnboundLocalError):
             hooked(with_t)([])
 
@@ -185,12 +186,12 @@ def test_a_tracked_value_going_in_is_marked_tracked_and_kept_as_its_plain_value(
 
 
 def test_a_list_the_loop_changes_in_place_goes_in_as_it_was_at_the_start() -> None:
-    source = "def f(xs):\n    for x in [1, 2]:\n        xs.append(x)\n    return xs\n"
+    source = "def f(xs):\n    for x in [1, 2]:\n        xs.append(x)\n    return xs, x\n"
 
     with live() as sink:
-        assert hooked(source)([]) == [1, 2]
+        assert hooked(source)([]) == ([1, 2], 2)
 
-    assert sink == [run(2, 4, {"xs": "[]"}, {})]
+    assert sink == [run(2, 4, {"xs": "[]"}, {"x": "2"})]
 
 
 RECURSIVE = """\
@@ -244,14 +245,25 @@ def test_nested_loops_keep_their_runs_apart() -> None:
 
 
 def test_a_run_left_by_a_return_is_dropped_by_the_next_start_in_its_frame() -> None:
-    source = "def f(xs):\n    for x in xs:\n        if x:\n            return x\n    return 0\n"
+    source = "def f(xs):\n    for x in xs:\n        if x:\n            return x\n    return x\n"
     f = hooked(source)
 
     with live() as sink:
         f([1])
-        f([])
+        f([0])
 
-    assert sink == [run(2, 4, {"xs": "[]"}, {})]
+    assert sink == [run(2, 4, {"xs": "[0]"}, {"x": "0"})]
+
+
+def test_hooks_given_no_names_hand_back_their_values_and_record_the_first_runs() -> None:
+    with live() as sink:
+        for _ in range(5):
+            assert piece_over([1], 7, 4, (), ()) == [1]
+            piece_out(7, 4, (), ())
+
+    assert [(each.site.line, each.going_in, each.changed) for each in recorded(sink)] == [
+        (7, (), ())
+    ] * 3
 
 
 def test_an_exit_with_no_start_records_nothing() -> None:

@@ -2,7 +2,9 @@
 loop can end, start or sit, and one per kind of assignment of a comprehension."""
 
 # the loops, and where each sits: last in a function, in another loop, in an `if`, a `try`, a
-# `with` or a `match`, or at module level or in a class body, where it is no piece
+# `with` or a `match`, or at module level or in a class body, where it is no piece. Each loop of
+# a function changes a name the function reads outside it, before it where it must stay last,
+# since a loop that changes none gets no hooks
 LOOPS: dict[str, str] = {
     "for": ("def f(xs):\n    t = 0\n    for x in xs:\n        t += x\n    return t\n"),
     "while": ("def f(n):\n    i = 0\n    while i < n:\n        i += 1\n    return i\n"),
@@ -16,7 +18,7 @@ LOOPS: dict[str, str] = {
         "    return i\n"
     ),
     "while_1_break_last": (
-        "def f(n):\n    while 1:\n        n -= 1\n        if n:\n            break\n"
+        "def f(n):\n    g(n)\n    while 1:\n        n -= 1\n        if n:\n            break\n"
     ),
     "for_continue": (
         "def f(xs):\n"
@@ -59,8 +61,8 @@ LOOPS: dict[str, str] = {
         "        n -= 1\n"
         "    return n\n"
     ),
-    "for_last_in_function": ("def f(xs):\n    for x in xs:\n        g(x)\n"),
-    "while_last_in_function": ("def f(n):\n    while n:\n        n -= 1\n"),
+    "for_last_in_function": ("def f(xs, x):\n    g(x)\n    for x in xs:\n        g(x)\n"),
+    "while_last_in_function": ("def f(n):\n    g(n)\n    while n:\n        n -= 1\n"),
     "for_last_in_if": (
         "def f(xs, c):\n"
         "    if c:\n"
@@ -68,7 +70,7 @@ LOOPS: dict[str, str] = {
         "            g(x)\n"
         "    else:\n"
         "        h()\n"
-        "    return 1\n"
+        "    return x\n"
     ),
     "while_last_in_if": (
         "def f(n, c):\n"
@@ -77,16 +79,16 @@ LOOPS: dict[str, str] = {
         "            n -= 1\n"
         "    else:\n"
         "        h()\n"
-        "    return 1\n"
+        "    return n\n"
     ),
     "while_last_in_if_no_else": (
-        "def f(n, c):\n    if c:\n        while n:\n            n -= 1\n    return 1\n"
+        "def f(n, c):\n    if c:\n        while n:\n            n -= 1\n    return n\n"
     ),
     "for_last_in_for": (
-        "def f(xss):\n    for xs in xss:\n        for x in xs:\n            g(x)\n    return 0\n"
+        "def f(xss):\n    for xs in xss:\n        for x in xs:\n            g(x)\n    return x\n"
     ),
     "while_last_in_for": (
-        "def f(xs):\n    for n in xs:\n        while n:\n            n -= 1\n    return 0\n"
+        "def f(xs):\n    for n in xs:\n        while n:\n            n -= 1\n    return n\n"
     ),
     "for_last_in_while": (
         "def f(n, xs):\n"
@@ -94,7 +96,7 @@ LOOPS: dict[str, str] = {
         "        n -= 1\n"
         "        for x in xs:\n"
         "            g(x)\n"
-        "    return 0\n"
+        "    return x\n"
     ),
     "while_last_in_while": (
         "def f(n, m):\n"
@@ -102,7 +104,7 @@ LOOPS: dict[str, str] = {
         "        n -= 1\n"
         "        while m:\n"
         "            m -= 1\n"
-        "    return 0\n"
+        "    return m\n"
     ),
     "for_last_in_try": (
         "def f(xs):\n"
@@ -111,7 +113,7 @@ LOOPS: dict[str, str] = {
         "            g(x)\n"
         "    except E:\n"
         "        pass\n"
-        "    return 0\n"
+        "    return x\n"
     ),
     "while_last_in_try_finally": (
         "def f(n):\n"
@@ -120,13 +122,13 @@ LOOPS: dict[str, str] = {
         "            n -= 1\n"
         "    finally:\n"
         "        g()\n"
-        "    return 0\n"
+        "    return n\n"
     ),
     "for_last_in_with": (
-        "def f(xs):\n    with cm():\n        for x in xs:\n            g(x)\n    return 0\n"
+        "def f(xs):\n    with cm():\n        for x in xs:\n            g(x)\n    return x\n"
     ),
     "while_last_in_with": (
-        "def f(n):\n    with cm():\n        while n:\n            n -= 1\n    return 0\n"
+        "def f(n):\n    with cm():\n        while n:\n            n -= 1\n    return n\n"
     ),
     "for_followed_later": (
         "def f(xs):\n    for x in xs:\n        g(x)\n\n    # note\n\n    return x\n"
@@ -134,8 +136,10 @@ LOOPS: dict[str, str] = {
     "while_followed_later": (
         "def f(n):\n    while n:\n        n -= 1\n\n    # note\n\n    return n\n"
     ),
-    "one_line": ("def f(y):\n    for x in y: pass\n    while y: y -= 1\n    return 0\n"),
-    "one_line_break": ("def f(y):\n    for x in y: break\n    while y: break\n    return 0\n"),
+    "one_line": ("def f(y):\n    for x in y: pass\n    while y: y -= 1\n    return x, y\n"),
+    "one_line_break": (
+        "def f(y):\n    for x in y: break\n    while y: y -= 1; break\n    return x, y\n"
+    ),
     "return_raise_in_body": (
         "def f(xs):\n"
         "    for x in xs:\n"
@@ -143,7 +147,7 @@ LOOPS: dict[str, str] = {
         "            return x\n"
         "        if x is None:\n"
         "            raise ValueError\n"
-        "    return 0\n"
+        "    return x\n"
     ),
     "while_return_in_body": (
         "def f(n):\n"
@@ -151,7 +155,7 @@ LOOPS: dict[str, str] = {
         "        if n == 3:\n"
         "            return n\n"
         "        n -= 1\n"
-        "    return 0\n"
+        "    return n\n"
     ),
     "generator": (
         "def f(xs):\n"
@@ -167,7 +171,7 @@ LOOPS: dict[str, str] = {
         "async def f(xs):\n    t = 0\n    async for x in xs:\n        t += x\n    return t\n"
     ),
     "async_for_last_break": (
-        "async def f(xs):\n    async for x in xs:\n        if x:\n            break\n"
+        "async def f(xs, x):\n    g(x)\n    async for x in xs:\n        if x:\n            break\n"
     ),
     "module_level": ("t = 0\nfor x in range(3):\n    t += x\nwhile t:\n    t -= 1\nprint(t)\n"),
     "module_level_last": ("t = 0\nwhile t:\n    t -= 1\nfor x in range(3):\n    t += x\n"),
@@ -187,7 +191,7 @@ LOOPS: dict[str, str] = {
         "    while (i <\n"
         "           n):\n"
         "        i += 1\n"
-        "    return i\n"
+        "    return i, x\n"
     ),
     "while_and_or": (
         "def f(s, i, n):\n"
@@ -204,7 +208,7 @@ LOOPS: dict[str, str] = {
         "                break\n"
         "        finally:\n"
         "            g()\n"
-        "    return 0\n"
+        "    return x\n"
     ),
     "break_in_with": (
         "def f(n):\n"
@@ -213,7 +217,7 @@ LOOPS: dict[str, str] = {
         "            if n == 2:\n"
         "                break\n"
         "        n -= 1\n"
-        "    return 0\n"
+        "    return n\n"
     ),
     "else_returns": (
         "def f(xs):\n"
@@ -232,11 +236,11 @@ LOOPS: dict[str, str] = {
         "                g(x)\n"
         "        case _:\n"
         "            while xs:\n"
-        "                xs.pop()\n"
-        "    return 0\n"
+        "                x = xs.pop()\n"
+        "    return x\n"
     ),
     "while_last_in_else": (
-        "def f(c, n):\n    if c:\n        g()\n    else:\n        while n:\n            n -= 1\n"
+        "def f(c, n):\n    if c:\n        g(n)\n    else:\n        while n:\n            n -= 1\n"
     ),
     "while_last_in_if_in_for": (
         "def f(xs, c):\n"
@@ -244,7 +248,7 @@ LOOPS: dict[str, str] = {
         "        if c:\n"
         "            while n:\n"
         "                n -= 1\n"
-        "    return 0\n"
+        "    return n\n"
     ),
     "while_then_continue": (
         "def f(xs):\n"
@@ -252,12 +256,12 @@ LOOPS: dict[str, str] = {
         "        while n:\n"
         "            n -= 1\n"
         "        continue\n"
-        "    return 0\n"
+        "    return n\n"
     ),
     "for_last_in_while_true": (
-        "def f(xs):\n    while True:\n        for x in xs:\n            g(x)\n"
+        "def f(xs, x):\n    g(x)\n    while True:\n        for x in xs:\n            g(x)\n"
     ),
-    "while_true_no_break_last": ("def f(n):\n    while True:\n        n = g(n)\n"),
+    "while_true_no_break_last": ("def f(n):\n    g(n)\n    while True:\n        n = g(n)\n"),
     "while_in_except": (
         "def f(n):\n"
         "    try:\n"
@@ -284,13 +288,14 @@ LOOPS: dict[str, str] = {
         "                g()\n"
         "            elif timeout is None:\n"
         "                while self.size() >= self.maxsize:\n"
-        "                    self.wait()\n"
+        "                    timeout = self.wait()\n"
         "            else:\n"
         "                h()\n"
         "        g()\n"
     ),
     "while_and_last_in_if_in_for": (
         "def f(n, line, xs):\n"
+        "    g(n)\n"
         "    for x in xs:\n"
         "        if n > 0:\n"
         "            while n > 0 and line:\n"

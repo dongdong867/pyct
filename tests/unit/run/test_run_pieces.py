@@ -98,7 +98,7 @@ def test_a_forked_child_pyct_s_process_and_a_fresh_interpreter_record_the_same_r
 # targets that hold loops and comprehensions, each with a seed, whose runs cover every line and
 # branch and stop
 WITH_LOOPS = [
-    ("targets.dicts.changes::items", {"config": {"a": 1, "b": 2}}),
+    ("targets.dicts.walk_keys::counted", {"d": {"a": 1, "b": 2}}),
     ("targets.lists.loop_passes::count", {"items": [0, 20]}),
     ("targets.stop.comprehension::pick", {"s": "ab"}),
     ("targets.stop.count_x::count", {"s": "xx"}),

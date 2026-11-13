@@ -28,10 +28,11 @@ hook raises nothing of its own into the target, and reads each value
 through its base type.
 
 A hook that records nothing does little: with no input live it reads one
-field, and past a piece's runs a lookup by its line. A piece whose names
-going in and changed names are both empty, or that shares its line with
-another piece whose runs are all started, reads its frame on each entry
-instead; an exit reads its frame while an entry waits on its line.
+field, and past a piece's runs a lookup by its line. A piece that shares
+its line with another piece whose runs are all started reads its frame on
+each entry instead, as would one given no names at all, which
+`pyct.intercept.loops` leaves as written; an exit reads its frame while an
+entry waits on its line.
 """
 
 from __future__ import annotations

@@ -26,7 +26,7 @@ LEFT = {
     "while_last_in_while": {(4, 8)},
     "while_last_in_if_in_for": {(4, 12)},
     "while_chained": {(2, 4)},
-    "while_and_last_in_if_in_for": {(4, 12)},
+    "while_and_last_in_if_in_for": {(5, 12)},
     "while_last_in_elif_in_with": {(7, 16)},
 }
 # the whiles whose false outcome lands on more than one line on some Python releases alone
@@ -81,6 +81,19 @@ def test_with_the_switch_off_no_shape_gets_a_hook(shape: str) -> None:
     assert not any(name in off for name in HOOKS)
 
 
+def test_a_piece_that_changes_no_name_read_later_stays_as_written() -> None:
+    unchanged = (
+        "def f(xs, s):\n    for x in xs:\n        g(x)\n"
+        "    while s:\n        s.pop()\n    return 0\n"
+    )
+    changing = "def f(xs):\n    t = 0\n    for x in xs:\n        t += x\n    return t\n"
+
+    on = ast.dump(substitute(ast.parse(unchanged), pieces=True))
+
+    assert on == ast.dump(substitute(ast.parse(unchanged), pieces=False))
+    assert "__pyct_piece_over__(xs, 3, 4, ('t', 'xs'), ('t',))" in hooked(changing)
+
+
 def test_a_for_hands_its_iterable_over_and_ends_in_its_else_and_at_each_break() -> None:
     assert hooked(LOOPS["for_else_break"]) == (
         "def f(xs):\n"
@@ -119,7 +132,7 @@ def test_an_assignment_hands_its_value_to_the_exit_after_the_entry_s_token() -> 
 
 
 def test_the_call_watch_leaves_the_hooks_alone_and_watches_what_they_hold() -> None:
-    source = "def f(xs):\n    for x in g(xs):\n        h(x)\n"
+    source = "def f(xs):\n    for x in g(xs):\n        h(x)\n    return x\n"
 
     text = hooked(source)
 
@@ -130,7 +143,9 @@ def test_the_call_watch_leaves_the_hooks_alone_and_watches_what_they_hold() -> N
 
 
 def test_the_hooks_are_bound_by_the_module_and_by_each_class_body() -> None:
-    source = "class C:\n    def f(self, xs):\n        for x in xs:\n            pass\n"
+    source = (
+        "class C:\n    def f(self, xs):\n        for x in xs:\n            pass\n        return x\n"
+    )
 
     text = ast.unparse(substitute(ast.parse(source), pieces=True))
 

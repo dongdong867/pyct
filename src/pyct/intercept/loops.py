@@ -34,6 +34,9 @@ jump back into its body; one whose test's false outcome lands, in the
 module as written, on more than one line, or on a jump with no line of its
 own; and one whose test is a chained compare. A loop at module level
 or in a class body is no piece, and gets no hooks either.
+
+A piece with no changed name is left as written too: a summary gives a
+formula for each changed name, so such a piece has nothing to record.
 """
 
 from __future__ import annotations
@@ -85,7 +88,11 @@ def hooked(tree: ast.Module, parts: Parts) -> None:
     the tree as written, before the first hook goes in.
     """
     found = [
-        each for node in ast.walk(tree) if isinstance(node, _FUNCTIONS) for each in pieces(node)
+        (statement, piece)
+        for node in ast.walk(tree)
+        if isinstance(node, _FUNCTIONS)
+        for statement, piece in pieces(node)
+        if piece.changed
     ]
     whiles = [statement for statement, _ in found if isinstance(statement, ast.While)]
     owners = _owners(tree) if whiles else {}
