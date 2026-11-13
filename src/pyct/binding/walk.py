@@ -69,6 +69,12 @@ class Visitor(Protocol):
         ...
 
 
+def _reads_escape(value: object, check: Check | None) -> bool:
+    """Whether a dict reads ``"!__class__"`` back as ``"__class__"`` (``seed_keys``): exactly a
+    ``dict``, and not the fields of an object a call builds, which take ``Fields``."""
+    return type(value) is dict and not isinstance(check, Fields)
+
+
 # the types bind tracks inside an argument, themselves and none of their subclasses
 _TRACKED_INSIDE: frozenset[type] = frozenset({int, float, str, bool})
 
@@ -288,10 +294,12 @@ class Walk:
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
         elif access is not None and not fixed:
-            made, items = self._visitor.mapped(keyed(value, check, plain=True), place)
+            made, items = self._visitor.mapped(
+                keyed(value, check, plain=_reads_escape(value, check)), place
+            )
         else:
             # a dict under no access, or of fixed shape: a copy, its keys and length fixed
-            plain = not isinstance(check, Fields)
+            plain = _reads_escape(value, check)
             items = keyed(value, check, plain=plain)
             made = {self._visitor.copy_key(key) if plain else key: None for key in items}
         if fixed:
@@ -436,9 +444,9 @@ class Walk:
         if type(value) is not dict and isinstance(value, dict):
             by_key = {id(key): item for key, item in dict.items(value)}
             ordered = {key: by_key[id(key)] for key in self._keys[id(value)]}
-            return keyed(ordered, check, plain=False)
+            return keyed(ordered, check, plain=_reads_escape(value, check))
         if isinstance(value, dict):
-            return keyed(value, check, plain=not isinstance(check, Fields))
+            return keyed(value, check, plain=_reads_escape(value, check))
         return objects.attributes(value, made)
 
 
