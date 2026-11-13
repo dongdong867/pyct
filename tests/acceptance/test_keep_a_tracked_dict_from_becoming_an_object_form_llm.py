@@ -7,7 +7,15 @@ recording against a closed port; the ``run()`` case answers with a fake ``SeedPr
 import json
 from pathlib import Path
 
+from pyct.llm.seeds import request_text
+from pyct.run.helpers import Helpers
+from pyct.run.isolation import Isolation
+from pyct.run.llm_seeds import SeedReply
+from pyct.run.run import run
+from pyct.run.setup import Setup
+from pyct.run.target import load_target
 from targets.dicts import class_key
+from tests.acceptance.fake_seeds import COST, FakeSeeds
 from tests.acceptance.harness import input_lines
 from tests.acceptance.llm_stub import Stub, closed_port, llm_run, write_recording
 from tests.acceptance.test_keep_a_tracked_dict_from_becoming_an_object_form import (
@@ -117,3 +125,16 @@ def test_replays_an_old_recording_as_before(tmp_path: Path) -> None:
     assert (built["failure"], plain["failure"]) == (None, None)
     assert covers(built, returns_1(class_key.kind_of))
     assert covers(plain, line_of(class_key.kind_of, "return 0"))
+
+
+# run-a-plain-dict-stays-a-dict-the-request-shows-the-escape
+def test_the_request_shows_the_escape() -> None:
+    provider = FakeSeeds(SeedReply((json.dumps({"d": {}}),), COST))
+    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(seeds=provider))
+
+    run(load_target(f"{M}::has_class"), [], setup=setup)
+
+    [request] = provider.requests
+    text = request_text(request)
+    assert ESCAPE_SENTENCE in text
+    assert BEFORE_SEED_FORM in text.replace(ESCAPE_SENTENCE, "", 1)
