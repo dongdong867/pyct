@@ -148,9 +148,11 @@ class Walk:
         self._tracked: set[int] = set()
         # the objects whose copy is handed on plain, by the identity of the seed's
         self._whole: set[int] = set()
-        # the copies of fixed shape, the object forms among them, whose values may be object forms
+        # the copies of fixed shape, the object forms among them, whose values may be object
+        # forms, and the lists a class hint builds, each by its identity
         self._fixed: set[int] = set()
-        self._forms: set[int] = set()
+        self._forms: dict[int, object] = {}
+        self._built_lists: dict[int, object] = {}
         # the seed's lists and dicts that hold an object form, by identity: their shape is fixed
         self._holding: set[int] = set()
         # each dict subclass's keys in the order its copy holds them, by the identity of the seed's
@@ -185,6 +187,12 @@ class Walk:
         self._finish()
         return rebuilt
 
+    @property
+    def forms(self) -> dict[int, object]:
+        """Each copy the walk made as an object form, by identity: a dict it read as one, or a
+        dict or list a class hint builds. The call builds these (``builds.Bound``)."""
+        return {**self._forms, **self._built_lists}
+
     def _later(self, values: Iterable[Pending]) -> None:
         """Queue values to place in the order given: the stack pops the last one first."""
         self._pending.extend(reversed(list(values)))
@@ -209,12 +217,11 @@ class Walk:
         """A dict's, a list's or an object's copy, its items or attributes queued."""
         made = self._copies.get(id(value))
         form = self._form(value, made, place)
-        check = FIXED if form else place.check
-        if type(value) is list and hinted(value, check):
-            # a list a hint builds by position: its length fixed, each item its parameter's
-            check = inside(value, check, self._home).items
+        check, built_list = self._asked(value, form, place)
         if made is None:
             made, insides = self._made(value, access, place, check)
+            if built_list:
+                self._built_lists[id(made)] = made
         elif access is None or id(value) in self._named or id(value) in self._whole:
             return made
         else:
@@ -224,12 +231,21 @@ class Walk:
         if access is not None:
             self._named.add(id(value))
         if form:
-            self._forms.add(id(made))
-            ask = inside(value, place.check, self._home)
-            self._later(form_items(cast(dict[Any, object], insides), access, cast(Any, made), ask))
+            self._forms[id(made)] = made
+            items, into = cast(dict[Any, object], insides), cast(Any, made)
+            self._later(form_items(items, access, into, inside(value, place.check, self._home)))
         else:
             self._later(_insides(value, insides, access, made, check))
         return made
+
+    def _asked(self, value: object, form: bool, place: Place) -> tuple[Check | None, bool]:
+        """What a container's copy takes as its check, and whether a class hint builds it as a
+        list by position: then its length is fixed, and each item takes its parameter's
+        check."""
+        check = FIXED if form else place.check
+        if type(value) is list and hinted(value, check):
+            return inside(value, check, self._home).items, True
+        return check, False
 
     def _form(self, value: object, made: object, place: Place) -> bool:
         """Whether ``value`` is an object form the walk keeps the shape of (``form_items``).

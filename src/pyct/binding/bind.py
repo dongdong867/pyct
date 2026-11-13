@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Check, Items, int_keys
+from pyct.binding.builds import Bound
 from pyct.binding.seed_keys import written_key
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
@@ -61,8 +62,20 @@ def bind(
     The seed is seed JSON: a plain dict's key ``"!__class__"`` reaches the target as
     ``"__class__"``, and is named by that key (``seed_keys``).
     """
+    return bind_call(seed, sink, checks, home).args
+
+
+def bind_call(
+    seed: Mapping[str, object],
+    sink: BranchSink,
+    checks: Mapping[str, Check] | None = None,
+    home: str | None = None,
+) -> Bound:
+    """What ``bind`` makes of the seed, with the object forms its walk copied, which the plan
+    of the call builds (``plan_call``)."""
     tracker = _Tracker(sink)
-    args = Walk(tracker, home).rebuilt(seed, checks)
+    walk = Walk(tracker, home)
+    args = walk.rebuilt(seed, checks)
     # each list's items are placed after the list is made, so what pyct saw of them is noted
     # once the walk is done, before the target can touch any. Each refuses a set, as a plain
     # one does, so the fields go straight into its `__dict__`
@@ -72,7 +85,7 @@ def bind(
         fields["kinds"] = kinds_of(fields["shadow"])
     for mapped in tracker.dicts:
         mapped.__dict__["shadow"] = mapped.storage()
-    return args
+    return Bound(args, walk.forms)
 
 
 class _Tracker:

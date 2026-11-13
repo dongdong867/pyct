@@ -239,6 +239,18 @@ def test_escapes_an_escaped_key() -> None:
     assert not covers(input_lines(given)[0], returns_1(class_key.has_escaped)), given_stderr
 
 
+# run-a-plain-dict-stays-a-dict-around-a-built-object
+def test_around_a_built_object() -> None:
+    seed = {"box": {"!__class__": 0, "b": {"__class__": BOX, "d": 1}}}
+
+    code, stdout, stderr = pyct("holds_a_box", seed)
+
+    assert code == 0, stderr
+    first = input_lines(stdout)[0]
+    assert first["failure"] is None, first
+    assert covers(first, returns_1(class_key.holds_a_box))
+
+
 # run-a-plain-dict-stays-a-dict-reads-old-seeds-as-before
 def test_reads_old_seeds_as_before(tmp_path: Path) -> None:
     seeds = tmp_path / "seeds.jsonl"

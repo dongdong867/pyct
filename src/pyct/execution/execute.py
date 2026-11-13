@@ -12,7 +12,7 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 
 from pyct.binding.annotations import Check
-from pyct.binding.bind import bind
+from pyct.binding.bind import bind_call
 from pyct.binding.builds import Build, BuildError, CallPlan, SelfBuild, plan_call
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution import line_events
@@ -96,7 +96,7 @@ def execute(
     """
     tally = Tally(watch)
     tally.go_live()
-    bound = bind(args, tally, ctx.checks, ctx.home)
+    bound = bind_call(args, tally, ctx.checks, ctx.home)
     try:
         plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home, ctx.checks)
     except BuildError as error:

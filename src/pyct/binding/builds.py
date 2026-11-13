@@ -11,7 +11,7 @@ the method's. In any other place such a dict stays a dict.
 from __future__ import annotations
 
 import inspect
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, TypeGuard, cast
 
@@ -26,6 +26,9 @@ from pyct.binding.seed_keys import ARGS_KEY, CLASS_KEY
 # what its hint asks
 type _Holder = dict[Any, object] | list[object]
 type _Spot = tuple[object, _Holder, Any, str, Check | None]
+
+# whether a value is an object form, given what the hint at its place asks
+type FormTest = Callable[[object, Check | None], bool]
 
 
 def object_form(value: object) -> TypeGuard[dict[str, object]]:
@@ -42,6 +45,29 @@ def hinted(value: object, check: Check | None) -> TypeGuard[dict[str, object] | 
     names a class or names no one class. A dict holding ``"__class__"`` builds the class it
     names, and every other value passes as it is."""
     return isinstance(check, Builds | NoOneClass) and (type(value) is dict or type(value) is list)
+
+
+def seed_form(value: object, check: Check | None) -> bool:
+    """Whether a value of seed JSON is an object form, where a call builds one: a dict holding
+    ``"__class__"`` (``object_form``), or a dict or list a class hint builds (``hinted``)."""
+    return object_form(value) or hinted(value, check)
+
+
+@dataclass(frozen=True)
+class Bound:
+    """A call's arguments as ``bind`` made them, and each copy its walk made as an object form,
+    by identity: a dict it read as one, or a dict or list a class hint builds.
+
+    By then a plain dict's ``"!__class__"`` reads ``"__class__"``, so the plan of the call
+    builds these and no other (``is_form``).
+    """
+
+    args: dict[str, object]
+    forms: Mapping[int, object]
+
+    def is_form(self, value: object, _check: Check | None) -> bool:
+        """Whether the walk copied ``value`` as an object form."""
+        return id(value) in self.forms and self.forms[id(value)] is value
 
 
 def hinted_items(value: object, check: Check | None) -> TypeGuard[list[object] | dict[Any, object]]:
@@ -80,8 +106,9 @@ def inside(form: object, check: Check | None, home: str | None) -> Inside:
         return NOTHING
 
 
-def holding_forms(args: Mapping[str, object]) -> set[int]:
-    """The lists and dicts in ``args`` that hold an object form at any depth, by identity.
+def holding_forms(args: Mapping[str, object], is_form: FormTest = seed_form) -> set[int]:
+    """The lists and dicts in ``args`` that hold an object form at any depth, by identity, each
+    form one ``is_form`` names with no hint asked.
 
     A form is held along plain lists, plain dicts and other forms, from each
     parameter's value down: exactly a ``list`` or a ``dict``, never a tuple,
@@ -103,19 +130,21 @@ def holding_forms(args: Mapping[str, object]) -> set[int]:
             parents.append(parent)
         if known:
             continue
-        if object_form(value):
+        if is_form(value, None):
             forms.append(id(value))
-        pending.extend((item, id(value)) for item in _held(value))
+        pending.extend((item, id(value)) for item in _held(value, is_form))
     return _reaching(forms, above)
 
 
-def _held(value: list[object] | dict[object, object]) -> Iterable[object]:
+def _held(
+    value: list[object] | dict[object, object], is_form: FormTest = seed_form
+) -> Iterable[object]:
     """The values a list or dict holds where a form is looked for: every one, but a form's
     ``"__class__"``."""
     if type(value) is list:
         return value
     items = cast(dict[object, object], value)
-    if object_form(items):
+    if is_form(items, None):
         return (item for key, item in items.items() if key != CLASS_KEY)
     return items.values()
 
@@ -195,6 +224,7 @@ def object_forms(
     self_name: str | None,
     checks: Mapping[str, Check] | None = None,
     home: str | None = None,
+    is_form: FormTest = seed_form,
 ) -> Forms:
     """Each object form ``args`` holds, with its place, innermost first.
 
@@ -214,8 +244,12 @@ def object_forms(
     list or dict under a ``list[C]`` or ``dict[str, C]`` hint is gone into
     and copied too (``hinted_items``), and each list or dict gone into gives
     each value in it what its hint asks of its items.
+
+    ``is_form`` says which values are forms: by default those of seed JSON
+    (``seed_form``), and in a call the ones bind's walk copied as forms
+    (``Bound``).
     """
-    holding = holding_forms(args)
+    holding = holding_forms(args, is_form)
     top = dict(args)
     pending = _parameters(top, self_name, checks or {})
     found: list[Found] = []
@@ -223,7 +257,7 @@ def object_forms(
     # the last pushed goes first, so the forms come out right to left, outer before inner
     while pending:
         value, holder, slot, place, check = pending.pop()
-        form = object_form(value) or hinted(value, check)
+        form = is_form(value, check)
         if not (form or id(value) in holding or hinted_items(value, check)) or id(value) in seen:
             continue
         seen.add(id(value))
@@ -343,7 +377,7 @@ class CallPlan:
 
 
 def plan_call(
-    args: Mapping[str, object],
+    args: Mapping[str, object] | Bound,
     positional: Sequence[inspect.Parameter],
     self_build: SelfBuild | None,
     home: str,
@@ -360,10 +394,15 @@ def plan_call(
     name. Every class loads before any build is planned, so the first object,
     innermost first, whose class does not load or whose ``"__args__"`` is not
     a list, or whose hint names no one class, is the ``BuildError``.
+
+    ``args`` is seed JSON, whose forms its keys and hints say, or what ``bind``
+    made of it, whose forms are the ones its walk copied as forms (``Bound``).
     """
-    if self_build is not None and type(args.get(self_build.name)) is not dict:
+    values, is_form = (args.args, args.is_form) if isinstance(args, Bound) else (args, seed_form)
+    if self_build is not None and type(values.get(self_build.name)) is not dict:
         self_build = None
-    forms = object_forms(args, None if self_build is None else self_build.name, checks, home)
+    self_name = None if self_build is None else self_build.name
+    forms = object_forms(values, self_name, checks, home, is_form)
     loaded = [(found, _class_of(found, home)) for found in forms.found]
     calls = {id(found.form): _arguments(found.form, cls) for found, cls in loaded}
     call, last = _target_call(forms.args, positional, self_build)
