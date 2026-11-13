@@ -14,7 +14,7 @@ from pyct.binding.model import apply
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import ForkSite
+from pyct.core.foundation.branch import Branch, Fact, ForkSite
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import WhyEntry
 from pyct.results.coverage import Coverage, Progress, no_gain
@@ -72,6 +72,37 @@ class Attempt:
 
 
 @dataclass(frozen=True)
+class Solved:
+    """The answer for a pass's fork, the seconds its ask took, the ask with its programs, and
+    the source its input takes: the solver's, or a kept rewrite's."""
+
+    answer: Answer
+    seconds: float
+    asked: Ask
+    source: Source = Source.SOLVER
+
+
+class Asker:
+    """How a pass asks for its fork's input, and hears of each input a pass ran: the solver
+    alone. ``pyct.run.rewrites`` asks a kept rewrite first."""
+
+    def solved(self, wanted: Plan, origin: Seed, limit: float) -> Solved:
+        """The solver's answer for the fork aimed at, within ``limit`` seconds."""
+        return solver_answer(wanted, origin, limit)
+
+    def ran(self, record: InputRecord, number: int) -> None:
+        """Hear of the input a pass ran, kept as the run's input ``number``, from 1."""
+
+
+@dataclass(frozen=True)
+class Ways:
+    """How a pass runs an input, and how it asks for one."""
+
+    call: Call
+    asker: Asker = field(default_factory=Asker)
+
+
+@dataclass(frozen=True)
 class Looped:
     """The inputs that ran, the seeds' first, what the solver missed, and why they stopped.
 
@@ -101,10 +132,18 @@ class Loop:
     ``bounds`` is the one place the loop reads its deadline from, for each
     input and each solve; ``pause`` moves it later. ``stuck`` says when the
     run is stuck, and holds each moment between two passes (``pyct.run.stuck``);
-    with no tool in it the run is never stuck.
+    with no tool in it the run is never stuck. ``asker`` asks for each pass's
+    input and hears of it (``Asker``).
     """
 
-    def __init__(self, call: Call, bounds: Bounds, told: Told, stuck: Stuck | None = None) -> None:
+    def __init__(
+        self,
+        call: Call,
+        bounds: Bounds,
+        told: Told,
+        stuck: Stuck | None = None,
+        asker: Asker | None = None,
+    ) -> None:
         self.bounds = bounds
         self.told = told
         self.records: list[InputRecord] = []
@@ -114,7 +153,7 @@ class Loop:
         # each input as the walk copied it, by its path's number: a solver answer starts from the
         # input whose path it extends, not from the seed (see ``Plan.path``)
         self.inputs: dict[int, Seed] = {}
-        self._call = call
+        self._ways = Ways(call, Asker() if asker is None else asker)
         self._numbers = itertools.count(1)
         self._stopped: Stop | None = None
         self._stuck = Stuck(()) if stuck is None else stuck
@@ -131,7 +170,7 @@ class Loop:
         """
         first = starts[0]
         try:
-            seeded = _from(first, self._call(first.copy.args, self.bounds.until))
+            seeded = _from(first, self._ways.call(first.copy.args, self.bounds.until))
         except InputStartError as error:
             return Looped((), (), _could_not_start(error))
         self._keep(seeded, first.copy)
@@ -145,11 +184,16 @@ class Loop:
                     tuple(self.records), tuple(self.misses), attempt.stop, self._untried(attempt)
                 )
             if attempt.ran is not None:
-                self._keep(attempt.ran.record, attempt.ran.seed)
+                kept = self._keep(attempt.ran.record, attempt.ran.seed)
+                self._ways.asker.ran(kept, len(self.records))
 
-    def run_input(self, seed: Seed, source: Source) -> InputRecord | Stop:
+    def run_input(
+        self, seed: Seed, source: Source, wanted: Plan | None = None
+    ) -> InputRecord | Stop:
         """Run one input between two passes, labeled ``source``, and keep it as the loop keeps
-        every input: measured, handed out, its path added to the tree, its copy kept.
+        every input: measured, handed out, its path added to the tree, its copy kept. With
+        ``wanted`` it is aimed at that plan's fork and read against the plan, as a solver
+        input is.
 
         The budget, then full coverage, stop it before it runs, as they stop a
         solver input; so does an input pyct could not start a process for.
@@ -161,11 +205,12 @@ class Loop:
         stop = self._stopped or _spent_or_covered(self.bounds, self.progress)
         if stop is None:
             try:
-                executed = self._call(seed.args, self.bounds.until)
+                executed = self._ways.call(seed.args, self.bounds.until)
             except InputStartError as error:
                 stop = _could_not_start(error)
             else:
-                return self._keep(_labeled(record_of(seed.args, executed), source), seed)
+                record = record_of(seed.args, executed, wanted)
+                return self._keep(_labeled(record, source), seed, turn=False)
         self._stopped = stop
         return stop
 
@@ -182,6 +227,10 @@ class Loop:
         covered = frozenset[int]().union(*(record.covered_lines for record in self.records))
         coverage = Coverage.of(self.told.scope, covered | self.told.imported)
         return why_uncovered(self.records, self.misses, untried, coverage, stop_at)
+
+    def tell_ask(self, ask: Ask) -> None:
+        """Hand out an ask a tool made between two passes, numbered among the run's asks."""
+        self.told.ask(dataclasses.replace(ask, number=next(self._numbers)))
 
     def pause(self, seconds: float) -> None:
         """Move the deadline ``seconds`` later: the clock paused for a wait that is not the run's
@@ -203,7 +252,7 @@ class Loop:
             return _stopped_by(self.run_input(start.copy, start.source))
         if self._stuck.due(self, self.progress, empty=False):
             return self._moment()
-        attempt = _attempt(self._call, self.inputs, self.tree, self.bounds, self.progress)
+        attempt = _attempt(self._ways, self.inputs, self.tree, self.bounds, self.progress)
         if attempt.stop == _NO_FORK and self._stuck.due(self, self.progress, empty=True):
             return self._moment()
         return attempt
@@ -213,10 +262,11 @@ class Loop:
         self._stuck.hold(self)
         return Attempt(stop=self._stopped)
 
-    def _keep(self, record: InputRecord, seed: Seed) -> InputRecord:
-        """Measure an input, hand it out, add its path, and keep its copy under its number."""
+    def _keep(self, record: InputRecord, seed: Seed, turn: bool = True) -> InputRecord:
+        """Measure an input, hand it out, add its path, and keep its copy under its number.
+        ``turn`` is false for an input run between passes, which no pick of the tree's aimed."""
         self.inputs[len(self.records)] = seed
-        kept = _took(record, self.told, self.tree, self.progress)
+        kept = _took(record, self.told, self.tree, self.progress, turn)
         self.records.append(kept)
         return kept
 
@@ -260,7 +310,9 @@ def _hand_out(attempt: Attempt, told: Told, numbers: Iterator[int], misses: list
         told.miss(attempt.miss)
 
 
-def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> InputRecord:
+def _took(
+    record: InputRecord, told: Told, tree: Tree, progress: Progress, turn: bool
+) -> InputRecord:
     """Measure an input, hand it out and add its path, then turn the path its pick
     extended when the input left the plan and covered no line no earlier input had.
 
@@ -268,13 +320,14 @@ def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> In
     cache that compares keys only on equal hashes, and the deeper forks of
     that path sit on more of it, so the rest of the path's new sides go
     shallowest first (`Tree.turn`). How the input ended does not matter.
-    An input that left and covered a new line turns nothing, and a seed
-    follows no plan. Decision
+    An input that left and covered a new line turns nothing, a seed
+    follows no plan, and an input run between passes, ``turn`` false,
+    extends no pick of the tree's. Decision
     fork-order-shallowest-first-after-a-leave-without-gain.
     """
     record = _measured(record, progress)
     _handled(record, told, tree)
-    if record.mismatch_at is not None and no_gain(progress.covered, 1):
+    if turn and record.mismatch_at is not None and no_gain(progress.covered, 1):
         tree.turn()
     return record
 
@@ -293,7 +346,7 @@ def _handled(record: InputRecord, told: Told, tree: Tree) -> None:
 
 
 def _attempt(
-    call: Call,
+    ways: Ways,
     inputs: Mapping[int, Seed],
     tree: Tree,
     bounds: Bounds,
@@ -315,7 +368,8 @@ def _attempt(
     that is less, so the budget still bounds the solver. A solver that
     crashed ends the run as a failure, and so does an input pyct could not
     start a process for. Any other answer is an input to run, or a miss on
-    that fork.
+    that fork. ``ways.asker`` gives the answer, and the source the input
+    takes: the solver's, or a kept rewrite's (``pyct.run.rewrites``).
     """
     left = _seconds_left(bounds.until)
     if _spent(left):
@@ -328,31 +382,42 @@ def _attempt(
     if stop is not None:
         return Attempt(stop=stop, unrun=unrun)
     origin = inputs[wanted.path]
-    answer, seconds, asked = _solved(wanted, origin, _solve_limit(bounds, left))
+    solved = ways.asker.solved(wanted, origin, _solve_limit(bounds, left))
+    answer, asked = solved.answer, solved.asked
     if isinstance(answer, Timeout):
         tree.timed_out()
     if isinstance(answer, Error):
         stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
         return Attempt(stop=stop, unrun=unrun, asked=asked)
     if not isinstance(answer, Sat):
-        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, seconds)
+        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, solved.seconds)
         return Attempt(miss=miss, asked=asked)
-    solved = apply(origin, answer.model)
+    return _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
+
+
+def _input(ways: Ways, wanted: Plan, found: Seed, solved: Solved, until: float | None) -> Attempt:
+    """The pass that runs the input the answer gave, labeled with the answer's source."""
     try:
-        record = record_of(solved.args, call(solved.args, bounds.until), wanted, seconds)
+        executed = ways.call(found.args, until)
     except InputStartError as error:
-        return Attempt(stop=_could_not_start(error), unrun=unrun, asked=asked)
-    return Attempt(ran=Ran(record, solved), asked=asked)
+        unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
+        return Attempt(stop=_could_not_start(error), unrun=unrun, asked=solved.asked)
+    record = record_of(found.args, executed, wanted, solved.seconds)
+    return Attempt(ran=Ran(_labeled(record, solved.source), found), asked=solved.asked)
 
 
-def _solved(wanted: Plan, origin: Seed, limit: float) -> tuple[Answer, float, Ask]:
+def solver_answer(
+    wanted: Plan, origin: Seed, limit: float, asked: tuple[Branch | Fact, ...] | None = None
+) -> Solved:
     """The solver's answer for the fork aimed at, the seconds from the start of writing the ask
-    to its answer, and the ask with each program pyct gave cvc5 for it."""
+    to its answer, and the ask with each program pyct gave cvc5 for it. ``asked`` is what the
+    solver is asked, the plan's own when None."""
     started = time.monotonic()
+    held = wanted.asked if asked is None else asked
     with taking() as programs:
-        answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
-    asked = Ask(0, wanted.aim, wanted.path, tuple(programs))
-    return answer, time.monotonic() - started, asked
+        answer = solve(held, origin.leaves, limit, origin.containers(), origin.values)
+    ask = Ask(0, wanted.aim, wanted.path, tuple(programs))
+    return Solved(answer, time.monotonic() - started, ask)
 
 
 def _spent_or_covered(bounds: Bounds, progress: Progress) -> Stop | None:

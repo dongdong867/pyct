@@ -90,7 +90,7 @@ def run_model(call: ModelCall, until: float) -> ModelRun | CannotFork:
     an input's start does, and ``Stopped`` once pyct's process was told to stop.
     """
     refuse_after_a_stop()
-    if running() > 1:
+    if not can_fork():
         return CannotFork()
     with mapped_journal() as buffer, _answer_mapping() as answers:
         reader = JournalReader(buffer)
@@ -99,6 +99,11 @@ def run_model(call: ModelCall, until: float) -> ModelRun | CannotFork:
         result = ending(reader.finish(), waited)
         answer, unencoded = _read(answers)
     return ModelRun(answer, result, unencoded)
+
+
+def can_fork() -> bool:
+    """Whether a child may fork now: pyct's process runs one thread."""
+    return running() <= 1
 
 
 def _serve(

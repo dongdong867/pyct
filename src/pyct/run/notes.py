@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pyct.rewrite.notes import RewriteNote
+
 
 @dataclass(frozen=True)
 class AskSkipped:
@@ -45,4 +47,5 @@ class LimitReached:
     """The run's tokens reached ``--llm-limit``: no tool asks again this run. Said once."""
 
 
-type Note = AskSkipped | ReplyIgnored | SeedDropped | SeedsKept | LimitReached
+# rewrites' own notes are declared in ``pyct.rewrite.notes``, which says them below this layer
+type Note = AskSkipped | ReplyIgnored | SeedDropped | SeedsKept | LimitReached | RewriteNote

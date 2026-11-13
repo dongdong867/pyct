@@ -1,3 +1,5 @@
+import dataclasses
+
 import pytest
 
 from pyct.core.foundation.branch import Branch, Site
@@ -171,6 +173,17 @@ def test_the_sat_count_is_the_inputs_the_solver_gave() -> None:
 
     # the seed is nobody's answer, so only the solver's inputs count as sat
     assert result.solver.sat == 1
+
+
+def test_a_rewrite_input_from_a_pass_s_ask_counts_as_sat_and_one_a_try_ran_does_not() -> None:
+    from_a_pass = dataclasses.replace(input_from(Source.REWRITE), solver_seconds=0.25)
+    from_a_try = input_from(Source.REWRITE)
+    solved = dataclasses.replace(input_from(Source.SOLVER), solver_seconds=0.5)
+
+    result = result_of(input_from(Source.SEED), solved, from_a_try, from_a_pass)
+
+    assert result.solver.sat == 2
+    assert result.solver_seconds.sat == 0.75
 
 
 def test_the_other_counts_are_the_misses_by_what_the_solver_said() -> None:

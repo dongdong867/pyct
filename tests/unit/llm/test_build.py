@@ -1,14 +1,16 @@
 """build finds a missing SDK or key before any ask, and otherwise gives the tools' helpers."""
 
+import dataclasses
 import importlib.util
 from pathlib import Path
 
 import pytest
 
-from pyct.config.llm import PROVIDERS, LlmSettings, Model
+from pyct.config.llm import PROVIDERS, TOOLS, LlmSettings, Model
 from pyct.llm.build import Built, Unusable, build
 from pyct.llm.providers import PROVIDERS as TABLE
 from pyct.llm.replay import ReplayCaller
+from pyct.llm.rewrites import LlmRewrites
 from pyct.llm.seeds import LlmSeeds
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
@@ -55,6 +57,33 @@ def test_a_usable_provider_gives_the_seeds_tool(monkeypatch: pytest.MonkeyPatch)
 
     assert built.unusable is None
     assert isinstance(built.helpers.seeds, LlmSeeds)
+
+
+# llm-rewrite-switch-alone
+def test_the_rewrites_tool_alone_gives_its_helper_and_no_other(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", DUMMY_KEY)
+
+    built = build(LlmSettings(("rewrites",), OPENAI.model))
+
+    assert isinstance(built.helpers.rewrites, LlmRewrites)
+    assert built.helpers.seeds is None
+
+
+def test_each_tool_switched_on_alone_gives_a_helper_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", DUMMY_KEY)
+    given: dict[str, list[str]] = {}
+
+    for tool in TOOLS:
+        helpers = build(LlmSettings((tool,), OPENAI.model)).helpers
+        fields = dataclasses.fields(helpers)
+        given[tool] = [each.name for each in fields if getattr(helpers, each.name) is not None]
+
+    assert all(len(names) == 1 for names in given.values()), given
+    assert len({names[0] for names in given.values()}) == len(TOOLS)
 
 
 def test_no_tool_switched_on_gives_no_helper(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,0 +1,50 @@
+"""The stderr line each rewrites note gives, the condition's site written ``file:line:col``."""
+
+import pytest
+
+from pyct.cli.llm import note_line
+from pyct.core.foundation.branch import Site
+from pyct.rewrite.notes import (
+    RewriteDropped,
+    RewriteFailed,
+    RewriteGivenUp,
+    RewriteNote,
+    RewriteRead,
+    RewriteSkipped,
+    RewriteTook,
+)
+
+SITE = Site("/t/m.py", 7, 7)
+
+
+@pytest.mark.parametrize(
+    ("note", "line"),
+    [
+        (RewriteRead(SITE, 's == "1e-30"'), 'llm: rewrite for /t/m.py:7:7: s == "1e-30"'),
+        (RewriteTook(SITE), "llm: rewrite for /t/m.py:7:7: took the wanted side"),
+        (
+            RewriteFailed(SITE, 2, "the solver answered unknown"),
+            "llm: rewrite for /t/m.py:7:7, try 2: the solver answered unknown",
+        ),
+        (RewriteSkipped(SITE, "cannot fork"), "llm: rewrite for /t/m.py:7:7 skipped: cannot fork"),
+        (
+            RewriteGivenUp(SITE, "no argument a rewrite may read"),
+            "llm: rewrite for /t/m.py:7:7 given up: no argument a rewrite may read",
+        ),
+        (
+            RewriteDropped(SITE, 5),
+            "llm: rewrite for /t/m.py:7:7 dropped at input 5: took the other side",
+        ),
+    ],
+)
+def test_each_rewrites_note_has_its_line(note: RewriteNote, line: str) -> None:
+    assert note_line(note) == line
+
+
+def test_a_character_a_terminal_reads_is_written_escaped() -> None:
+    note = RewriteFailed(SITE, 1, "it raised on the input: LookupError: unknown encoding: \x1b[2J")
+
+    assert note_line(note) == (
+        "llm: rewrite for /t/m.py:7:7, try 1: it raised on the input: LookupError: unknown"
+        " encoding: \\x1b[2J"
+    )
