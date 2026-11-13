@@ -42,6 +42,10 @@ def items(xs: list[int], cfg: dict[str, list[str]], bare: list, d: dict) -> None
     return None
 
 
+def gathers(first: int, *items: int, **named: str) -> None:
+    pass
+
+
 def items_as_text(xs: list[int]) -> None:
     return None
 
@@ -308,6 +312,14 @@ def test_checked_annotations_resolves_list_and_dict_text() -> None:
 
 def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
     assert checked(no_annotation) == {}
+
+
+def test_checked_annotations_leaves_out_star_args_whose_name_no_key_fills() -> None:
+    # a key named items reaches **named, so the annotation on *items asks nothing of it
+    # **named is left to its own ticket, so only *items and first are pinned here
+    kept = checked(gathers)
+    assert "items" not in kept
+    assert kept["first"] is int
 
 
 def test_checked_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
