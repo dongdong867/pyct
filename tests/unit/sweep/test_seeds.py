@@ -75,6 +75,13 @@ def test_a_positional_only_and_a_keyword_only_parameter_are_both_named() -> None
     assert as_json(seed_of(defaults.g)) == as_json({"value": 0, "strict": False})
 
 
+def test_an_annotated_star_args_and_star_kwargs_are_never_named() -> None:
+    def spread(first: str, *items: int, **named: int) -> None:
+        return None
+
+    assert as_json(seed_of(spread)) == as_json({"first": ""})
+
+
 @pytest.mark.parametrize(
     ("annotation", "value"),
     [

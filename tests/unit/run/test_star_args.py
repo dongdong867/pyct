@@ -8,13 +8,7 @@ from pyct.binding.annotations import Fields
 from pyct.run.seed_checks import seed_refusals
 from pyct.run.target import Target, argument_checks
 from tests.unit.binding.plans import planned
-
-HOME = __name__
-
-
-class Cart:
-    def __init__(self, owner: str) -> None:
-        self.owner = owner
+from tests.unit.run.starred import HOME, Cart, target_for
 
 
 class Gathers:
@@ -40,11 +34,6 @@ def spread_carts(*items: Cart, **named: object) -> None:
 
 def holds(g: GathersCarts) -> None:
     pass
-
-
-def target_for(fn: object) -> Target:
-    assert callable(fn)
-    return Target(spec="m::f", fn=fn, file="m.py", signature=inspect.signature(fn))
 
 
 GATHERS_M = Target(
