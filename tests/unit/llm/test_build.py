@@ -12,6 +12,7 @@ from pyct.llm.providers import PROVIDERS as TABLE
 from pyct.llm.replay import ReplayCaller
 from pyct.llm.rewrites import LlmRewrites
 from pyct.llm.seeds import LlmSeeds
+from pyct.llm.summaries import LlmSummaries
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
 from tests.acceptance.llm_stub import DUMMY_KEY, write_recording
@@ -69,6 +70,18 @@ def test_the_rewrites_tool_alone_gives_its_helper_and_no_other(
 
     assert isinstance(built.helpers.rewrites, LlmRewrites)
     assert built.helpers.seeds is None
+
+
+# llm-switch-per-tool-summaries-alone
+def test_the_summaries_tool_alone_gives_its_helper_and_no_other(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", DUMMY_KEY)
+
+    built = build(LlmSettings(("summaries",), OPENAI.model))
+
+    assert isinstance(built.helpers.summaries, LlmSummaries)
+    assert (built.helpers.seeds, built.helpers.rewrites) == (None, None)
 
 
 def test_each_tool_switched_on_alone_gives_a_helper_of_its_own(

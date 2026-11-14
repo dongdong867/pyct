@@ -1,8 +1,9 @@
 """A fake ``RewriteProvider`` that answers fixed text, and ``run()`` on a target in
 ``targets/rewrites/`` with rewrites on, for the rewrites story's acceptance tests.
 
-The fake numbers its tries per place as the connection does, so a test reads the try numbers
-the stderr lines carry. No test here calls a model or sends anything off the machine.
+The fake numbers its tries per place and charges each reply's tokens against a limit as the
+connection does, so a test reads the try numbers the stderr lines carry and can reach the limit.
+No test here calls a model or sends anything off the machine.
 """
 
 from __future__ import annotations
@@ -17,9 +18,10 @@ import pytest
 
 from pyct.cli.llm import note_line
 from pyct.config.limits import Limits
+from pyct.config.llm import DEFAULT_LIMIT
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.results.coverage import Coverage
-from pyct.results.llm_asks import AskCost, Unanswered
+from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, RunResult
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.run import model_runs
@@ -34,6 +36,8 @@ from tests.acceptance.harness import REPO_ROOT
 
 # a solver limit short enough that `float(s) == 1e-30` runs out of it at once
 SHORT = Limits(solver_timeout=SolverTimeout(1.0))
+# the tokens in and out each reply the fake gives costs
+TOKENS = (120, 30)
 
 
 def file_of(name: str) -> str:
@@ -44,23 +48,32 @@ def file_of(name: str) -> str:
 @dataclass
 class FakeRewrites:
     """Answers the n-th ask with the n-th reply, the last one again past the end, after
-    ``delay`` seconds, and keeps each request."""
+    ``delay`` seconds, and keeps each request. Each reply costs ``TOKENS``; once they reach
+    ``limit`` an ask gets ``limit`` back, as the connection's does."""
 
     replies: Sequence[str | Unanswered]
     delay: float = 0.0
+    limit: int = DEFAULT_LIMIT
     requests: list[RewriteRequest] = field(default_factory=list)
     tries: dict[str, int] = field(default_factory=dict)
+    charged: int = 0
 
     def rewrite(self, request: RewriteRequest) -> RewriteReply | Unanswered:
         self.requests.append(request)
         attempt = self.tries.get(request.place, 0) + 1
         self.tries[request.place] = attempt
+        if self.charged >= self.limit:
+            return Unanswered(Why.LIMIT, "token limit reached", AskCost(attempt))
         time.sleep(self.delay)
         reply = self.replies[min(len(self.requests), len(self.replies)) - 1]
-        cost = AskCost(attempt, seconds=self.delay)
         if isinstance(reply, Unanswered):
-            return dataclasses.replace(reply, cost=cost)
-        return RewriteReply(reply, cost)
+            return dataclasses.replace(reply, cost=self._cost(attempt, 0, 0))
+        return RewriteReply(reply, self._cost(attempt, *TOKENS))
+
+    def _cost(self, attempt: int, tokens_in: int, tokens_out: int) -> AskCost:
+        self.charged += tokens_in + tokens_out
+        left = max(self.limit - self.charged, 0)
+        return AskCost(attempt, tokens_in, tokens_out, self.delay, tokens_left=left)
 
 
 @dataclass

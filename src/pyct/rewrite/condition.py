@@ -61,7 +61,8 @@ NO_EXPRESSION = "the reply holds no expression"
 _FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.DOTALL)
 # what the parser raises on text it refuses, a reply too deep for it included
 _REFUSALS = (SyntaxError, ValueError, RecursionError, MemoryError)
-_CONSTANTS = (int, float, str, bool, type(None))
+# the literals a rewrite may write
+LITERALS: tuple[type, ...] = (int, float, str, bool, type(None))
 # the types of the values a rewrite may read, and of those it may read into, which
 # ``holds_object`` walks
 _SCALARS = frozenset({type(None), bool, int, float, str})
@@ -195,73 +196,88 @@ class _Check:
         returned = function.body[0]
         assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call)
         branched = returned.value
-        refused = _refusal(branched.args[0], self.parameters, self.objects)
+        rules = ExpressionRules("rewrite", self.parameters, self.objects)
+        refused = refusal(branched.args[0], rules)
         if refused is not None:
             return refused
         branched.args[0] = _AsBits().visit(branched.args[0])
         return tree
 
 
-def _refusal(
-    expression: ast.expr, parameters: frozenset[str], objects: frozenset[str]
-) -> str | None:
-    """Why the expression is outside the form, or reads one of ``objects``, the parameters
-    that hold an object; or None. Read in a loop, not a call per level."""
+@dataclass(frozen=True)
+class ExpressionRules:
+    """What one expression of model-written code may read, call and write: the noun its
+    refusals name the code by, the names it may read, those among them it may not since each
+    holds an object, the functions it may call by name, and the types of its literals."""
+
+    noun: str
+    names: frozenset[str]
+    objects: frozenset[str] = frozenset()
+    calls: frozenset[str] = CALLS
+    literals: tuple[type, ...] = LITERALS
+
+
+def refusal(expression: ast.expr, rules: ExpressionRules) -> str | None:
+    """Why the expression is outside the form ``rules`` allow, or reads one of their
+    ``objects``; or None. Read in a loop, not a call per level."""
     pending: list[tuple[ast.AST, int]] = [(expression, 0)]
     while pending:
         node, depth = pending.pop()
         if depth > MOST_DEPTH:
-            return f"the rewrite nests more than {MOST_DEPTH} deep"
+            return f"the {rules.noun} nests more than {MOST_DEPTH} deep"
         if isinstance(node, ast.Name):
-            if node.id in objects:
-                return f"a rewrite may not read {node.id}, which holds an object"
-            if node.id not in parameters:
-                return f"a rewrite may not read {node.id}"
+            if node.id in rules.objects:
+                return f"a {rules.noun} may not read {node.id}, which holds an object"
+            if node.id not in rules.names:
+                return f"a {rules.noun} may not read {node.id}"
             continue
-        found = _parts(node, parameters)
+        found = _parts(node, rules)
         if isinstance(found, str):
             return found
         pending.extend((part, depth + 1) for part in found)
     return None
 
 
-def _parts(node: ast.AST, parameters: frozenset[str]) -> list[ast.AST] | str:
+def _parts(node: ast.AST, rules: ExpressionRules) -> list[ast.AST] | str:
     """The parts of one node the check reads next, or why the node is refused."""
     if isinstance(node, ast.Constant):
-        return [] if isinstance(node.value, _CONSTANTS) else "a rewrite may not use that literal"
+        if isinstance(node.value, rules.literals):
+            return []
+        return f"a {rules.noun} may not use that literal"
     if isinstance(node, ast.Call):
-        return _call_parts(node, parameters)
+        return _call_parts(node, rules)
     if isinstance(node, ast.Subscript):
         return [node.value, node.slice]
     if isinstance(node, _PLAIN):
         return [part for part in ast.iter_child_nodes(node) if isinstance(part, ast.expr)]
     if isinstance(node, ast.Attribute):
-        return f"a rewrite may not read the attribute {node.attr}"
-    return f"a rewrite may not use {_REFUSED_AS.get(type(node), type(node).__name__)}"
+        return f"a {rules.noun} may not read the attribute {node.attr}"
+    return f"a {rules.noun} may not use {_REFUSED_AS.get(type(node), type(node).__name__)}"
 
 
-def _call_parts(call: ast.Call, parameters: frozenset[str]) -> list[ast.AST] | str:
+def _call_parts(call: ast.Call, rules: ExpressionRules) -> list[ast.AST] | str:
     """A call's arguments, and a method's receiver, or why the call is refused: a function not
-    in ``CALLS``, a method that starts with ``_`` or reads fields from its text, a ``math``
-    name it has no function for, an argument unpacked with ``*`` or ``**``, or a key
+    in the rules' ``calls``, a method that starts with ``_`` or reads fields from its text, a
+    ``math`` name it has no function for, an argument unpacked with ``*`` or ``**``, or a key
     function."""
+    noun = rules.noun
     parts: list[ast.AST] = [*call.args, *(keyword.value for keyword in call.keywords)]
     if any(isinstance(arg, ast.Starred) for arg in call.args) or any(
         keyword.arg is None for keyword in call.keywords
     ):
-        return "a rewrite may not unpack arguments"
+        return f"a {noun} may not unpack arguments"
     if any(keyword.arg == "key" for keyword in call.keywords):
-        return "a rewrite may not pass a key function"
+        return f"a {noun} may not pass a key function"
     func = call.func
     if isinstance(func, ast.Name):
-        allowed = func.id in CALLS and func.id not in parameters
-        return parts if allowed else f"a rewrite may not call {func.id}"
+        allowed = func.id in rules.calls and func.id not in rules.names
+        return parts if allowed else f"a {noun} may not call {func.id}"
     if not isinstance(func, ast.Attribute):
-        return "a rewrite calls only a function by its name or a method"
+        return f"a {noun} calls only a function by its name or a method"
     if func.attr.startswith("_") or func.attr in _READS_FIELDS:
-        return f"a rewrite may not call {func.attr}"
+        return f"a {noun} may not call {func.attr}"
     receiver = func.value
-    if isinstance(receiver, ast.Name) and receiver.id == "math" and "math" not in parameters:
+    if isinstance(receiver, ast.Name) and receiver.id == "math" and "math" not in rules.names:
         if not callable(getattr(math, func.attr, None)):
             return f"math has no function {func.attr}"
         return parts

@@ -18,7 +18,8 @@ from pyct.run.llm_seeds import ask_seeds
 from pyct.run.loop import Loop, Start
 from pyct.run.rewrites import Rewrites
 from pyct.run.setup import Setup
-from pyct.run.stuck import Stuck
+from pyct.run.stuck import Stuck, StuckTool
+from pyct.run.summaries import Summaries
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Tell, Told
 from pyct.solver import walk_keys
@@ -94,7 +95,7 @@ def run(
     bounds = Bounds.of(limits, len(seeds))
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
     starts, bounds = _starts(target, seeds, setup, bounds, told)
-    loop = _loop(target, inputs, bounds, told, setup)
+    loop, summaries = _loop(target, inputs, bounds, told, setup)
     looped = loop.go(starts)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
@@ -109,17 +110,26 @@ def run(
         # the loop's own, which each wait for the LLM moved later
         deadline=loop.bounds.until,
         goal=limits.goal,
+        summaries=() if summaries is None else summaries.states(),
     )
 
 
-def _loop(target: Target, inputs: Inputs, bounds: Bounds, told: Told, setup: Setup) -> Loop:
+def _loop(
+    target: Target, inputs: Inputs, bounds: Bounds, told: Told, setup: Setup
+) -> tuple[Loop, Summaries | None]:
     """The run's loop, with each LLM tool that takes missed lines switched on in its moments:
-    none, and the run is never stuck."""
-    provider = setup.helpers.rewrites
-    if provider is None:
-        return Loop(inputs, bounds, told)
-    rewrites = Rewrites(provider, target, told)
-    return Loop(inputs, bounds, told, Stuck([rewrites]), rewrites)
+    none, and the run is never stuck. Also the summaries tool, which the result reads."""
+    helpers = setup.helpers
+    tools: list[StuckTool] = []
+    summaries = None if helpers.summaries is None else Summaries(helpers.summaries, target, told)
+    if summaries is not None:
+        tools.append(summaries)
+    rewrites = None if helpers.rewrites is None else Rewrites(helpers.rewrites, target, told)
+    if rewrites is not None:
+        tools.append(rewrites)
+    if not tools:
+        return Loop(inputs, bounds, told), summaries
+    return Loop(inputs, bounds, told, Stuck(tools), rewrites), summaries
 
 
 def _starts(

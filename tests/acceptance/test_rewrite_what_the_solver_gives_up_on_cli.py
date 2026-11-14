@@ -52,22 +52,28 @@ def test_llm_rewrites_asks_for_a_rewrite_and_runs_its_input(stub: Stub, tmp_path
     assert 3 in summary_line(result.stdout)["covered"][F]  # pyrefly: ignore[bad-index]
 
 
-# llm-rewrite-switch-not-in-summaries
-def test_another_tool_alone_asks_for_no_rewrite(stub: Stub, tmp_path: Path) -> None:
+def test_llm_seeds_alone_asks_for_no_rewrite(stub: Stub, tmp_path: Path) -> None:
     stub.reply = "[]"
 
     seeds = llm_run(stub.port, tmp_path, SEED, "--llm", "seeds", *SHORT, target=TEXT)
-    summaries = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", *SHORT, target=TEXT)
 
     assert seeds.returncode == 0, seeds.stderr
     [asked] = stub.received
     assert "Rewrite it as" not in str(asked.body)
     assert not any(line.startswith("llm: rewrite") for line in llm_lines(seeds.stderr))
     assert rewritten(seeds.stdout) == []
-    # summaries has not landed yet: the switch is refused before any ask
-    assert summaries.returncode == 2
-    assert "--llm has no tool 'summaries'" in summaries.stderr
+
+
+# llm-rewrite-switch-not-in-summaries
+def test_llm_summaries_alone_asks_for_no_rewrite(stub: Stub, tmp_path: Path) -> None:
+    stub.reply = "[]"
+
+    summaries = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", *SHORT, target=TEXT)
+
+    assert summaries.returncode == 0, summaries.stderr
+    assert not any("Rewrite it as" in str(each.body) for each in stub.received)
     assert not any(line.startswith("llm: rewrite") for line in llm_lines(summaries.stderr))
+    assert rewritten(summaries.stdout) == []
 
 
 # llm-rewrite-when-the-solver-gives-up-pauses-the-budget-while-waiting

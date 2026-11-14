@@ -1,12 +1,13 @@
 """The code a seeds ask sends: the target's, then its same-package callees, breadth first; and the
-code a rewrites ask sends: the function around one line."""
+code a rewrites ask sends: the function around one line; and the code a summaries ask sends: the
+function around a piece, the piece marked, then its callees."""
 
 import inspect
 from pathlib import Path
 
 import pytest
 
-from pyct.run.code_context import code_around, code_context
+from pyct.run.code_context import MARK_END, MARK_START, code_around, code_context, code_with_piece
 from pyct.run.target import Target, load_target
 
 
@@ -166,3 +167,63 @@ def test_the_code_around_a_line_in_a_long_function_is_cut_to_the_lines_around_it
 
 def test_a_file_that_does_not_read_gives_no_code(tmp_path: Path) -> None:
     assert code_around(str(tmp_path / "gone.py"), 1) == ""
+
+
+LOOPED = """\
+def helper(n):
+    return n + 1
+
+
+class Box:
+    def f(self, s):
+        t = 0
+        for c in s:
+            t = helper(t)
+        return t
+"""
+
+
+def test_the_code_around_a_piece_marks_it_and_brings_the_function_s_callees(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "piece_context"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "m.py").write_text(LOOPED)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = load_target("piece_context.m::helper")
+
+    code = code_with_piece(target, str(package / "m.py"), (8, 9))
+
+    assert code == (
+        "# piece_context.m.Box.f\n"
+        "def f(self, s):\n"
+        "    t = 0\n"
+        f"    {MARK_START}\n"
+        "    for c in s:\n"
+        "        t = helper(t)\n"
+        f"    {MARK_END}\n"
+        "    return t\n"
+        "\n"
+        "# piece_context.m.helper\n"
+        "def helper(n):\n"
+        "    return n + 1"
+    )
+
+
+def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
+    tmp_path: Path,
+) -> None:
+    file = write(tmp_path, "def f(s):\n    t = [c for c in s]\n    return t\n")
+
+    code = code_with_piece(load_target("targets.llm.seeds::f"), file, (2, 2))
+
+    assert (
+        code == f"def f(s):\n    {MARK_START}\n    t = [c for c in s]\n    {MARK_END}\n    return t"
+    )
+
+
+def test_a_piece_in_a_file_that_does_not_read_gives_no_code(tmp_path: Path) -> None:
+    target = load_target("targets.llm.seeds::f")
+
+    assert code_with_piece(target, str(tmp_path / "gone.py"), (1, 2)) == ""

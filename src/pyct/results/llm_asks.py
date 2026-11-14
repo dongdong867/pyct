@@ -82,3 +82,30 @@ class LlmUse:
     tokens_in: int = 0
     tokens_out: int = 0
     seconds: float = 0.0
+
+
+class SummaryState(StrEnum):
+    """Where a loop summaries asked about stands: its last formula checked, or not."""
+
+    CHECKED = "checked"
+    FAILED = "failed"
+
+
+@dataclass(frozen=True)
+class LoopSummary:
+    """One loop summaries sent an ask for, as the summary line's ``llm.summaries`` lists it: the
+    file and the line and column the loop starts at, the names it changes, the last formula a
+    reply held, None when no reply held one, the connection's last try number at its place, and
+    the past runs its formula was checked on, None when none is checked."""
+
+    file: str
+    line: int
+    col: int
+    changes: tuple[str, ...]
+    formula: str | None
+    tries: int
+    checked_on: int | None = None
+
+    @property
+    def state(self) -> SummaryState:
+        return SummaryState.FAILED if self.checked_on is None else SummaryState.CHECKED

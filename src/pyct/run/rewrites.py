@@ -5,11 +5,11 @@ ask that holds its condition.
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
 ``timeout`` or an ``unknown``, in line order, one condition at a time, and
 ask about each up to 4 times (``pyct.rewrite.tries``). An ask that got no
-answer is said and ends that condition's tries; once the token limit is
-reached no rewrite is asked for again this run, and the connection has said
-so. A rewrite runs only in a child forked from pyct's process: while pyct's
-process runs another thread, before an ask or when the rewrite would run,
-the condition is skipped at this moment
+answer is said and ends that condition's tries; once a reply leaves no token
+under the limit, or an ask meets it, no rewrite is asked for again this run,
+and the connection has said so. A rewrite runs only in a child forked from
+pyct's process: while pyct's process runs another thread, before an ask or
+when the rewrite would run, the condition is skipped at this moment
 (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all).
 A condition with no parameter a rewrite may read is given up at this
 moment, unasked, so a later tool may take it.
@@ -24,11 +24,9 @@ dropped, and said.
 from __future__ import annotations
 
 import dataclasses
-import sys
 import time
 import types
 from collections.abc import Mapping
-from pathlib import Path
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
@@ -50,7 +48,7 @@ from pyct.run.loop import Asker, Solved, solver_answer
 from pyct.run.model_runs import CannotFork, ModelCall, can_fork, run_model
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
-from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running
+from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown
@@ -75,13 +73,18 @@ class Rewrites(Asker):
         self._used: tuple[Condition, ...] = ()
         self._limit_reached = False
 
+    @property
+    def can_ask(self) -> bool:
+        """Whether rewrites may still ask this run: false once the token limit is reached."""
+        return not self._limit_reached
+
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         """Ask about each entry's condition in turn; ``took``, ``gave up`` or ``skipped`` each."""
         outcomes: list[Outcome] = []
         asked = False
         for entry in entries:
             given = None if entry.condition is None else self.given_up.get(entry.condition)
-            if given is None or self._limit_reached or not _going(moment.run):
+            if given is None or self._limit_reached or not going(moment.run):
                 outcomes.append(Outcome.SKIPPED)
                 continue
             tried = self._asking(given).tries(_Around(moment.run, self.told))
@@ -132,7 +135,7 @@ class Rewrites(Asker):
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
         files = {site.file, *(fork.site.file for fork in given.plan.prefix)}
-        modules = {file: _module_of(file, self.target) for file in files}
+        modules = {file: self.target.module_of(file) for file in files}
         about = About(
             place=f"{modules[site.file]}:{site.line}:{site.col}",
             code=code_around(site.file, site.line),
@@ -144,7 +147,9 @@ class Rewrites(Asker):
 
     def _outcome(self, tried: Tried) -> Outcome:
         """What the tries come to, said: an ask that got no answer is skipped, and once the
-        token limit is reached no condition asks again."""
+        token limit is reached, by a reply or a refused ask, no condition asks again."""
+        if tried.spent:
+            self._limit_reached = True
         unanswered = tried.unanswered
         if unanswered is not None:
             if unanswered.why is Why.LIMIT:
@@ -165,7 +170,7 @@ class _Around:
         self.told = told
 
     def going(self) -> bool:
-        return _going(self.run)
+        return going(self.run)
 
     def blocked(self) -> str | None:
         """Why no rewrite can run now: pyct's process runs another thread; None when one can."""
@@ -227,20 +232,3 @@ def _out_of_time(wanted: Plan) -> Solved:
 def _left(started: float, limit: float) -> float:
     """What is left of ``limit`` seconds counted from ``started``."""
     return limit - (time.monotonic() - started)
-
-
-def _going(run: Running) -> bool:
-    """Whether a try may start: the run met no stop and its budget is not spent."""
-    until = run.bounds.until
-    return run.stopped is None and (until is None or until > time.monotonic())
-
-
-def _module_of(file: str, target: Target) -> str:
-    """The dotted name of the module ``file`` holds: the target's own, or a loaded module's
-    whose file it is, or the file's stem when no module is."""
-    if file == target.file:
-        return target.spec.partition("::")[0]
-    for name, module in list(sys.modules.items()):
-        if getattr(module, "__file__", None) == file:
-            return name
-    return Path(file).stem

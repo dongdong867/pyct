@@ -22,7 +22,19 @@ from pyct.rewrite.notes import (
 )
 from pyct.run.helpers import Helpers
 from pyct.run.llm_seeds import NoSeedError
-from pyct.run.notes import AskSkipped, LimitReached, Note, ReplyIgnored, SeedDropped, SeedsKept
+from pyct.run.notes import (
+    AskSkipped,
+    LimitReached,
+    Note,
+    ReplyIgnored,
+    SeedDropped,
+    SeedsKept,
+    SummaryChecked,
+    SummaryFailed,
+    SummaryNote,
+    SummaryRead,
+    SummarySkipped,
+)
 from pyct.run.tell import Noted
 
 if TYPE_CHECKING:
@@ -167,8 +179,29 @@ def note_line(note: Note) -> str | None:
             return "llm: token limit reached; no more asks"
         case SeedsKept():
             return None
+        case SummaryRead() | SummaryChecked() | SummaryFailed() | SummarySkipped():
+            return summary_line(note)
         case _:
             return rewrite_line(note)
+
+
+def summary_line(note: SummaryNote) -> str:
+    """The stderr line a summaries note gives, the loop's site written ``file:line``, each
+    character a terminal reads escaped as Python escapes it. A formula's statements written
+    below go each on a line of its own, indented."""
+    site = note.site
+    at = f"llm: summary for the loop at {site.file}:{site.line}"
+    match note:
+        case SummaryRead(_, formula, below=True):
+            return f"{at}:" + "".join(f"\n    {_escaped(each)}" for each in formula.splitlines())
+        case SummaryRead(_, formula):
+            return _escaped(f"{at}: {formula}")
+        case SummaryChecked(_, runs):
+            return _escaped(f"{at}: checked on {runs} past runs")
+        case SummaryFailed(_, attempt, reason):
+            return _escaped(f"{at}, try {attempt}: {reason}")
+        case SummarySkipped(_, reason):
+            return _escaped(f"{at} skipped: {reason}")
 
 
 def rewrite_line(note: RewriteNote) -> str:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from pyct.config.command_line import UsageError
-from pyct.config.llm import DEFAULT_MODEL, LlmSettings, Model, parse_llm
+from pyct.config.llm import DEFAULT_MODEL, LlmSettings, Model, asks_summaries, parse_llm
 
 
 def test_no_llm_flag_is_no_llm() -> None:
@@ -18,8 +18,32 @@ def test_llm_seeds_takes_the_seeds_tool_with_the_default_model() -> None:
 
 
 def test_llm_all_takes_every_tool_pyct_has() -> None:
-    expected = LlmSettings(tools=("seeds", "rewrites"), model=DEFAULT_MODEL)
+    expected = LlmSettings(tools=("seeds", "summaries", "rewrites"), model=DEFAULT_MODEL)
     assert parse_llm("all", None) == expected
+
+
+# llm-switch-per-tool-summaries-alone
+def test_llm_summaries_takes_the_summaries_tool_alone() -> None:
+    assert parse_llm("summaries", None) == LlmSettings(tools=("summaries",), model=DEFAULT_MODEL)
+
+
+@pytest.mark.parametrize(
+    ("text", "asks"),
+    [
+        (None, False),
+        ("seeds", False),
+        ("seeds,rewrites", False),
+        ("summaries", True),
+        ("rewrites, summaries", True),
+        ("all", True),
+        # a wrong flag is refused later; the interception's switch reads only the names
+        ("summaries,magic", True),
+    ],
+)
+def test_the_recording_is_wanted_when_llm_names_summaries_or_all(
+    text: str | None, asks: bool
+) -> None:
+    assert asks_summaries(text) is asks
 
 
 # llm-rewrite-switch-alone
