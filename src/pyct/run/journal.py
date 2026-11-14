@@ -77,8 +77,9 @@ more, while the input runs on until it ends or its deadline ends it. The
 tally's bound is noted too (``bound``), while the writer goes on with the
 lines and downgrades. Either bound is the input's own, since its path
 outgrew it, so its line ends ``too_long``. The last ``END_ROOM`` bytes are
-the call's ending's alone, so a call that filled its journal still writes
-how it ended, and a pyct bug after the bound still reaches the exit code.
+the call's ending's alone, and it may also take what the recorded runs left
+of their room (below), so a call that filled its journal still writes how
+it ended, and a pyct bug after the bound still reaches the exit code.
 A fact the writer cannot encode stops the writer too, and a record the
 reader cannot read stops the reading at its byte; either way the input's
 line says pyct failed, since its facts are known to be incomplete. In every
@@ -245,8 +246,8 @@ class JournalWriter:
             self._note(BOUNDED, note)
 
     def end(self, failure: Failure | None) -> None:
-        """Write how the call ended, into ``END_ROOM`` when the journal is full. The reader
-        takes it as the input's own ending.
+        """Write how the call ended, into ``END_ROOM`` and what the recorded runs left of their
+        room when the journal is full. The reader takes it as the input's own ending.
 
         One that does not fit goes without its traceback, then with its detail
         cut by half until it fits, so an open or full journal takes its kind: a
