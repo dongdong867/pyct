@@ -3,7 +3,8 @@
 A formula is one function, ``summary``, on the loop's parameters, of at most
 ``MOST_STATEMENTS`` statements, each an assignment to names or an ``if``
 holding the same, and a last ``return`` of a dict display keyed by the
-changed names. The definition holds its name, its parameters, each a bare
+changed names; a leading docstring and a ``pass`` do nothing, and the check
+drops or skips them (``formula_body``). The definition holds its name, its parameters, each a bare
 name, and its body alone, since the child evaluates the rest of a ``def``
 line as it runs the module. The check reads each field of the module, the
 definition, its parameters and each statement, and refuses a node with a
@@ -66,6 +67,20 @@ _STATEMENTS_REFUSED: dict[type[ast.AST], str] = {
     ast.While: "a loop",
     ast.Import: "an import",
     ast.ImportFrom: "an import",
+    ast.Expr: "an expression statement",
+    ast.Delete: "a del statement",
+    ast.TypeAlias: "a type statement",
+    ast.With: "a with statement",
+    ast.AsyncWith: "a with statement",
+    ast.Match: "a match statement",
+    ast.Raise: "a raise statement",
+    ast.Try: "a try statement",
+    ast.TryStar: "a try statement",
+    ast.Assert: "an assert statement",
+    ast.Global: "a global statement",
+    ast.Nonlocal: "a nonlocal statement",
+    ast.Break: "a break statement",
+    ast.Continue: "a continue statement",
 }
 
 
@@ -83,6 +98,7 @@ class FormCheck:
             return refused
         function = tree.body[0]
         assert isinstance(function, ast.FunctionDef)
+        function.body = formula_body(function)
         refused = _bare(function) or self._signature(function.args) or self._body(function.body)
         if refused is not None:
             return refused
@@ -102,7 +118,7 @@ class FormCheck:
 
     def _body(self, body: list[ast.stmt]) -> str | None:
         """Why the function's body is outside the form, or None."""
-        statements = list(_walked(body))
+        statements = [each for each in _walked(body) if not isinstance(each, ast.Pass)]
         if len(statements) > MOST_STATEMENTS:
             return f"a formula may hold at most {MOST_STATEMENTS} statements"
         last = body[-1]
@@ -137,6 +153,17 @@ class FormCheck:
             return f"{SUMMARY} must end by returning a dict with one entry for each of {listed}"
         assert isinstance(value, ast.Dict)
         return _unread(value)
+
+
+def formula_body(function: ast.FunctionDef) -> list[ast.stmt]:
+    """The function's body less what does nothing: a leading docstring and each pass statement
+    at its top level; the body as written when nothing else is left in it. A pass inside an if
+    statement stays, and the check accepts it and does not count it."""
+    body = function.body
+    first = body[0].value if isinstance(body[0], ast.Expr) else None
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        body = body[1:]
+    return [each for each in body if not isinstance(each, ast.Pass)] or function.body
 
 
 def _one_function(tree: ast.Module) -> str | None:
@@ -203,8 +230,10 @@ def _walked(body: list[ast.stmt]) -> list[ast.stmt]:
 
 
 def _statement_refusal(statement: ast.stmt, last: ast.stmt) -> str | None:
-    """Why one statement is outside the form, or None: an assignment to names alone, an if, or
-    the last statement's return, each holding no type comment."""
+    """Why one statement is outside the form, or None: an assignment to names alone, an if, a
+    pass, or the last statement's return, each holding no type comment."""
+    if isinstance(statement, ast.Pass):
+        return None
     if not isinstance(statement, ast.Return | ast.If | ast.Assign | ast.AugAssign):
         return _kind_refusal(statement)
     if isinstance(statement, ast.Return) and statement is not last:
@@ -221,7 +250,10 @@ def _kind_refusal(statement: ast.stmt) -> str:
     """Why a statement of a kind outside the form is refused."""
     if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
         return f"a formula may not define {statement.name}"
-    kind = _STATEMENTS_REFUSED.get(type(statement), f"a {type(statement).__name__} statement")
+    if isinstance(statement, ast.AnnAssign):
+        return "a formula may not annotate a name"
+    named = type(statement).__name__
+    kind = _STATEMENTS_REFUSED.get(type(statement), f"the statement {named}")
     return f"a formula may not use {kind}"
 
 

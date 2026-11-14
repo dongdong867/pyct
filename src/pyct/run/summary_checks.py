@@ -40,6 +40,7 @@ from pyct.run.summary_form import (
     SUMMARY,
     TRACKED,
     FormCheck,
+    formula_body,
 )
 
 # the seconds each check's child may take at most
@@ -102,7 +103,7 @@ def formula_code(
         return code
     function = ast.parse(text).body[0]
     assert isinstance(function, ast.FunctionDef)
-    body = function.body
+    body = formula_body(function)
     if len(body) == 1:
         returned = body[0]
         assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Dict)

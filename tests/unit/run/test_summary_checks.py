@@ -119,10 +119,6 @@ def checked(code: str, runs: tuple[CompleteRun, ...] = RUNS) -> str | Ended | No
             "def summary(s, t):\n    if t:\n        return {'t': 1}\n    return {'t': t}",
             "a formula returns only as its last statement",
         ),
-        (
-            "def summary(s, t):\n    pass\n    return {'t': t}",
-            "a formula may not use a Pass statement",
-        ),
         ("def summary(s, t)\n    return {'t': t}", "does not parse"),
     ],
 )
@@ -236,6 +232,64 @@ def test_a_field_the_form_check_does_not_read_is_refused() -> None:
     reason = FormCheck(PARAMETERS, ("t",))(tree)
 
     assert reason == "a formula may not use the field arg.later, which pyct does not read"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        f'def summary(s, t):\n    """Count each z."""\n{BODY}',
+        f"def summary(s, t):\n    pass\n{BODY}",
+        f'def summary(s, t):\n    """Count each z."""\n    pass\n{BODY}\n    pass',
+    ],
+)
+def test_a_leading_docstring_and_a_pass_are_dropped(code: str) -> None:
+    formula = read(code)
+
+    assert isinstance(formula, Formula)
+    assert (formula.text, formula.below) == ("t = t + s.count('z')", False)
+    assert check_formula(formula.code, RUNS, PARAMETERS, ("t",), None) is None
+
+
+def test_a_pass_inside_an_if_does_nothing() -> None:
+    formula = read(
+        f"def summary(s, t):\n    if t > 9:\n        pass\n    else:\n        t = t\n{BODY}"
+    )
+
+    assert isinstance(formula, Formula)
+
+
+@pytest.mark.parametrize(
+    ("statement", "reason"),
+    [
+        ("x: int = 1", "a formula may not annotate a name"),
+        ("s.count('z')", "a formula may not use an expression statement"),
+        (
+            "x = 1\n    'a docstring that does not lead'",
+            "a formula may not use an expression statement",
+        ),
+        ("yield 1", "a formula may not use an expression statement"),
+        ("global len", "a formula may not use a global statement"),
+        ("nonlocal t", "a formula may not use a nonlocal statement"),
+        ("del s", "a formula may not use a del statement"),
+        ("assert t", "a formula may not use an assert statement"),
+        ("raise ValueError", "a formula may not use a raise statement"),
+        (
+            "try:\n        x = 1\n    except ValueError:\n        x = 2",
+            "a formula may not use a try statement",
+        ),
+        (
+            "try:\n        x = 1\n    except* ValueError:\n        x = 2",
+            "a formula may not use a try statement",
+        ),
+        ("with s:\n        x = 1", "a formula may not use a with statement"),
+        ("match t:\n        case 1:\n            x = 1", "a formula may not use a match statement"),
+        ("type X = int", "a formula may not use a type statement"),
+        ("break", "a formula may not use a break statement"),
+        ("continue", "a formula may not use a continue statement"),
+    ],
+)
+def test_a_statement_outside_the_form_is_named_in_words(statement: str, reason: str) -> None:
+    assert refusal(f"def summary(s, t):\n    {statement}\n{BODY}") == reason
 
 
 def test_a_formula_may_assign_branch_and_call_math_and_the_listed_builtins() -> None:
