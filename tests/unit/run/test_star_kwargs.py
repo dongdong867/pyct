@@ -60,7 +60,8 @@ K_M = Target(
 
 
 def test_the_seed_check_takes_a_key_named_as_star_kwargs_as_plain_python_does() -> None:
-    f(named="a")  # plain Python passes {"named": "a"} to **named
+    # plain Python runs it, passing {"named": "a"} to **named, whatever the annotation says
+    f(named="a")  # pyrefly: ignore[bad-argument-type]
 
     assert seed_refusals(target_for(f), {"named": "a"}) == []
 
@@ -70,7 +71,8 @@ def test_the_walk_is_given_no_check_for_a_key_named_as_star_kwargs() -> None:
 
 
 def test_the_check_under_self_takes_a_key_named_as_the_constructor_s_star_kwargs() -> None:
-    K(named="a")  # plain Python passes {"named": "a"} to **named
+    # plain Python runs it, passing {"named": "a"} to **named, whatever the annotation says
+    K(named="a")  # pyrefly: ignore[bad-argument-type]
 
     assert seed_refusals(K_M, {"self": {"named": "a"}}) == []
 
