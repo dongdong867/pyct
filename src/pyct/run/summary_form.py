@@ -3,7 +3,11 @@
 A formula is one function, ``summary``, on the loop's parameters, of at most
 ``MOST_STATEMENTS`` statements, each an assignment to names or an ``if``
 holding the same, and a last ``return`` of a dict display keyed by the
-changed names. Each expression keeps to a rewrite's rules
+changed names. The definition holds its name, its parameters, each a bare
+name, and its body alone, since the child evaluates the rest of a ``def``
+line as it runs the module. The check reads each field of the module, the
+definition, its parameters and each statement, and refuses a node with a
+field it does not read. Each expression keeps to a rewrite's rules
 (``pyct.rewrite.condition.refusal``), reading the parameters and the names
 the function assigns, and calling ``FORMULA_CALLS`` by name. pyct then
 writes two functions of its own after it, ``PAST`` and ``FOLLOW``, which run
@@ -37,6 +41,25 @@ def {PAST}():
 def {FOLLOW}(**leaves):
     return {TRACKED}({SUMMARY}, leaves)
 """
+# the fields of each node of the module and its statements that the check reads; a node with a
+# field not named here, as a later Python may add, is refused until the check reads it
+_READ: dict[type[ast.AST], frozenset[str]] = {
+    ast.Module: frozenset({"body", "type_ignores"}),
+    ast.FunctionDef: frozenset(
+        {"name", "args", "body", "decorator_list", "returns", "type_comment", "type_params"}
+    ),
+    ast.arguments: frozenset(
+        {"posonlyargs", "args", "vararg", "kwonlyargs", "kw_defaults", "kwarg", "defaults"}
+    ),
+    ast.arg: frozenset({"arg", "annotation", "type_comment"}),
+    ast.Assign: frozenset({"targets", "value", "type_comment"}),
+    ast.AugAssign: frozenset({"target", "op", "value"}),
+    ast.If: frozenset({"test", "body", "orelse"}),
+    ast.Return: frozenset({"value"}),
+    ast.Name: frozenset({"id", "ctx"}),
+    ast.Dict: frozenset({"keys", "values"}),
+}
+_TYPE_COMMENT = "a formula may not hold a type comment"
 _STATEMENTS_REFUSED: dict[type[ast.AST], str] = {
     ast.For: "a loop",
     ast.AsyncFor: "a loop",
@@ -55,29 +78,27 @@ class FormCheck:
         self.changed = changed
 
     def __call__(self, tree: ast.Module) -> ast.Module | str:
-        refused = _one_function(tree.body)
+        refused = _one_function(tree)
         if refused is not None:
             return refused
         function = tree.body[0]
         assert isinstance(function, ast.FunctionDef)
-        refused = self._signature(function) or self._body(function.body)
+        refused = _bare(function) or self._signature(function.args) or self._body(function.body)
         if refused is not None:
             return refused
         tree.body.extend(ast.parse(_DRIVERS).body)
         return tree
 
-    def _signature(self, function: ast.FunctionDef) -> str | None:
-        """Why the function is not ``summary`` taking exactly the parameters, or None."""
-        arguments = function.args
+    def _signature(self, arguments: ast.arguments) -> str | None:
+        """Why the parameters are not exactly the formula's, each one bare, or None."""
         names = [each.arg for each in arguments.args]
-        others = (arguments.posonlyargs, arguments.kwonlyargs, arguments.defaults)
-        plain = not any(others) and arguments.vararg is None and arguments.kwarg is None
-        if function.decorator_list:
-            return "a formula may not use a decorator"
+        others = (arguments.posonlyargs, arguments.kwonlyargs, arguments.kw_defaults)
+        stars = (arguments.vararg, arguments.kwarg)
+        plain = not any((*others, arguments.defaults, *stars))
         if not plain or sorted(names) != sorted(self.parameters) or len(set(names)) < len(names):
             listed = ", ".join(self.parameters) or "none"
             return f"{SUMMARY} must take exactly the parameters {listed}"
-        return None
+        return next(filter(None, map(_bare_parameter, arguments.args)), None)
 
     def _body(self, body: list[ast.stmt]) -> str | None:
         """Why the function's body is outside the form, or None."""
@@ -114,11 +135,13 @@ class FormCheck:
         if len(written) != len(keys) or sorted(written) != sorted(self.changed):
             listed = ", ".join(f'"{name}"' for name in self.changed)
             return f"{SUMMARY} must end by returning a dict with one entry for each of {listed}"
-        return None
+        assert isinstance(value, ast.Dict)
+        return _unread(value)
 
 
-def _one_function(body: list[ast.stmt]) -> str | None:
-    """Why the module is not one function definition, or None."""
+def _one_function(tree: ast.Module) -> str | None:
+    """Why the module is not one function definition alone, or None."""
+    body = tree.body
     for statement in body:
         if isinstance(statement, ast.Import | ast.ImportFrom):
             return "a formula may not import"
@@ -128,7 +151,43 @@ def _one_function(body: list[ast.stmt]) -> str | None:
     other = next((name for name in names if name != SUMMARY), None)
     if other is not None:
         return f"a formula may not define {other}"
-    return None if len(names) == 1 else f"the code must define {SUMMARY} once"
+    if len(names) > 1:
+        return f"the code must define {SUMMARY} once"
+    return _unread(tree) or (_TYPE_COMMENT if tree.type_ignores else None)
+
+
+def _bare(function: ast.FunctionDef) -> str | None:
+    """Why the definition holds more than its name, its parameters and its body, or None: a
+    decorator, type parameters, a return annotation or a type comment."""
+    refused = _unread(function) or _unread(function.args)
+    if refused is not None:
+        return refused
+    if function.decorator_list:
+        return "a formula may not use a decorator"
+    if function.type_params:
+        return "a formula may not take type parameters"
+    if function.returns is not None:
+        return "a formula may not annotate its return"
+    return None if function.type_comment is None else _TYPE_COMMENT
+
+
+def _bare_parameter(parameter: ast.arg) -> str | None:
+    """Why a parameter holds more than its name, or None: an annotation or a type comment."""
+    refused = _unread(parameter)
+    if refused is not None:
+        return refused
+    if parameter.annotation is not None:
+        return "a formula may not annotate its parameters"
+    return None if parameter.type_comment is None else _TYPE_COMMENT
+
+
+def _unread(node: ast.AST) -> str | None:
+    """Why the node holds a field the check does not read, or None."""
+    kind = next(each for each in type(node).__mro__ if each in _READ)
+    unread = [name for name in node._fields if name not in _READ[kind]]
+    if not unread:
+        return None
+    return f"a formula may not use the field {kind.__name__}.{unread[0]}, which pyct does not read"
 
 
 def _walked(body: list[ast.stmt]) -> list[ast.stmt]:
@@ -144,28 +203,40 @@ def _walked(body: list[ast.stmt]) -> list[ast.stmt]:
 
 
 def _statement_refusal(statement: ast.stmt, last: ast.stmt) -> str | None:
-    """Why one statement is outside the form, or None: only the last returns."""
-    if isinstance(statement, ast.Return):
-        return None if statement is last else "a formula returns only as its last statement"
-    if isinstance(statement, ast.If):
-        return None
-    if isinstance(statement, ast.Assign | ast.AugAssign):
-        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
-        named = all(isinstance(each, ast.Name) for each in targets)
-        return None if named else "a formula assigns only to names"
+    """Why one statement is outside the form, or None: an assignment to names alone, an if, or
+    the last statement's return, each holding no type comment."""
+    if not isinstance(statement, ast.Return | ast.If | ast.Assign | ast.AugAssign):
+        return _kind_refusal(statement)
+    if isinstance(statement, ast.Return) and statement is not last:
+        return "a formula returns only as its last statement"
+    targets = _targets(statement)
+    if not all(isinstance(each, ast.Name) for each in targets):
+        return "a formula assigns only to names"
+    if isinstance(statement, ast.Assign) and statement.type_comment is not None:
+        return _TYPE_COMMENT
+    return next(filter(None, map(_unread, [statement, *targets])), None)
+
+
+def _kind_refusal(statement: ast.stmt) -> str:
+    """Why a statement of a kind outside the form is refused."""
     if isinstance(statement, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
         return f"a formula may not define {statement.name}"
     kind = _STATEMENTS_REFUSED.get(type(statement), f"a {type(statement).__name__} statement")
     return f"a formula may not use {kind}"
 
 
+def _targets(statement: ast.stmt) -> list[ast.expr]:
+    """What an assignment binds, as written; nothing for another statement."""
+    if isinstance(statement, ast.Assign):
+        return statement.targets
+    if isinstance(statement, ast.AugAssign):
+        return [statement.target]
+    return []
+
+
 def _assigned(statement: ast.stmt) -> list[str]:
     """The names an assignment binds."""
-    if isinstance(statement, ast.Assign):
-        return [each.id for each in statement.targets if isinstance(each, ast.Name)]
-    if isinstance(statement, ast.AugAssign) and isinstance(statement.target, ast.Name):
-        return [statement.target.id]
-    return []
+    return [each.id for each in _targets(statement) if isinstance(each, ast.Name)]
 
 
 def _expressions(statements: list[ast.stmt]) -> list[ast.expr]:

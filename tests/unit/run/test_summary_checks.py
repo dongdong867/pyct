@@ -2,6 +2,9 @@
 formula runs through in forked children: on the past runs in plain Python, and for values pyct
 follows."""
 
+import ast
+from pathlib import Path
+
 import pytest
 
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
@@ -14,6 +17,7 @@ from pyct.run.summary_checks import (
     check_formula,
     formula_code,
 )
+from pyct.run.summary_form import FormCheck
 
 SITE = Site("/t/m.py", 10, 4)
 PARAMETERS = ("s", "t")
@@ -124,6 +128,114 @@ def checked(code: str, runs: tuple[CompleteRun, ...] = RUNS) -> str | Ended | No
 )
 def test_the_form_check_refuses_with_one_short_reason(code: str, reason: str) -> None:
     assert refusal(code).startswith(reason)
+
+
+BODY = "    return {'t': t + s.count('z')}"
+ONE_FUNCTION = "the code must define one function, summary, and nothing else"
+
+
+@pytest.mark.parametrize(
+    ("line", "reason"),
+    [
+        ("def summary(s: int, t):", "a formula may not annotate its parameters"),
+        ("def summary(s, t) -> dict:", "a formula may not annotate its return"),
+        ("def summary[T](s: T, t):", "a formula may not take type parameters"),
+        ("def summary[T: int](s, t):", "a formula may not take type parameters"),
+        ("def summary[*T](s, t):", "a formula may not take type parameters"),
+        ("def summary(s, t=0):", "summary must take exactly the parameters s, t"),
+        ("def summary(s, *, t=0):", "summary must take exactly the parameters s, t"),
+        ("def summary(s, /, t):", "summary must take exactly the parameters s, t"),
+        ("def summary(s, t, *a: int):", "summary must take exactly the parameters s, t"),
+        ("def summary(s, t, **k: int):", "summary must take exactly the parameters s, t"),
+        ("@max\ndef summary(s, t):", "a formula may not use a decorator"),
+        ("async def summary(s, t):", ONE_FUNCTION),
+    ],
+)
+def test_the_def_line_holds_the_name_and_the_bare_parameters_alone(line: str, reason: str) -> None:
+    assert refusal(f"{line}\n{BODY}") == reason
+
+
+@pytest.mark.parametrize(
+    ("code", "reason"),
+    [
+        (f"def summary(s, t):\n{BODY}\nx = 1", "the code must define one function, summary,"),
+        (f"def summary(s, t):\n    x = yield 1\n{BODY}", "a formula may not use Yield"),
+        (f"def summary(s, t):\n    x = (y := len(s))\n{BODY}", "a formula may not use an assign"),
+        (f"def summary(s, t):\n    s.x = 1\n{BODY}", "a formula assigns only to names"),
+        (f"def summary(s, t):\n    s[0] = 1\n{BODY}", "a formula assigns only to names"),
+        (f"def summary(s, t):\n    s[0] += 1\n{BODY}", "a formula assigns only to names"),
+        ("def summary(s, t):\n    return {'t': t, **s}", "summary must end by returning a dict"),
+        ("def summary(s, t):\n    return {'t': {s: 1}}", "a formula may not use Dict"),
+        ("def summary(s, t):\n    return {'t': f'{s:{t}}'}", "a formula may not use JoinedStr"),
+        ("def summary(s, t):\n    return {'t': max(*s)}", "a formula may not unpack arguments"),
+        ("def summary(s, t):\n    return {'t': s[u]}", "a formula may not read u"),
+        ("def summary(s, t):\n    return {'t': s[1:u]}", "a formula may not read u"),
+        ("def summary(s, t):\n    return {'t': 0 < t < u}", "a formula may not read u"),
+        ("def summary(s, t):\n    return {'t': round(t, ndigits=u)}", "a formula may not read u"),
+        ("def summary(s, t):\n    return {'t': [*s]}", "a formula may not use a star"),
+    ],
+)
+def test_each_statement_and_expression_holds_only_what_the_form_reads(
+    code: str, reason: str
+) -> None:
+    assert refusal(code).startswith(reason)
+
+
+# code that writes a marker file when Python evaluates it
+PAYLOAD = "__import__('pathlib').Path({marker!r}).write_text('ran')"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "def summary(s: {payload}, t):",
+        "def summary(s, t) -> {payload}:",
+        "def summary[T](s: {payload}, t):",
+        "def summary[T: {payload}](s, t):",
+    ],
+)
+def test_code_in_the_def_line_is_refused_and_never_runs(line: str, tmp_path: Path) -> None:
+    marker = tmp_path / "ran"
+    code = line.format(payload=PAYLOAD.format(marker=str(marker))) + "\n" + BODY
+
+    found = read(code)
+    if isinstance(found, Formula):
+        check_formula(found.code, RUNS, PARAMETERS, ("t",), None)
+
+    assert not marker.exists()
+    assert isinstance(found, Refused)
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        f"def summary(s, t):  # type: (int, int) -> dict\n{BODY}",
+        f"def summary(\n    s,  # type: int\n    t,\n):\n{BODY}",
+        f"def summary(s, t):\n    x = 1  # type: int\n{BODY}",
+        f"def summary(s, t):  # type: ignore\n{BODY}",
+    ],
+)
+def test_a_type_comment_is_refused(code: str) -> None:
+    check = FormCheck(PARAMETERS, ("t",))
+
+    assert check(ast.parse(code, type_comments=True)) == "a formula may not hold a type comment"
+
+
+class LaterArg(ast.arg):
+    """An ``arg`` as a later Python might write it, with a field pyct does not read."""
+
+    _fields = (*ast.arg._fields, "later")
+
+
+def test_a_field_the_form_check_does_not_read_is_refused() -> None:
+    tree = ast.parse(f"def summary(s, t):\n{BODY}")
+    function = tree.body[0]
+    assert isinstance(function, ast.FunctionDef)
+    function.args.args[0].__class__ = LaterArg
+
+    reason = FormCheck(PARAMETERS, ("t",))(tree)
+
+    assert reason == "a formula may not use the field arg.later, which pyct does not read"
 
 
 def test_a_formula_may_assign_branch_and_call_math_and_the_listed_builtins() -> None:
