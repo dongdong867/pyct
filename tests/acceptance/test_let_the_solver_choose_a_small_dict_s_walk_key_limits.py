@@ -162,6 +162,12 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
         assert line in covered(lines, WF)
 
 
+# a run's seconds where 5 are too few on a loaded machine: max-of-the-keys covers line 188 only
+# once the dict holds a key above 100, one more key an input, about 2.5 s on a quiet machine.
+# The run stops once every line and branch is covered, so a quiet run leaves the rest unused
+ESCAPE_BUDGETS = {"most": "20"}
+
+
 # let-the-solver-choose-a-small-dict-s-walk-key-keeps-v2-s-answers-past-an-escape
 @pytest.mark.parametrize(
     ("function", "seed", "v2_covers"),
@@ -188,7 +194,7 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
 )
 def test_keeps_v2_s_answers_past_an_escape(function: str, seed: str, v2_covers: set[int]) -> None:
     # v2's lines for each target are the ones its run at the base covers from the same seed
-    result = run_pyct(f"{W}::{function}", seed, "--budget", "5")
+    result = run_pyct(f"{W}::{function}", seed, "--budget", ESCAPE_BUDGETS.get(function, "5"))
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)

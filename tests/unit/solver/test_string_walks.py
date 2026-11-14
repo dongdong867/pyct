@@ -1,6 +1,9 @@
 """cvc5 against Python on the paths a walk over a string records: one fork a pass, and the
 character each pass reads, at every position of a long string."""
 
+import resource
+import time
+
 import pytest
 
 from pyct.core.foundation.branch import Branch, Expression, Site
@@ -88,22 +91,34 @@ def test_cvc5_answers_two_reads_far_apart_inside_a_second() -> None:
     assert isinstance(s, str) and s[0] == "a" and s[far] == "b"
 
 
+def cpu_seconds() -> float:
+    """The CPU seconds this process and its finished children have used: pyct writing a
+    program, and each cvc5 that answered it."""
+    children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return time.process_time() + children.ru_utime + children.ru_stime
+
+
 @needs_cvc5
 @pytest.mark.parametrize(
     ("passes", "far"), [(400, 1000), (40, 20_000)], ids=["400-1000", "40-20000"]
 )
 def test_cvc5_answers_a_walk_then_a_read_far_past_it_inside_a_second(passes: int, far: int) -> None:
     # a walk, then `s[far]`: the far read sits in the rest the walk's letters leave, so it adds
-    # no letter and no second look at the whole string
+    # no letter and no second look at the whole string. The second is CPU time: a loaded machine
+    # stretches the 0.5 s the 400-pass walk takes past a second of wall time, so the solve gets
+    # the 10 s limit its neighbors get, and pyct writes the same program under either limit
     walked = flipped_path("ab" * (passes // 2), _walk(passes), PYTHON_HEADS)
     read = (
         _fork([">", ["len", "s"], far], taken=True),
         _fork(["==", ["[]", "s", far], "'b'"], taken=True),
     )
+    before = cpu_seconds()
 
-    answer = solve((*walked, *read), {"s": str}, 1.0)
+    answer = solve((*walked, *read), {"s": str}, 10.0)
 
+    used = cpu_seconds() - before
     assert isinstance(answer, Sat), answer
+    assert used < 1.0, used
     s = answer.model["s"]
     assert isinstance(s, str) and s[far] == "b"
     assert not disagrees(walked, answer, PYTHON_HEADS, [], 0)
