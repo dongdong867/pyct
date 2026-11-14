@@ -18,7 +18,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
-from pyct.binding.builds import CLASS_KEY
 from pyct.binding.classes import (
     ClassFormError,
     Unread,
@@ -29,6 +28,7 @@ from pyct.binding.classes import (
     written,
 )
 from pyct.binding.places import step_in
+from pyct.binding.seed_keys import CLASS_KEY
 from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
 from pyct.config.llm import SEEDS_TOOL

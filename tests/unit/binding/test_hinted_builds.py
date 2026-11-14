@@ -4,10 +4,11 @@ hints reach, and planned as the call builds them."""
 import pytest
 
 from pyct.binding.annotations import Builds, Fields, Items, NoOneClass, contradictions
-from pyct.binding.builds import BuildError, object_forms, plan_call
+from pyct.binding.builds import BuildError, object_forms
 from pyct.binding.hints import hint_check
 from tests.unit.binding.hint_classes import Basket, Shape, Spot
 from tests.unit.binding.named_classes import Holder, Point
+from tests.unit.binding.plans import planned
 
 HOME = "tests.unit.binding.hint_classes"
 SPOT = {"s": Builds(Spot)}
@@ -54,7 +55,7 @@ def test_a_hinted_field_of_self_is_listed() -> None:
 def test_the_plan_calls_the_hint_s_class_at_every_level() -> None:
     args = {"s": {"at": {"x": 1, "y": 2}, "label": "a"}}
 
-    plan = plan_call(args, (), None, HOME, SPOT)
+    plan = planned(args, (), None, HOME, SPOT)
 
     assert [(build.cls, build.place) for build in plan.builds] == [(Point, "s['at']"), (Spot, "s")]
     assert plan.builds[1].keywords == {"at": args["s"]["at"], "label": "a"}
@@ -63,14 +64,14 @@ def test_the_plan_calls_the_hint_s_class_at_every_level() -> None:
 def test_a_named_class_wins_over_the_hint() -> None:
     args = {"s": {"__class__": "tests.unit.binding.named_classes::Holder", "inner": 1}}
 
-    plan = plan_call(args, (), None, HOME, SPOT)
+    plan = planned(args, (), None, HOME, SPOT)
 
     assert [build.cls for build in plan.builds] == [Holder]
 
 
 def test_a_hint_that_names_no_one_class_is_the_build_error() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"s": {"side": 1}}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
+        planned({"s": {"side": 1}}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
 
     assert (raised.value.place, raised.value.reason) == ("s", "the reason")
 
@@ -89,7 +90,7 @@ def test_a_hinted_value_gives_no_type_line() -> None:
 def test_a_list_a_hint_builds_passes_its_items_by_position() -> None:
     args = {"s": [{"x": 1, "y": 2}, "a"]}
 
-    plan = plan_call(args, (), None, HOME, SPOT)
+    plan = planned(args, (), None, HOME, SPOT)
 
     assert [(build.cls, build.place) for build in plan.builds] == [(Point, "s[0]"), (Spot, "s")]
     assert plan.builds[1].positional == [args["s"][0], "a"]
@@ -98,7 +99,7 @@ def test_a_list_a_hint_builds_passes_its_items_by_position() -> None:
 
 def test_a_list_under_a_hint_that_names_no_one_class_is_the_build_error() -> None:
     with pytest.raises(BuildError) as raised:
-        plan_call({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
+        planned({"s": [1]}, (), None, HOME, {"s": NoOneClass("the reason", (Shape,))})
 
     assert raised.value.place == "s"
 
@@ -155,7 +156,7 @@ def test_a_named_object_inside_a_list_of_a_class_gives_its_siblings_their_hint()
 def test_the_plan_builds_each_item_into_a_copy_of_the_list() -> None:
     args = {"items": [{"x": 1, "y": 2}, None], "by": {"a": [3, 4]}}
 
-    plan = plan_call(args, (), None, HOME, {**ITEMS, **BY})
+    plan = planned(args, (), None, HOME, {**ITEMS, **BY})
 
     assert sorted(build.place for build in plan.builds) == ["by['a']", "items[0]"]
     items, by = plan.keywords["items"], plan.keywords["by"]
@@ -168,7 +169,7 @@ def test_the_plan_builds_each_item_into_a_copy_of_the_list() -> None:
 
 
 def test_an_empty_list_or_dict_of_a_class_plans_no_build() -> None:
-    plan = plan_call({"items": [], "by": {}}, (), None, HOME, {**ITEMS, **BY})
+    plan = planned({"items": [], "by": {}}, (), None, HOME, {**ITEMS, **BY})
 
     assert plan.builds == []
     assert plan.keywords == {"items": [], "by": {}}
@@ -182,6 +183,6 @@ def test_an_item_under_a_hint_that_names_no_one_class_is_the_build_error() -> No
     checks = {"ss": check}
 
     with pytest.raises(BuildError) as raised:
-        plan_call({"ss": [{"side": 1}, None]}, (), None, HOME, checks)
+        planned({"ss": [{"side": 1}, None]}, (), None, HOME, checks)
 
     assert (raised.value.place, raised.value.reason) == ("ss[0]", reason)

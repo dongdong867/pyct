@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from typing import TypeGuard, cast
 
 from pyct.binding.annotations import Check, Items, int_keys
+from pyct.binding.builds import Bound
+from pyct.binding.seed_keys import written_key
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.dicts.dicts import ConcolicDict
@@ -56,9 +58,24 @@ def bind(
     fixed too, its values tracked by their places. So is a dict or list a
     class hint builds, and each value in an object form takes its
     constructor's hint, the class a bare name names read in ``home``.
+
+    The seed is seed JSON: a plain dict's key ``"!__class__"`` reaches the target as
+    ``"__class__"``, and is named by that key (``seed_keys``).
     """
+    return bind_call(seed, sink, checks, home).args
+
+
+def bind_call(
+    seed: Mapping[str, object],
+    sink: BranchSink,
+    checks: Mapping[str, Check] | None = None,
+    home: str | None = None,
+) -> Bound:
+    """What ``bind`` makes of the seed, with the object forms its walk copied, which the plan
+    of the call builds (``plan_call``)."""
     tracker = _Tracker(sink)
-    args = Walk(tracker, home).rebuilt(seed, checks)
+    walk = Walk(tracker, home)
+    args = walk.rebuilt(seed, checks)
     # each list's items are placed after the list is made, so what pyct saw of them is noted
     # once the walk is done, before the target can touch any. Each refuses a set, as a plain
     # one does, so the fields go straight into its `__dict__`
@@ -68,7 +85,7 @@ def bind(
         fields["kinds"] = kinds_of(fields["shadow"])
     for mapped in tracker.dicts:
         mapped.__dict__["shadow"] = mapped.storage()
-    return args
+    return Bound(args, walk.forms)
 
 
 class _Tracker:
@@ -98,9 +115,14 @@ class _Tracker:
     ) -> tuple[dict[object, object], dict[object, object]]:
         # a dict the solver adds int keys to, named or made up: its annotation says int
         keyed = int_keys(place.check)
-        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink, int_keyed=keyed)
+        keys: dict[object, object] = {self.copy_key(key): None for key in value}
+        made = ConcolicDict.made(keys, place.access, self.sink, int_keyed=keyed)
         self.dicts.append(made)
         return made, dict(value)
+
+    def copy_key(self, key: object) -> object:
+        # the target's dict holds each key as the walk read it
+        return key
 
 
 @dataclass(frozen=True)
@@ -116,7 +138,9 @@ class Seed:
     adds to a list with none to go by, for this input and each answer made from it. The target
     is never called with the arguments here: ``bind`` copies them again for each call. So
     they stay as the walk made them, and every solve and every answer on the input's path reads
-    them rather than walking the input again.
+    them rather than walking the input again. They are seed JSON, as a person would type
+    them: a plain dict writes its key ``"__class__"`` as ``"!__class__"``, a key the solver
+    added too, while the leaves and dicts name the key as the target reads it.
     """
 
     args: Mapping[str, object]
@@ -191,7 +215,11 @@ class Noted:
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
         self.dicts[leaf_name(place.access)] = dict_shaped(value, place.check)
-        return dict.fromkeys(value), dict(value)
+        return {self.copy_key(key): None for key in value}, dict(value)
+
+    def copy_key(self, key: object) -> object:
+        """An input holds seed JSON: a plain dict's key as the seed writes it (``seed_keys``)."""
+        return written_key(key)
 
     def shapes(self) -> dict[str, ListShape]:
         """Each list's shape, its rows first: the walk made every row after its list."""
@@ -210,7 +238,9 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     """The name and type of every value ``bind`` tracks, in the seed's order.
 
     Each is named as ``leaf_name`` names it: the leaves the solver declares and the items of
-    the lists it declares, every value a fork can name by its access.
+    the lists it declares, every value a fork can name by its access. The names follow the
+    seed JSON read with no annotations, so under ``self`` or a ``dict[int, X]`` a key may be
+    named here other than as ``bind`` names it.
     """
     noted = Noted()
     Walk(noted).rebuilt(seed)

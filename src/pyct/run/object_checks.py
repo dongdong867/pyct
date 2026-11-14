@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from pyct.binding.annotations import Builds, Check, NoOneClass, as_typed, contradictions, refused
-from pyct.binding.builds import ARGS_KEY, CLASS_KEY, Found, args_problem, object_form
+from pyct.binding.builds import Found, args_problem, object_form
 from pyct.binding.call import by_position, call_arguments, positional_only
 from pyct.binding.classes import (
     ClassFormError,
@@ -22,6 +22,7 @@ from pyct.binding.classes import (
 )
 from pyct.binding.places import step_in
 from pyct.binding.resolve import seed_annotations
+from pyct.binding.seed_keys import ARGS_KEY, CLASS_KEY
 
 # the keys that start and end with __ an object the seed names may hold
 _FORM_KEYS = frozenset({CLASS_KEY, ARGS_KEY})

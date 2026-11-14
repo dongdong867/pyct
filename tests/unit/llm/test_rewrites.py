@@ -71,6 +71,24 @@ def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
     assert "before it" not in text
 
 
+# what the request says once a value or a reason it shows writes a plain dict's escaped key
+ESCAPE_SAID = 'A dict key shown as "!__class__" is the key "__class__" the code reads'
+
+
+def test_a_request_whose_input_writes_an_escaped_key_says_how_the_code_reads_it() -> None:
+    escaped = dataclasses.replace(REQUEST, args=(("d", '{"a": 1, "!__class__": 0}'),))
+
+    assert ESCAPE_SAID not in request_text(REQUEST)
+    assert f'd = {{"a": 1, "!__class__": 0}}\n{ESCAPE_SAID}' in request_text(escaped)
+
+
+def test_a_request_whose_earlier_try_writes_an_escaped_key_says_how_the_code_reads_it() -> None:
+    reason = 'the input {"d": {"!!__class__": 0}} took the other side'
+    tried = dataclasses.replace(REQUEST, tries=(EarlierTry('d["a"] == 1', reason),))
+
+    assert ESCAPE_SAID in request_text(tried)
+
+
 def test_a_rewrites_ask_asks_about_the_site_and_hands_the_reply_back() -> None:
     caller = Answering(Reply('s == "-1e-30"', COST))
 
