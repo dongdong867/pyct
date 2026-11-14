@@ -194,8 +194,9 @@ class Summaries:
             self.told.note(SummarySkipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK))
             return Asked.NOT_ASKED, False
         state = state or LoopState(loop.piece.changed)
+        request = self._request(loop, state)
         started = time.monotonic()
-        answer = self.provider.summarize(self._request(loop, state))
+        answer = self.provider.summarize(request)
         run.pause(time.monotonic() - started)
         if isinstance(answer, Unanswered):
             self._unanswered(site, state, answer)

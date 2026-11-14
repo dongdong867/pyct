@@ -4,6 +4,7 @@ hands back for each entry, given records made by hand."""
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 
 import pytest
 
@@ -15,7 +16,7 @@ from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.results.record import Source as RecordSource
-from pyct.run import model_runs
+from pyct.run import model_runs, summaries
 from pyct.run.bounds import Bounds
 from pyct.run.notes import (
     AskSkipped,
@@ -117,6 +118,26 @@ def taken(
     tool = Summaries(fake, load_target("targets.why.stuck::counts"), told)
     run = Run(records)
     return tool.take(tuple(entries), Moment(1, tuple(entries), run)), notes, run
+
+
+def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr(summaries, "time", SimpleNamespace(monotonic=lambda: now[0]))
+
+    def building(*_args: object) -> str:
+        now[0] += 10.0
+        return ""
+
+    class Waits(Fake):
+        def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
+            now[0] += 3.0
+            return super().summarize(request)
+
+    monkeypatch.setattr(summaries, "code_with_piece", building)
+
+    _, _, run = taken(Waits(), [entry(LOOPED)], [record(counted("a"))])
+
+    assert run.paused == [3.0]
 
 
 def test_a_loop_two_entries_name_is_asked_about_once() -> None:
