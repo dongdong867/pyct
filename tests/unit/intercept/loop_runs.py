@@ -209,6 +209,7 @@ _RUNS: list[tuple[str, tuple[object, ...], str, str]] = [
     ("while_or_last_in_if_in_try", (False, None), "", "else"),
     ("while_genexp_if", ([1, 5], 0), "", "left"),
     ("while_listcomp_if", ([1, 5], 0), "", "left"),
+    ("while_genexp_if_one_line", ([1, 5], 0), "in 2:4, out 2:4", "test false"),
     (
         "while_and_assign_hooked",
         (2, [0, 1, 2]),

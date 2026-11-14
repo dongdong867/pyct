@@ -332,6 +332,10 @@ LOOPS: dict[str, str] = {
     "while_genexp_if": (
         "def f(xs, n):\n    while sum(1 for x in xs if x > n):\n        n += 1\n    return n\n"
     ),
+    # the same on one line with its body, which the condition's landing then shares, so it is hooked
+    "while_genexp_if_one_line": (
+        "def f(xs, n):\n    while sum(1 for x in xs if x > n): n += 1\n    return n\n"
+    ),
     "while_listcomp_if": (
         "def f(xs, n):\n    while [x for x in xs if x > n]:\n        n += 1\n    return n\n"
     ),
