@@ -5,11 +5,12 @@ ask that holds its condition.
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
 ``timeout`` or an ``unknown``, in line order, one condition at a time, and
 ask about each up to 4 times (``pyct.rewrite.tries``). An ask that got no
-answer is said and ends that condition's tries; once a reply leaves no token
-under the limit, or an ask meets it, no rewrite is asked for again this run,
-and the connection has said so. A rewrite runs only in a child forked from
-pyct's process: while pyct's process runs another thread, before an ask or
-when the rewrite would run, the condition is skipped at this moment
+answer is said and ends that condition's tries; once any tool's reply leaves
+no token under the limit, or an ask meets it, no rewrite is asked for again
+this run (``pyct.run.token_limit``), and the connection has said so. A
+rewrite runs only in a child forked from pyct's process: while pyct's process
+runs another thread, before an ask or when the rewrite would run, the
+condition is skipped at this moment
 (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all).
 A condition with no parameter a rewrite may read is given up at this
 moment, unasked, so a later tool may take it.
@@ -51,6 +52,7 @@ from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
+from pyct.run.token_limit import TokenLimit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown
 from pyct.solver.given import Given
 
@@ -64,19 +66,26 @@ class Rewrites(Asker):
 
     kind = Kind.REWRITES
 
-    def __init__(self, provider: RewriteProvider, target: Target, told: Told) -> None:
+    def __init__(
+        self,
+        provider: RewriteProvider,
+        target: Target,
+        told: Told,
+        limit: TokenLimit | None = None,
+    ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
+        self.limit = TokenLimit() if limit is None else limit
         self.given_up: dict[Condition, GivenUp] = {}
         self.kept = Kept()
         self._used: tuple[Condition, ...] = ()
-        self._limit_reached = False
 
     @property
     def can_ask(self) -> bool:
-        """Whether rewrites may still ask this run: false once the token limit is reached."""
-        return not self._limit_reached
+        """Whether rewrites may still ask this run: false once the run's token limit is
+        reached, by any tool's ask."""
+        return not self.limit.reached
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         """Ask about each entry's condition in turn; ``took``, ``gave up`` or ``skipped`` each."""
@@ -84,7 +93,7 @@ class Rewrites(Asker):
         asked = False
         for entry in entries:
             given = None if entry.condition is None else self.given_up.get(entry.condition)
-            if given is None or self._limit_reached or not going(moment.run):
+            if given is None or self.limit.reached or not going(moment.run):
                 outcomes.append(Outcome.SKIPPED)
                 continue
             tried = self._asking(given).tries(_Around(moment.run, self.told))
@@ -147,13 +156,13 @@ class Rewrites(Asker):
 
     def _outcome(self, tried: Tried) -> Outcome:
         """What the tries come to, said: an ask that got no answer is skipped, and once the
-        token limit is reached, by a reply or a refused ask, no condition asks again."""
+        token limit is reached, by a reply or a refused ask, no tool asks again."""
         if tried.spent:
-            self._limit_reached = True
+            self.limit.reach()
         unanswered = tried.unanswered
         if unanswered is not None:
             if unanswered.why is Why.LIMIT:
-                self._limit_reached = True
+                self.limit.reach()
             else:
                 self.told.note(AskSkipped(REWRITES_TOOL, unanswered.reason))
             return Outcome.SKIPPED

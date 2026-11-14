@@ -13,8 +13,9 @@ from pyct.results.record import Environment, RunResult, Source
 from pyct.run.as_found import modules_as_found
 from pyct.run.bounds import Bounds
 from pyct.run.defaults import with_defaults
+from pyct.run.helpers import Helpers
 from pyct.run.isolation import Inputs
-from pyct.run.llm_seeds import ask_seeds
+from pyct.run.llm_seeds import SeedProvider, ask_seeds
 from pyct.run.loop import Loop, Start
 from pyct.run.rewrites import Rewrites
 from pyct.run.setup import Setup
@@ -22,6 +23,7 @@ from pyct.run.stuck import Stuck, StuckTool
 from pyct.run.summaries import Summaries
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Tell, Told
+from pyct.run.token_limit import TokenLimit, heard_seeds
 from pyct.solver import walk_keys
 from pyct.solver.locate import locate, version
 
@@ -94,8 +96,10 @@ def run(
     cvc5 = version(locate())
     bounds = Bounds.of(limits, len(seeds))
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
-    starts, bounds = _starts(target, seeds, setup, bounds, told)
-    loop, summaries = _loop(target, inputs, bounds, told, setup)
+    limit = TokenLimit()
+    starts, bounds = _starts(target, seeds, heard_seeds(setup.helpers.seeds, limit), bounds, told)
+    summaries, rewrites = _tools(setup.helpers, target, told, limit)
+    loop = _loop(inputs, bounds, told, summaries, rewrites)
     looped = loop.go(starts)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
@@ -114,28 +118,38 @@ def run(
     )
 
 
+def _tools(
+    helpers: Helpers, target: Target, told: Told, limit: TokenLimit
+) -> tuple[Summaries | None, Rewrites | None]:
+    """The LLM tools that take missed lines, each that is switched on, sharing the run's token
+    limit."""
+    summaries = helpers.summaries
+    rewrites = helpers.rewrites
+    return (
+        None if summaries is None else Summaries(summaries, target, told, limit),
+        None if rewrites is None else Rewrites(rewrites, target, told, limit),
+    )
+
+
 def _loop(
-    target: Target, inputs: Inputs, bounds: Bounds, told: Told, setup: Setup
-) -> tuple[Loop, Summaries | None]:
+    inputs: Inputs,
+    bounds: Bounds,
+    told: Told,
+    summaries: Summaries | None,
+    rewrites: Rewrites | None,
+) -> Loop:
     """The run's loop, with each LLM tool that takes missed lines switched on in its moments:
-    none, and the run is never stuck. Also the summaries tool, which the result reads."""
-    helpers = setup.helpers
-    tools: list[StuckTool] = []
-    summaries = None if helpers.summaries is None else Summaries(helpers.summaries, target, told)
-    if summaries is not None:
-        tools.append(summaries)
-    rewrites = None if helpers.rewrites is None else Rewrites(helpers.rewrites, target, told)
-    if rewrites is not None:
-        tools.append(rewrites)
+    none, and the run is never stuck."""
+    tools: list[StuckTool] = [tool for tool in (summaries, rewrites) if tool is not None]
     if not tools:
-        return Loop(inputs, bounds, told), summaries
-    return Loop(inputs, bounds, told, Stuck(tools), rewrites), summaries
+        return Loop(inputs, bounds, told)
+    return Loop(inputs, bounds, told, Stuck(tools), rewrites)
 
 
 def _starts(
     target: Target,
     seeds: Sequence[Mapping[str, object]],
-    setup: Setup,
+    provider: SeedProvider | None,
     bounds: Bounds,
     told: Told,
 ) -> tuple[tuple[Start, ...], Bounds]:
@@ -145,7 +159,6 @@ def _starts(
     The ask comes once the deadline is set and before the first input. Its wait is added back
     to the budget; building the request and checking the seeds count toward it.
     """
-    provider = setup.helpers.seeds
     asked = None if provider is None else ask_seeds(provider, target, seeds, bounds.goal, told)
     checks = argument_checks(target)
     starts = [Start(Seed.of(with_defaults(target, each), checks, target.home)) for each in seeds]

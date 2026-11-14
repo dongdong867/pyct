@@ -62,6 +62,7 @@ from pyct.run.summary_checks import (
 )
 from pyct.run.target import Target
 from pyct.run.tell import Told
+from pyct.run.token_limit import TokenLimit
 
 # the recorded runs a request shows at most
 SHOWN_RUNS = 10
@@ -160,17 +161,24 @@ class Summaries:
 
     kind = Kind.SUMMARIES
 
-    def __init__(self, provider: SummaryProvider, target: Target, told: Told) -> None:
+    def __init__(
+        self,
+        provider: SummaryProvider,
+        target: Target,
+        told: Told,
+        limit: TokenLimit | None = None,
+    ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
+        self.limit = TokenLimit() if limit is None else limit
         self.loops: dict[Site, LoopState] = {}
-        self._limit_reached = False
 
     @property
     def can_ask(self) -> bool:
-        """Whether summaries may still ask this run: false once the token limit is reached."""
-        return not self._limit_reached
+        """Whether summaries may still ask this run: false once the run's token limit is
+        reached, by any tool's ask."""
+        return not self.limit.reached
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         """Ask once about each loop the entries' sources name, in code order; ``took``, ``gave
@@ -182,7 +190,7 @@ class Summaries:
         came: dict[Site, Asked] = {}
         asked = False
         for site in sites:
-            if self._limit_reached or not going(moment.run):
+            if self.limit.reached or not going(moment.run):
                 came[site] = Asked.NOT_ASKED
                 continue
             came[site], made = self._turn(site, moment.run)
@@ -257,20 +265,19 @@ class Summaries:
 
     def _unanswered(self, site: Site, state: LoopState, answer: Unanswered) -> None:
         """An ask that got no answer, said and kept for its loop; one the token limit refused
-        left no request, and once the limit is reached no loop asks again."""
+        left no request, and once the limit is reached no tool asks again."""
         if answer.why is Why.LIMIT:
-            self._limit_reached = True
+            self.limit.reach()
             return
         self._sent(site, state, answer.cost)
         self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
 
     def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
         """The loop's state kept once an ask for it was sent, with the connection's try number;
-        an answer that leaves no token under the limit ends the asks for the run."""
+        an answer that leaves no token under the limit reaches the run's limit."""
         self.loops[site] = state
         state.attempts = cost.attempt
-        if cost.tokens_left == 0:
-            self._limit_reached = True
+        self.limit.heard(cost)
 
     def states(self) -> tuple[LoopSummary, ...]:
         """Each loop an ask was sent for, in code order, as the summary line lists it."""
