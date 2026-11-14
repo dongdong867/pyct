@@ -117,12 +117,12 @@ def _passed(argument: ast.expr, name: str, parts: Parts, then: ast.expr) -> ast.
     the call, as they landed there.
     """
     call = ast.Call(func=parts.named(name, argument), args=[argument], keywords=[])
-    if _jumps_past(argument):
+    if jumps_past(argument):
         return ast.copy_location(call, then)
     return after_the_value(call, argument)
 
 
-def _jumps_past(argument: ast.expr) -> bool:
+def jumps_past(argument: ast.expr) -> bool:
     """Whether a part's own jumps land past its last instruction: an `and` or `or`, a
     conditional expression, and a chained compare."""
     if isinstance(argument, ast.NamedExpr):

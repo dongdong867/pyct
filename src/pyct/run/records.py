@@ -52,4 +52,5 @@ def record_of(
         mismatch_at=None if wanted is None else compare(wanted.prefix, executed.branches),
         reach=executed.reach,
         solver_seconds=seconds,
+        pieces=executed.pieces,
     )

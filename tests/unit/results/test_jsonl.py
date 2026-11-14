@@ -1,7 +1,7 @@
 import json
 
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Changed, Expression, GoingIn, PieceRun, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -45,6 +45,16 @@ def test_render_is_one_json_line_with_sorted_lines() -> None:
         "mismatch_at": None,
         "solver_seconds": None,
     }
+
+
+def test_render_leaves_the_recorded_runs_of_pieces_off_the_line() -> None:
+    site = Site(file="m.py", line=5, col=4)
+    run = PieceRun(
+        site=site, going_in=(GoingIn("x", "1", tracked=True),), changed=(Changed("t", "2"),)
+    )
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}), pieces=(run,))
+
+    assert render(record, COVERAGE) == render(SEED, COVERAGE)
 
 
 def test_render_writes_each_fork_with_its_site_and_expression() -> None:

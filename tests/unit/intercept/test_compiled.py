@@ -43,7 +43,7 @@ def test_a_module_that_does_not_compile_raises_python_s_own_error_as_the_target_
 
 
 def test_a_transform_that_fails_is_pyct_s(monkeypatch: pytest.MonkeyPatch) -> None:
-    def broken(tree: ast.Module) -> ast.Module:
+    def broken(tree: ast.Module, *, pieces: bool = False) -> ast.Module:
         raise ValueError("no")
 
     monkeypatch.setattr(compiled, "substitute", broken)
@@ -56,7 +56,7 @@ def test_a_transform_that_fails_is_pyct_s(monkeypatch: pytest.MonkeyPatch) -> No
 def test_a_substituted_tree_that_does_not_compile_where_the_source_does_is_pyct_s(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def unplaced(tree: ast.Module) -> ast.Module:
+    def unplaced(tree: ast.Module, *, pieces: bool = False) -> ast.Module:
         tree.body[0].lineno = 9  # pyrefly: ignore[missing-attribute]
         return tree
 

@@ -51,7 +51,9 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   │                 a fixed set of operations, `is True`, `in`, conversions and literal
 │   │                 operands, substituted by calls into core, kept in `.pyct_cache/` or
 │   │                 `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's own.
-│   │                 model_code.py compiles model-written code the same way, and runs none of it
+│   │                 model_code.py compiles model-written code the same way, and runs none of it.
+│   │                 With the pieces switch on, loops.py writes hooks around each loop and
+│   │                 comprehension's assignment that changes a name, so core records its runs
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue

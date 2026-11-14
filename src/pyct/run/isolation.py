@@ -50,7 +50,7 @@ from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, flush_streams, serve
 from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
-from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal import CAPACITY, PIECE_ROOM, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
 from pyct.run.target import Target, execution_context
@@ -194,9 +194,10 @@ def in_a_child(
 
 @contextlib.contextmanager
 def mapped_journal() -> Generator[mmap.mmap]:
-    """An anonymous shared mapping the child inherits, freed once it is read."""
+    """An anonymous shared mapping the child inherits, freed once it is read: the journal's own
+    bytes, then the room of the recorded runs of the input's pieces."""
     try:
-        buffer = mmap.mmap(-1, CAPACITY)
+        buffer = mmap.mmap(-1, CAPACITY + PIECE_ROOM)
     except OSError as error:
         raise InputStartError(f"could not map the input's journal: {error}") from error
     try:
@@ -222,5 +223,5 @@ def forked(buffer: mmap.mmap, call: Served) -> int:
         raise InputStartError(f"could not start a child process: {error}") from error
     if pid == 0:
         # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
-        serve(JournalWriter(buffer), call)  # pragma: no cover
+        serve(JournalWriter(buffer, pieces=PIECE_ROOM), call)  # pragma: no cover
     return pid

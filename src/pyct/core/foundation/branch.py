@@ -176,12 +176,47 @@ class Downgrade:
     site: Site
 
 
-# what a sink holds: the forks, the facts and the downgrades, in the order they happened
-type SinkItem = Branch | Fact | Downgrade
+@dataclass(frozen=True)
+class GoingIn:
+    """A name going into a run of a piece of the target's code, bound when the run started: its
+    value then, as JSON text, and whether it was a tracked value."""
+
+    name: str
+    value: str
+    tracked: bool
+
+
+@dataclass(frozen=True)
+class Changed:
+    """A changed name of a run of a piece of the target's code, bound when the run ended, and
+    its value then, as JSON text."""
+
+    name: str
+    value: str
+
+
+@dataclass(frozen=True)
+class PieceRun:
+    """One recorded run of a piece of the target's code: a loop, or an assignment of a
+    comprehension (`pyct.core.entry.pieces`).
+
+    ``site`` is the piece's file, line and column. ``going_in`` and
+    ``changed`` follow the order of the piece's names, each sorted, and leave
+    out a name that was not bound.
+    """
+
+    site: Site
+    going_in: tuple[GoingIn, ...]
+    changed: tuple[Changed, ...]
+
+
+# what a sink holds: the forks, the facts, the downgrades and the recorded runs of pieces, in the
+# order they happened
+type SinkItem = Branch | Fact | Downgrade | PieceRun
 
 
 class BranchSink(Protocol):
-    """Where forks, facts and downgrades go, in the order they happened.
+    """Where forks, facts, downgrades and recorded runs of pieces go, in the order they happened.
 
     core defines the one method and pushes, never reads. A plain list
     serves in tests; a real tree serves in a run. The parameter is

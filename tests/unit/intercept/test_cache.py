@@ -1,9 +1,11 @@
 """Substituted code kept between runs: where, for which source, and what a failure costs."""
 
 import ast
+import hashlib
 import importlib
 import importlib.util
 import os
+import sys
 import types
 from pathlib import Path
 
@@ -106,6 +108,39 @@ def test_a_touched_file_with_the_same_source_is_kept_and_then_trusted(tmp_path: 
     module.code(tmp_path / "cache")
 
     assert (module.reads, module.builds) == (2, ["x = 1"])
+
+
+def test_an_entry_kept_with_no_variant_is_where_it_always_was(tmp_path: Path) -> None:
+    module = Module(tmp_path, "x = 1")
+
+    module.code(tmp_path / "cache")
+
+    # the module's path, the Python that compiles it and its optimize level name the entry, in a
+    # folder per version of the transform; a change here orphans every user's cache
+    key = b"\0".join(
+        (
+            os.fsencode(str(module.path)),
+            importlib.util.MAGIC_NUMBER,
+            str(sys.flags.optimize).encode(),
+        )
+    )
+    name = hashlib.sha256(key).hexdigest()[:32]
+    assert entries(tmp_path / "cache") == [
+        tmp_path / "cache" / "substituted" / cache._version() / name
+    ]
+
+
+@pytest.mark.usefixtures("settled")
+def test_code_built_for_a_variant_is_kept_apart_from_the_plain_entry(tmp_path: Path) -> None:
+    module = Module(tmp_path, "x = 1")
+
+    plain = module.code(tmp_path / "cache")
+    varied = cached(tmp_path / "cache", str(module.path), module.read, module.build, "pieces")
+    again = cached(tmp_path / "cache", str(module.path), module.read, module.build, "pieces")
+
+    assert module.builds == ["x = 1", "x = 1"]
+    assert len(entries(tmp_path / "cache")) == 2
+    assert plain.co_consts == varied.co_consts == again.co_consts
 
 
 def test_another_module_path_has_its_own_entry(tmp_path: Path) -> None:

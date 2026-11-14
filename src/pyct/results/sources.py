@@ -29,8 +29,8 @@ type At = tuple[int, int]
 
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)
 _SCOPES = (*_FUNCTIONS, ast.ClassDef)
-_LOOPS = (ast.For, ast.AsyncFor, ast.While)
-_COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+LOOPS = (ast.For, ast.AsyncFor, ast.While)
+COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
 # the parts a downgrade's site can name
 _LOSES = (ast.Call, ast.BinOp, ast.UnaryOp, ast.Compare, ast.Subscript)
 # the most nodes a callee's text is written from
@@ -193,9 +193,9 @@ def _with_loops(
         yield node, loop
         if isinstance(node, _SCOPES):
             continue
-        outside = _outside(node) if isinstance(node, _LOOPS) else []
+        outside = _outside(node) if isinstance(node, LOOPS) else []
         children = [
-            (child, node if isinstance(node, _LOOPS) and child not in outside else loop)
+            (child, node if isinstance(node, LOOPS) and child not in outside else loop)
             for child in ast.iter_child_nodes(node)
         ]
         for child, _ in children:
@@ -268,9 +268,9 @@ def _comprehension_names(test: ast.expr, parents: dict[int, ast.AST]) -> dict[st
     names: dict[str, list[_Binding]] = {}
     node = parents.get(id(test))
     while node is not None:
-        if isinstance(node, _COMPREHENSIONS):
+        if isinstance(node, COMPREHENSIONS):
             for generator in node.generators:
-                for name in _names_in(generator.target):
+                for name in names_in(generator.target):
                     names.setdefault(name, [_Binding(generator.iter, node)])
         node = parents.get(id(node))
     return names
@@ -288,29 +288,29 @@ def _bound_by(node: ast.AST, loop: ast.stmt | None) -> Iterator[tuple[str, _Bind
     """The names one statement or expression binds, each with how."""
     if isinstance(node, ast.Assign):
         for target in node.targets:
-            for name in _names_in(target):
+            for name in names_in(target):
                 yield name, _Binding(node.value, loop)
     elif isinstance(node, ast.AugAssign | ast.AnnAssign | ast.NamedExpr) and node.value is not None:
         # an augmented assignment reads its own name too, which the reading has already read
-        for name in _names_in(node.target):
+        for name in names_in(node.target):
             yield name, _Binding(node.value, loop)
     elif isinstance(node, ast.For | ast.AsyncFor):
-        for name in _names_in(node.target):
+        for name in names_in(node.target):
             yield name, _Binding(node.iter, node)
     elif isinstance(node, ast.withitem) and node.optional_vars is not None:
-        for name in _names_in(node.optional_vars):
+        for name in names_in(node.optional_vars):
             yield name, _Binding(node.context_expr, loop)
 
 
-def _names_in(target: ast.expr) -> Iterator[str]:
+def names_in(target: ast.expr) -> Iterator[str]:
     """The plain names an assignment target binds; an attribute or a subscript binds none."""
     if isinstance(target, ast.Name):
         yield target.id
     elif isinstance(target, ast.Tuple | ast.List):
         for element in target.elts:
-            yield from _names_in(element)
+            yield from names_in(element)
     elif isinstance(target, ast.Starred):
-        yield from _names_in(target.value)
+        yield from names_in(target.value)
 
 
 @dataclass
@@ -357,7 +357,7 @@ class _Reading:
         while pending:
             self.origins.step()
             node = pending.pop()
-            if isinstance(node, _COMPREHENSIONS):
+            if isinstance(node, COMPREHENSIONS):
                 self._add(SourceKind.LOOP, name or _first_name(node, carried), node)
                 continue
             if self._lost_in(node, carried):
@@ -412,7 +412,7 @@ def _first_name(node: ast.AST, carried: frozenset[str]) -> str:
     """The first name an expression reads as a value that a parameter carries to, else the
     first name it reads, else its text: a comprehension's first iterable's, and within a call
     its arguments' before its callee's (`_in_order`)."""
-    part = node.generators[0].iter if isinstance(node, _COMPREHENSIONS) else node
+    part = node.generators[0].iter if isinstance(node, COMPREHENSIONS) else node
     names = [
         each.id
         for each in _in_order(part)

@@ -30,7 +30,9 @@ the target's runs with no frame of pyct's above it. An operator's right side
 goes through `handed` (`pyct.core.entry.handed`) before Python's own operator runs,
 so no frame of pyct's is above the target's own operator either.
 Any other call with an argument is watched (`pyct.core.entry.watch`), for an
-answer that lost a tracked value.
+answer that lost a tracked value. A module compiled with the pieces switch
+on imports the hooks around a loop or an assignment of a comprehension from
+`pyct.core.entry.pieces` itself, so one compiled with it off never loads them.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So

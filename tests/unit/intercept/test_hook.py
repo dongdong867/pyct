@@ -1,6 +1,7 @@
 """The import hook: which modules it claims, how it loads them, and how long it stays."""
 
 import builtins
+import dataclasses
 import importlib
 import importlib.machinery
 import importlib.resources
@@ -145,6 +146,26 @@ def test_a_reload_inside_the_block_of_a_module_imported_before_it_runs(package: 
         reloaded = importlib.reload(helper)
 
     assert reloaded.helper(True) is True
+
+
+def test_code_compiled_with_the_pieces_switch_on_is_kept_apart(package: Path) -> None:
+    plain = interception(package.parent)
+    switched = dataclasses.replace(plain, pieces=True)
+    kept = plain.cache / "substituted"
+
+    assert plain.pieces is False
+    with intercepting(plain):
+        importlib.import_module("pkghook.helper")
+    before = sorted(path.name for path in kept.rglob("*") if path.is_file())
+    for name in ("pkghook", "pkghook.helper"):
+        del sys.modules[name]
+    with intercepting(switched):
+        importlib.import_module("pkghook.helper")
+    after = sorted(path.name for path in kept.rglob("*") if path.is_file())
+
+    # the package and the helper, each once with the switch off and once with it on
+    assert len(before) == 2 and len(after) == 4
+    assert set(before) < set(after)
 
 
 def test_two_open_blocks_over_one_package_import_it_once(package: Path) -> None:

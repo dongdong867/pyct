@@ -29,7 +29,8 @@ link there becomes an `in` on ``__pyct_identity__`` whatever its right,
 and a compare runs on the operand the call holds
 (interception-chain-links-searched-through-a-container).
 
-The module binds those names itself, in an import placed before its first
+The module binds those names itself, in an import of each module that
+defines some (`FROM`), placed before its first
 statement that runs code, after its docstring and its ``__future__``
 imports and at that statement's first instruction
 (`positions.statement_start`), so it adds no line and the code has them in
@@ -69,7 +70,7 @@ from __future__ import annotations
 import ast
 
 from pyct.core.entry.hashed import SEARCHED_MOST
-from pyct.intercept import bool_returns, calls, operators, percents, unpacks, watch
+from pyct.intercept import bool_returns, calls, loops, operators, percents, unpacks, watch
 from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
@@ -82,7 +83,7 @@ _NAMES: dict[type[ast.cmpop], str] = {
 # the name a chain's `in` link searches through, and the one an `is` link's right side becomes
 _SEARCHED = "__pyct_searched__"
 _IDENTITY = "__pyct_identity__"
-# the function of pyct.core.entry.substitutes each name any rule calls is bound to
+# the function each name any rule calls is bound to, of the module `FROM` names
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
@@ -96,6 +97,7 @@ BOUND: dict[str, str] = {
     **bool_returns.BOUND,
     **unpacks.BOUND,
     **watch.BOUND,
+    **loops.BOUND,
 }
 # every name pyct binds, which no rule takes a call of
 _RESERVED = frozenset(BOUND)
@@ -108,8 +110,12 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.NotIn: ast.In,
 }
 
-# the module the bound names come from
+# the module each bound name comes from: pyct.core.entry.substitutes, but for the loop hooks,
+# which a module compiled with the pieces switch off never loads
 _SUBSTITUTES = "pyct.core.entry.substitutes"
+FROM: dict[str, str] = {
+    name: loops.HOOKS if name in loops.BOUND else _SUBSTITUTES for name in BOUND
+}
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -120,8 +126,12 @@ _ANNOTATIONS: dict[type[ast.AST], str] = {
 }
 
 
-def substitute(tree: ast.Module) -> ast.Module:
+def substitute(tree: ast.Module, *, pieces: bool = False) -> ast.Module:
     """Replace every operation a rule takes in the tree, in place, and return the tree.
+
+    With ``pieces``, each loop and comprehension assignment of a function
+    gets pyct's hooks first (`loops`), placed by the tree as written, and
+    the walk then meets them as any other code.
 
     The walk keeps its own stack rather than recursing, so a deeply nested
     expression, such as a long chain of `+`, needs no deeper Python stack
@@ -131,25 +141,33 @@ def substitute(tree: ast.Module) -> ast.Module:
     substitutes.
     """
     parts = Parts(tree)
+    if pieces:
+        loops.hooked(tree, parts)
     pending: list[ast.AST] = [tree]
     classes: list[ast.ClassDef] = []
     called: set[str] = set()
     while pending:
         node = pending.pop()
         _met_statement(node, classes, parts)
-        skipped = _ANNOTATIONS.get(type(node))
-        for field, value in ast.iter_fields(node):
-            if field == skipped:
-                continue
-            if isinstance(value, list):
-                value[:] = [_visited(item, pending, parts) for item in value]
-            elif isinstance(value, ast.AST):
-                setattr(node, field, _visited(value, pending, parts))
+        _visit_fields(node, pending, parts)
         if isinstance(node, ast.Name) and node.id in BOUND:
             called.add(node.id)
     if called:
         _bind(tree, classes, [name for name in BOUND if name in called])
     return tree
+
+
+def _visit_fields(node: ast.AST, pending: list[ast.AST], parts: Parts) -> None:
+    """Replace each part of the node a rule takes, and queue each part for the walk, but for an
+    annotation."""
+    skipped = _ANNOTATIONS.get(type(node))
+    for field, value in ast.iter_fields(node):
+        if field == skipped:
+            continue
+        if isinstance(value, list):
+            value[:] = [_visited(item, pending, parts) for item in value]
+        elif isinstance(value, ast.AST):
+            setattr(node, field, _visited(value, pending, parts))
 
 
 def _met_statement(node: ast.AST, classes: list[ast.ClassDef], parts: Parts) -> None:
@@ -358,7 +376,7 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> No
     for index in range(start, len(body)):
         found = statement_start(body[:start], body[index])
         if found is not None:
-            body.insert(index, _imported(names, *found))
+            body[index:index] = _imported(names, *found)
             break
     for owner in classes:
         place = _after_preamble(owner.body, module=False)
@@ -367,10 +385,17 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> No
         owner.body.insert(place, _at(declared, where.lineno, where.col_offset))
 
 
-def _imported(names: list[str], line: int, column: int) -> ast.ImportFrom:
-    """``from pyct.core.entry.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
-    aliases = [_at(ast.alias(name=BOUND[name], asname=name), line, column) for name in names]
-    return _at(ast.ImportFrom(module=_SUBSTITUTES, names=aliases, level=0), line, column)
+def _imported(names: list[str], line: int, column: int) -> list[ast.stmt]:
+    """``from pyct.core.entry.substitutes import in_ as __pyct_in__, ...``, one for each module
+    the names come from, in the order first named, each placed at one spot."""
+    aliases: dict[str, list[ast.alias]] = {}
+    for name in names:
+        alias = _at(ast.alias(name=BOUND[name], asname=name), line, column)
+        aliases.setdefault(FROM[name], []).append(alias)
+    return [
+        _at(ast.ImportFrom(module=module, names=held, level=0), line, column)
+        for module, held in aliases.items()
+    ]
 
 
 def _after_preamble(body: list[ast.stmt], *, module: bool) -> int:
