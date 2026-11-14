@@ -26,7 +26,7 @@ from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
 from pyct.run.loop import Solved
 from pyct.run.process import InputStartError
-from pyct.run.rewrites import Rewrites, _Around, _Child, _module_of
+from pyct.run.rewrites import Rewrites, _Around, _Child
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
@@ -130,9 +130,9 @@ def test_the_place_names_the_module_by_its_dotted_name() -> None:
     target = loaded(TEXT)
     helper = sys.modules[json.__name__]
 
-    assert _module_of(target.file, target) == "targets.rewrites.text"
-    assert _module_of(str(helper.__file__), target) == "json"
-    assert _module_of("/nowhere/lost.py", target) == "lost"
+    assert target.module_of(target.file) == "targets.rewrites.text"
+    assert target.module_of(str(helper.__file__)) == "json"
+    assert target.module_of("/nowhere/lost.py") == "lost"
 
 
 def kept_at_line_2() -> tuple[Rewrites, Site]:

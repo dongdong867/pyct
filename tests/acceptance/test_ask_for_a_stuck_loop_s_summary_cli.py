@@ -44,6 +44,8 @@ def test_the_recording_summaries_switches_on_changes_no_input(tmp_path: Path) ->
 
     assert asked.returncode == 0, asked.stderr
     assert plain.returncode == 0, plain.stderr
+    # the moment came, and its ask failed
+    assert any(line.startswith("llm: summaries ask skipped: ") for line in llm_lines(asked.stderr))
 
     def inputs(stdout: str) -> list[tuple[object, object, object]]:
         return [(line["args"], line["covered"], line["forks"]) for line in input_lines(stdout)]

@@ -209,6 +209,12 @@ class Stuck:
         )
 
 
+def going(run: Running) -> bool:
+    """Whether a tool's ask or try may start: the run met no stop and its budget is not spent."""
+    until = run.bounds.until
+    return run.stopped is None and (until is None or until > time.monotonic())
+
+
 def _goes_on(run: Running, progress: Progress) -> bool:
     """Whether the run goes on with a line to win: no stop met, the budget not spent, a line
     missed, and not every line and branch covered for the coverage goal."""

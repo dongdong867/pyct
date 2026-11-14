@@ -18,7 +18,8 @@ from pyct.run.llm_seeds import ask_seeds
 from pyct.run.loop import Loop, Start
 from pyct.run.rewrites import Rewrites
 from pyct.run.setup import Setup
-from pyct.run.stuck import Stuck
+from pyct.run.stuck import Stuck, StuckTool
+from pyct.run.summaries import Summaries
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Tell, Told
 from pyct.solver import walk_keys
@@ -115,11 +116,16 @@ def run(
 def _loop(target: Target, inputs: Inputs, bounds: Bounds, told: Told, setup: Setup) -> Loop:
     """The run's loop, with each LLM tool that takes missed lines switched on in its moments:
     none, and the run is never stuck."""
-    provider = setup.helpers.rewrites
-    if provider is None:
+    helpers = setup.helpers
+    tools: list[StuckTool] = []
+    if helpers.summaries is not None:
+        tools.append(Summaries(helpers.summaries, target, told))
+    rewrites = None if helpers.rewrites is None else Rewrites(helpers.rewrites, target, told)
+    if rewrites is not None:
+        tools.append(rewrites)
+    if not tools:
         return Loop(inputs, bounds, told)
-    rewrites = Rewrites(provider, target, told)
-    return Loop(inputs, bounds, told, Stuck([rewrites]), rewrites)
+    return Loop(inputs, bounds, told, Stuck(tools), rewrites)
 
 
 def _starts(

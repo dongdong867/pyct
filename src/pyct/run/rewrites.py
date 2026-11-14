@@ -24,11 +24,9 @@ dropped, and said.
 from __future__ import annotations
 
 import dataclasses
-import sys
 import time
 import types
 from collections.abc import Mapping
-from pathlib import Path
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
@@ -50,7 +48,7 @@ from pyct.run.loop import Asker, Solved, solver_answer
 from pyct.run.model_runs import CannotFork, ModelCall, can_fork, run_model
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
-from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running
+from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown
@@ -81,7 +79,7 @@ class Rewrites(Asker):
         asked = False
         for entry in entries:
             given = None if entry.condition is None else self.given_up.get(entry.condition)
-            if given is None or self._limit_reached or not _going(moment.run):
+            if given is None or self._limit_reached or not going(moment.run):
                 outcomes.append(Outcome.SKIPPED)
                 continue
             tried = self._asking(given).tries(_Around(moment.run, self.told))
@@ -132,7 +130,7 @@ class Rewrites(Asker):
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
         files = {site.file, *(fork.site.file for fork in given.plan.prefix)}
-        modules = {file: _module_of(file, self.target) for file in files}
+        modules = {file: self.target.module_of(file) for file in files}
         about = About(
             place=f"{modules[site.file]}:{site.line}:{site.col}",
             code=code_around(site.file, site.line),
@@ -165,7 +163,7 @@ class _Around:
         self.told = told
 
     def going(self) -> bool:
-        return _going(self.run)
+        return going(self.run)
 
     def blocked(self) -> str | None:
         """Why no rewrite can run now: pyct's process runs another thread; None when one can."""
@@ -227,20 +225,3 @@ def _out_of_time(wanted: Plan) -> Solved:
 def _left(started: float, limit: float) -> float:
     """What is left of ``limit`` seconds counted from ``started``."""
     return limit - (time.monotonic() - started)
-
-
-def _going(run: Running) -> bool:
-    """Whether a try may start: the run met no stop and its budget is not spent."""
-    until = run.bounds.until
-    return run.stopped is None and (until is None or until > time.monotonic())
-
-
-def _module_of(file: str, target: Target) -> str:
-    """The dotted name of the module ``file`` holds: the target's own, or a loaded module's
-    whose file it is, or the file's stem when no module is."""
-    if file == target.file:
-        return target.spec.partition("::")[0]
-    for name, module in list(sys.modules.items()):
-        if getattr(module, "__file__", None) == file:
-            return name
-    return Path(file).stem

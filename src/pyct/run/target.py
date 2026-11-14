@@ -89,6 +89,17 @@ class Target:
         written = getattr(self.fn, "__module__", None)
         return written if isinstance(written, str) else self.spec.partition("::")[0]
 
+    def module_of(self, file: str) -> str:
+        """The dotted name of the module ``file`` holds, as an LLM ask's place names it: the
+        target's own, or a loaded module's whose file it is, or the file's stem when no module
+        is."""
+        if file == self.file:
+            return self.spec.partition("::")[0]
+        for name, module in list(sys.modules.items()):
+            if getattr(module, "__file__", None) == file:
+                return name
+        return os.path.splitext(os.path.basename(file))[0]
+
 
 def load_target(
     spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
