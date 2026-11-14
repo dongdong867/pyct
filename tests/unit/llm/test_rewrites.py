@@ -88,7 +88,10 @@ def test_a_retry_after_the_solver_gave_up_on_the_latest_try_asks_for_one_exact_v
     answer: str,
 ) -> None:
     reason = f"the solver answered {answer}"
-    tried = (EarlierTry('s == "1e-29"', OTHER_SIDE), EarlierTry("len(s) > 31", reason, True))
+    tried = (
+        EarlierTry('s == "1e-29"', OTHER_SIDE),
+        EarlierTry("len(s) > 31", reason, solver_gave_up=True),
+    )
 
     text = request_text(dataclasses.replace(REQUEST, tries=tried))
 
@@ -97,11 +100,11 @@ def test_a_retry_after_the_solver_gave_up_on_the_latest_try_asks_for_one_exact_v
 
 # llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
 def test_a_retry_after_another_failure_does_not_ask_for_one_exact_value() -> None:
-    gave_up = EarlierTry("len(s) > 31", "the solver answered unknown", gave_up=True)
+    solver_gave_up = EarlierTry("len(s) > 31", "the solver answered unknown", solver_gave_up=True)
     other = EarlierTry('s == "1e-29"', OTHER_SIDE)
     refused = EarlierTry('__import__("os").getcwd() == s', "a rewrite may not call __import__")
 
-    for tried in ((other,), (refused,), (gave_up, other)):
+    for tried in ((other,), (refused,), (solver_gave_up, other)):
         assert "one exact value" not in request_text(dataclasses.replace(REQUEST, tries=tried))
 
 

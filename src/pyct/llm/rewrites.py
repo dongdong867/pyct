@@ -76,7 +76,7 @@ def request_text(request: RewriteRequest) -> str:
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")
-        if request.tries[-1].gave_up:
+        if request.tries[-1].solver_gave_up:
             parts.append(EXACT_VALUE)
     parts.append(FORM)
     return "\n\n".join(parts)

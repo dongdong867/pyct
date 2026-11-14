@@ -303,7 +303,7 @@ def test_a_try_the_solver_could_not_answer_is_marked_given_up_in_the_next_ask(
     tried(fake)
 
     earlier = fake.requests[1].tries[0]
-    assert (earlier.reason, earlier.gave_up) == (f"the solver answered {said}", True)
+    assert (earlier.reason, earlier.solver_gave_up) == (f"the solver answered {said}", True)
 
 
 # llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
@@ -322,7 +322,7 @@ def test_a_try_the_solver_could_not_answer_is_marked_given_up_in_the_next_ask(
 def test_a_try_that_failed_for_another_reason_is_not_marked_given_up(fake: Fake) -> None:
     tried(fake)
 
-    assert [each.gave_up for each in fake.requests[-1].tries] == [False] * 3
+    assert [each.solver_gave_up for each in fake.requests[-1].tries] == [False] * 3
 
 
 # llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask

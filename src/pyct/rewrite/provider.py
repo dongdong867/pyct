@@ -28,7 +28,7 @@ class EarlierTry:
 
     rewrite: str
     reason: str
-    gave_up: bool = False
+    solver_gave_up: bool = False
 
 
 @dataclass(frozen=True)

@@ -224,7 +224,9 @@ class Asking:
             return EarlierTry(expression, f"the solver failed: {answer.detail}")
         if not isinstance(answer, Sat):
             said = f"the solver answered {type(answer).__name__.lower()}"
-            return EarlierTry(expression, said, isinstance(answer, Timeout | Unknown))
+            return EarlierTry(
+                expression, said, solver_gave_up=isinstance(answer, Timeout | Unknown)
+            )
         record = around.run_input(apply(self.given.origin, answer.model), self.given.plan)
         if isinstance(record, Stop):
             return _Ended(record.reason)
