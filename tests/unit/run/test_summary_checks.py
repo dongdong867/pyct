@@ -3,6 +3,7 @@ formula runs through in forked children: on the past runs in plain Python, and f
 follows."""
 
 import ast
+import json
 from pathlib import Path
 
 import pytest
@@ -344,6 +345,18 @@ def test_a_raise_on_a_past_run_names_its_input() -> None:
     reason = checked("def summary(s, t):\n    return {'t': t + 1 // (len(s) - 2)}")
 
     assert reason == "it raised at input 1: ZeroDivisionError: integer division or modulo by zero"
+
+
+def test_a_correct_formula_passes_on_runs_whose_values_pass_the_answer_s_capacity() -> None:
+    def long_run(number: int) -> CompleteRun:
+        s = f"{number:04}" + "z" * 2_000
+        going_in = (GoingIn("s", json.dumps(s), True), GoingIn("t", '""', False))
+        return CompleteRun(number, PieceRun(SITE, going_in, (Changed("t", json.dumps(s)),)))
+
+    runs = tuple(long_run(number) for number in range(1, 601))
+    assert sum(len(each.run.changed[0].value) for each in runs) > model_runs.ANSWER_CAPACITY
+
+    assert checked("def summary(s, t):\n    return {'t': t + s}", runs) is None
 
 
 def test_a_formula_that_does_not_finish_fails_the_check() -> None:

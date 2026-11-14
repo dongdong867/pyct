@@ -5,9 +5,10 @@ the formula runs through before it is kept.
 The formula runs only in a child forked from pyct's process
 (`pyct.run.model_runs`). First, in one child, on every complete run in
 plain Python: each changed value it gives, as JSON text, must be the one
-recorded. Then, in a second child, on the latest complete run with the
-parameters that were tracked when that run started bound as leaves and the
-others plain: each value it gives must come back tracked. Each child ends
+recorded, which the child compares, so that its answer stays small. Then,
+in a second child, on the latest complete run with the parameters that were
+tracked when that run started bound as leaves and the others plain: each
+value it gives must come back tracked. Each child ends
 within ``CHECK_SECONDS``, or at the run's deadline when that comes first.
 """
 
@@ -141,27 +142,25 @@ def _past(
     changed: Sequence[str],
     until: float | None,
 ) -> str | Ended | None:
-    """The formula on every run in one child, in plain Python: the first value it gives that is
-    not the one recorded, or how it failed."""
-    values = [_going_in(each.run, parameters) for each in runs]
-    names = {"math": math, RUNS: _runner(values, changed)}
+    """The formula on every run in one child, in plain Python, which compares each value it
+    gives to the one recorded there: the first that is not, or how it failed."""
+    cases = [
+        _Case(each.number, _going_in(each.run, parameters), _recorded(each.run)) for each in runs
+    ]
+    names = {"math": math, RUNS: _runner(cases, changed)}
     ran = _child(ModelCall(code, PAST, {}, names), until)
     if not isinstance(ran, ModelRun):
         return ran
     answer = _answer(ran, "on the past runs")
     if isinstance(answer, str):
         return answer
-    rows: list[dict[str, str]] = answer["rows"]
-    for each, row in zip(runs, rows, strict=False):
-        recorded = {value.name: value.value for value in each.run.changed}
-        for name in changed:
-            if row[name] != recorded[name]:
-                return (
-                    f"at input {each.number}, {name} was {recorded[name]},"
-                    f" the formula gave {row[name]}"
-                )
     if "raised" in answer:
-        return f"it raised at input {runs[len(rows)].number}: {answer['raised']}"
+        return f"it raised at input {answer['input']}: {answer['raised']}"
+    if "gave" in answer:
+        return (
+            f"at input {answer['input']}, {answer['name']} was {answer['was']},"
+            f" the formula gave {answer['gave']}"
+        )
     return None
 
 
@@ -225,21 +224,36 @@ def _answer(ran: ModelRun, where: str) -> dict[str, Any] | str:
     return answer
 
 
-def _runner(
-    values: list[dict[str, object]], changed: Sequence[str]
-) -> Callable[[Callable[..., Any]], object]:
-    """What the past-run check's child calls with the formula: each run's changed values as
-    JSON text, until one raises, which it names."""
+@dataclass(frozen=True)
+class _Case:
+    """One run as the past-run check's child checks the formula on it: the input's number, the
+    value of each parameter, and the JSON text recorded for each changed name."""
+
+    number: int
+    going_in: dict[str, object]
+    recorded: dict[str, str]
+
+
+def _recorded(run: PieceRun) -> dict[str, str]:
+    return {each.name: each.value for each in run.changed}
+
+
+def _runner(cases: list[_Case], changed: Sequence[str]) -> Callable[[Callable[..., Any]], object]:
+    """What the past-run check's child calls with the formula: on each run in turn, each changed
+    value it gives, as JSON text, compared to the recorded one. Its answer stays small: the count
+    of runs that matched, the first value that did not, or the raise that ended it."""
 
     def run(summary: Callable[..., Any]) -> object:
-        rows: list[dict[str, str]] = []
-        for each in values:
+        for case in cases:
             try:
-                got = summary(**each)
+                got = summary(**case.going_in)
             except Exception as error:  # noqa: BLE001 - the formula's raise ends its check
-                return {"rows": rows, "raised": one_line(error)}
-            rows.append({name: _text(got[name]) for name in changed})
-        return {"rows": rows}
+                return {"input": case.number, "raised": one_line(error)}
+            for name in changed:
+                text, was = _text(got[name]), case.recorded[name]
+                if text != was:
+                    return {"input": case.number, "name": name, "was": was, "gave": text}
+        return {"matched": len(cases)}
 
     return run
 
