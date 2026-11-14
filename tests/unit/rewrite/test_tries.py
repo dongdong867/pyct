@@ -8,8 +8,6 @@ from typing import Any
 
 import pytest
 
-import pytest
-
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
 from pyct.core.foundation.branch import Branch, Fact, Site
