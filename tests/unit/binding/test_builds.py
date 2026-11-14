@@ -7,7 +7,14 @@ from collections.abc import Mapping
 import pytest
 
 from pyct.binding.annotations import Fields
-from pyct.binding.builds import BuildError, SelfBuild, holding_forms, object_forms
+from pyct.binding.bind import bind_call
+from pyct.binding.builds import (
+    BuildError,
+    SelfBuild,
+    holding_forms,
+    object_forms,
+    plan_call,
+)
 from pyct.binding.call import positional_only
 from tests.unit.binding.named_classes import Holder, Pinned, Point
 from tests.unit.binding.plans import planned
@@ -165,15 +172,15 @@ def test_the_instance_a_method_runs_on_is_built_last_and_goes_first() -> None:
     assert plan.positional == [None, 3]
 
 
-def test_a_value_under_self_other_than_a_dict_is_passed_as_bind_copied_it() -> None:
+def test_a_value_under_self_other_than_a_dict_is_passed_as_bound() -> None:
     given = Holder(1)
 
-    plan = planned({"self": given}, (), SelfBuild(Holder, "self"), HOME, SELF_CHECKS)
+    bound = bind_call({"self": given}, [], SELF_CHECKS, HOME)
+
+    plan = plan_call(bound, (), SelfBuild(Holder, "self"), HOME, SELF_CHECKS)
 
     assert plan.builds == []
-    passed = plan.keywords["self"]
-    assert isinstance(passed, Holder) and passed is not given
-    assert (passed.inner, passed.other) == (1, None)
+    assert plan.keywords["self"] is bound.args["self"]
 
 
 def test_a_class_that_does_not_load_is_a_build_error_at_its_place() -> None:
