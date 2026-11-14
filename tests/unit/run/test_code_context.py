@@ -266,6 +266,32 @@ def test_reading_the_loaded_module_for_a_piece_runs_none_of_its_code(
     assert vars(module)["SEEN"] == []
 
 
+CALLS_LAZY = """
+def calls(s):
+    settings(s)
+    marked(s)
+    Box.settings(s)
+    Box.marked(s)
+    return helper(s)
+"""
+
+
+def test_following_the_calls_to_the_target_s_objects_runs_none_of_their_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "lazy_calls"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "m.py").write_text(LOOPED + LAZY + CALLS_LAZY)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = load_target("lazy_calls.m::calls")
+
+    code = code_context(target)
+
+    assert headers(code) == ["# lazy_calls.m.calls", "# lazy_calls.m.helper"]
+    assert vars(sys.modules["lazy_calls.m"])["SEEN"] == []
+
+
 def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
     tmp_path: Path,
 ) -> None:

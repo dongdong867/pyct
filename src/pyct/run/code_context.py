@@ -205,10 +205,12 @@ def _callees(function: Code, part: str, package: str) -> Iterator[Code]:
         if not isinstance(node, ast.Call):
             continue
         found = _resolved(node.func, function)
-        if inspect.isclass(found):
+        if _is_class(found):
             found = _function(found, "__init__")
-        module = getattr(found, "__module__", None)
-        if inspect.isfunction(found) and isinstance(module, str) and in_package(package, module):
+        if not _is_function(found):
+            continue
+        module = found.__module__
+        if isinstance(module, str) and in_package(package, module):
             yield found
 
 
@@ -237,7 +239,7 @@ def _resolved(expression: ast.expr, function: Code) -> object:
             found = inspect.getattr_static(base, expression.attr)
         except AttributeError:
             return None
-        return found.__func__ if isinstance(found, staticmethod | classmethod) else found
+        return _unwrapped(found)
     return None
 
 
@@ -251,13 +253,13 @@ def _owner(function: Code) -> object:
     owner: object = _module(function)
     for name in getattr(function, "__qualname__", "").split(".")[:-1]:
         owner = vars(owner).get(name) if hasattr(owner, "__dict__") else None
-    return owner if inspect.isclass(owner) else None
+    return owner if _is_class(owner) else None
 
 
 def _function(cls: type, name: str) -> Code | None:
     """The Python function the class itself defines under ``name``, or None."""
     found = vars(cls).get(name)
-    return found if inspect.isfunction(found) else None
+    return found if _is_function(found) else None
 
 
 class _Nowhere:
