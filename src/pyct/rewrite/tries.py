@@ -151,9 +151,10 @@ class Asking:
                 return Tried(False, asked, unanswered=answer)
             spent = answer.cost.tokens_left == 0
             outcome = self._try(answer, around)
-            if outcome is None or isinstance(outcome, _Ended):
-                ended = None if outcome is None else outcome.reason
-                return Tried(outcome is None, asked, ended=ended, spent=spent)
+            if outcome is None:
+                return Tried(True, asked, spent=spent)
+            if isinstance(outcome, _Ended):
+                return Tried(False, asked, ended=outcome.reason, spent=spent)
             site = self.given.condition.site
             around.note(RewriteFailed(site, answer.cost.attempt, outcome.reason))
             earlier.append(outcome)
