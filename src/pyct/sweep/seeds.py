@@ -10,7 +10,10 @@ with no annotation, or one Python cannot test, gets ``0``.
 
 A default stays in the seed when JSON carries it and ``pyct run``'s own seed
 check accepts it. Otherwise the parameter is left out and the target's own
-default applies.
+default applies. A dict in a default, at any depth, writes its keys as seed
+JSON writes a plain dict's (``binding.seed_keys``). A dict that ``pyct run``
+reads as a plain dict, one that no parameter's hint builds into an object,
+then reaches the target with the keys it had, ``"__class__"`` among them.
 
 A text annotation is read in every module that could have written it, as
 the seed check reads it (``binding.resolve``), and those modules must agree
@@ -28,6 +31,7 @@ from collections.abc import Callable
 
 from pyct.binding.annotations import contradictions
 from pyct.binding.resolve import GATHERING, as_text, checked_annotations, resolved
+from pyct.binding.seed_keys import written_key
 
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
@@ -59,15 +63,16 @@ def seed_of(fn: Callable[..., object]) -> dict[str, object]:
         if parameter.default is inspect.Parameter.empty:
             seed[name] = _value_for(parameter, fn)
         elif carried(parameter.default) and not contradictions(checks, {name: parameter.default}):
-            seed[name] = parameter.default
+            seed[name] = _written(parameter.default)
     if not seed:
         raise NoSeedError("no parameter to vary")
     return seed
 
 
 def carried(value: object) -> bool:
-    """Whether seed JSON carries ``value`` as it is: null, a bool, an int, a float, a str, or a
-    list or a str-keyed dict of such values. A container met twice is not carried."""
+    """Whether seed JSON carries ``value``: null, a bool, an int, a float, a str, or a list or a
+    str-keyed dict of such values. A container met twice is not carried. A dict's keys are
+    written through ``_written``."""
     pending = [value]
     seen: set[int] = set()
     while pending:
@@ -79,6 +84,19 @@ def carried(value: object) -> bool:
         seen.add(id(item))
         pending.extend(item.values() if isinstance(item, dict) else typing.cast(list, item))
     return True
+
+
+def _written(value: object) -> object:
+    """A value ``carried`` accepts, as seed JSON writes it: a copy in which every dict, at any
+    depth, writes its keys through ``written_key``, so ``pyct run`` reads a plain dict back with
+    the keys it had. The value itself is not changed. A default nested deeper than Python's
+    recursion limit raises ``RecursionError``, and the listing gives a failed row that names
+    the entry as unread."""
+    if type(value) is dict:
+        return {written_key(key): _written(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_written(item) for item in value]
+    return value
 
 
 def _container(item: object) -> bool:
@@ -97,8 +115,8 @@ def _value_for(parameter: inspect.Parameter, fn: Callable[..., object]) -> objec
     if fit is UNTESTABLE:
         return 0
     if fit is NO_FIT:
-        written = inspect.formatannotation(as_text(parameter.annotation))
-        raise NoSeedError(f"no seed for {parameter.name}: {written}")
+        shown = inspect.formatannotation(as_text(parameter.annotation))
+        raise NoSeedError(f"no seed for {parameter.name}: {shown}")
     return fit
 
 

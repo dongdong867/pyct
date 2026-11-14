@@ -11,6 +11,7 @@ import pytest
 from pyct.binding.annotations import contradictions
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
+from pyct.binding.seed_keys import read_key
 from pyct.sweep.seeds import NoSeedError, carried, seed_of
 from targets.sweep import cannot_seed, defaults, seeds, seeds_as_text, text_annotations
 from tests.unit.sweep import later_named, own_t
@@ -34,6 +35,16 @@ class Widget:
 EVERY_KIND = {"a": 0, "b": 0.0, "c": "", "d": False, "e": [], "g": {}, "h": 0, "i": ""}
 EVERY_KIND |= {"j": [], "k": "x", "m": None, "n": 0, "p": 0}
 DEFAULTS = {"x": 0, "strict": False, "sep": ",", "ratio": 0.5, "tags": ["a"]}
+
+# default dicts that hold the key that names an object form, at the top and further in
+CLASS_KEYED = {"__class__": "plain", "n": 1}
+CLASS_KEYED_IN_A_LIST = [CLASS_KEYED]
+CLASS_KEYED_IN_A_DICT = {"inner": {"__class__": "plain", "n": 1}}
+# a default dict whose keys are already ! then __class__
+BANGED = {"!__class__": 1, "!!__class__": 2, "n": 3}
+# defaults whose keys are other dunder names, a ! key, and a str value "__class__"
+OTHER_KEYS = {"__complex__": True, "!x": [{"__args__": "__class__"}], "__class__x": 0}
+OTHER_ROWS = [OTHER_KEYS, "__class__"]
 
 
 def as_json(value: object) -> str:
@@ -69,6 +80,42 @@ def test_a_default_that_is_no_finite_float_stays_as_pythons_json_writes_it() -> 
 
     written = '{"x": 0, "low": -Infinity, "high": Infinity, "missing": NaN}'
     assert as_json(seed_of(bounded)) == written
+
+
+def test_a_default_dict_writes_its_class_key_escaped_at_any_depth() -> None:
+    def held(d=CLASS_KEYED, rows=CLASS_KEYED_IN_A_LIST, nested=CLASS_KEYED_IN_A_DICT) -> None:
+        return None
+
+    written = {"!__class__": "plain", "n": 1}
+    expected = {"d": written, "rows": [written], "nested": {"inner": written}}
+    assert as_json(seed_of(held)) == as_json(expected)
+
+
+def test_a_default_key_of_bangs_then_class_takes_one_bang_more() -> None:
+    def held(d=BANGED) -> None:
+        return None
+
+    written = seed_of(held)["d"]
+
+    assert as_json(written) == as_json({"!!__class__": 1, "!!!__class__": 2, "n": 3})
+    assert isinstance(written, dict)
+    assert {read_key(key): value for key, value in written.items()} == BANGED
+
+
+def test_escaping_leaves_the_default_itself_as_it_was() -> None:
+    def held(d=CLASS_KEYED_IN_A_DICT) -> None:
+        return None
+
+    seed_of(held)
+
+    assert as_json(CLASS_KEYED_IN_A_DICT) == as_json({"inner": {"__class__": "plain", "n": 1}})
+
+
+def test_a_default_with_no_class_key_is_written_as_it_is() -> None:
+    def held(d=OTHER_KEYS, rows=OTHER_ROWS) -> None:
+        return None
+
+    assert as_json(seed_of(held)) == as_json({"d": OTHER_KEYS, "rows": OTHER_ROWS})
 
 
 def test_a_positional_only_and_a_keyword_only_parameter_are_both_named() -> None:
