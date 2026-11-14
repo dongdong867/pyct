@@ -142,7 +142,7 @@ layers = [
   "pyct.results",
   "pyct.core",
   "pyct.config",
-  "(pyct.utils)",
+  "pyct.utils",
 ]
 
 # core's folders, top to bottom: a file imports only its own folder and those below it. A file

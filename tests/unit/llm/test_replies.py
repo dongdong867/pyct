@@ -31,6 +31,11 @@ def test_the_last_code_block_is_read_whole_its_language_tag_left_out() -> None:
     assert last_code_block(reply) == "def summary(s):\n    return {}\n"
 
 
+@pytest.mark.parametrize("tag", ["python3", "python ", "c++\t", ""])
+def test_a_code_block_s_language_tag_may_hold_digits_signs_and_trailing_spaces(tag: str) -> None:
+    assert last_code_block(f"```{tag}\nx = 1\n```") == "x = 1\n"
+
+
 @pytest.mark.parametrize("reply", ["return {}", "```python def f(): pass```", "", "```\nopen"])
 def test_a_reply_with_no_closed_code_block_has_none(reply: str) -> None:
     assert last_code_block(reply) is None

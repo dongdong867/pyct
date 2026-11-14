@@ -3,18 +3,16 @@
 from __future__ import annotations
 
 import json
-import re
+
+from pyct.utils.fences import code_blocks
 
 _DECODER = json.JSONDecoder()
-# a fenced code block: three backticks and an optional language tag on a line of their own, the
-# code, then three backticks
-_FENCE = re.compile(r"```[\w+-]*[ \t]*\n(.*?)```", re.DOTALL)
 
 
 def last_code_block(text: str) -> str | None:
     """The code of the last fenced code block in ``text``, as written, or None when the text
-    holds no closed one."""
-    found = _FENCE.findall(text)
+    holds no closed one. A block is read as ``pyct.utils.fences`` reads it."""
+    found = code_blocks(text)
     return found[-1] if found else None
 
 

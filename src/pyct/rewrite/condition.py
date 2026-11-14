@@ -22,13 +22,13 @@ from __future__ import annotations
 
 import ast
 import math
-import re
 import types
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
 from pyct.binding.builds import object_form
 from pyct.intercept.model_code import Refused, compile_model_code
+from pyct.utils.fences import code_blocks
 
 # the function pyct writes the rewrite into, and the one it branches on the rewrite's value in
 FUNCTION = "__rewrite__"
@@ -58,7 +58,6 @@ _READS_FIELDS = frozenset({"format", "format_map"})
 # why a reply gives no rewrite
 NO_EXPRESSION = "the reply holds no expression"
 
-_FENCE = re.compile(r"```[A-Za-z]*\n(.*?)```", re.DOTALL)
 # what the parser raises on text it refuses, a reply too deep for it included
 _REFUSALS = (SyntaxError, ValueError, RecursionError, MemoryError)
 # the literals a rewrite may write
@@ -81,13 +80,13 @@ _REFUSED_AS: dict[type[ast.AST], str] = {
 
 
 def expression_in(text: str, parameters: Sequence[str]) -> str | None:
-    """The one expression the reply holds: the text of its first code fence, or the whole reply,
-    stripped, as Python writes it on one line when it spans lines or holds a character a
-    terminal reads. None when that is not one Python expression, or names none of
-    ``parameters``, as prose such as ``this is not code`` that parses as Python but is not
-    about the function."""
-    fenced = _FENCE.search(text)
-    body = (fenced.group(1) if fenced else text).strip()
+    """The one expression the reply holds: the text of its first code fence, read as
+    ``pyct.utils.fences`` reads it, or the whole reply, stripped, as Python writes it on one
+    line when it spans lines or holds a character a terminal reads. None when that is not one
+    Python expression, or names none of ``parameters``, as prose such as ``this is not code``
+    that parses as Python but is not about the function."""
+    fenced = code_blocks(text)
+    body = (fenced[0] if fenced else text).strip()
     if not body:
         return None
     try:
