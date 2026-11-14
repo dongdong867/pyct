@@ -43,7 +43,7 @@ from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
 from pyct.results.pieces import FUNCTIONS, Piece, pieces
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
-from pyct.run.model_runs import can_fork
+from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import (
     AskSkipped,
     ReplyIgnored,
@@ -54,7 +54,6 @@ from pyct.run.notes import (
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.summary_checks import (
-    CANNOT_FORK,
     CompleteRun,
     Ended,
     check_formula,

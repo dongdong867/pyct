@@ -30,7 +30,7 @@ from pyct.core.foundation.branch import PieceRun
 from pyct.execution.blame import one_line
 from pyct.intercept.model_code import Refused, compile_model_code
 from pyct.results.failure import FailureKind
-from pyct.run.model_runs import CannotFork, ModelCall, ModelRun, run_model
+from pyct.run.model_runs import CANNOT_FORK, CannotFork, ModelCall, ModelRun, run_model
 from pyct.run.process import InputStartError
 from pyct.run.summary_form import (
     FOLLOW,
@@ -46,8 +46,6 @@ from pyct.run.summary_form import (
 
 # the seconds each check's child may take at most
 CHECK_SECONDS = 2.0
-# why no check could run beside a second thread of pyct's process
-CANNOT_FORK = "cannot fork"
 # why a check did not finish: the run's deadline ended its child before the check's limit did
 BUDGET_RAN_OUT = "the run's budget ran out"
 

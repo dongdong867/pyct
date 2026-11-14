@@ -46,7 +46,7 @@ from pyct.rewrite.request import About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.run.code_context import code_around
 from pyct.run.loop import Asker, Solved, solver_answer
-from pyct.run.model_runs import CannotFork, ModelCall, can_fork, run_model
+from pyct.run.model_runs import CANNOT_FORK, CannotFork, ModelCall, can_fork, run_model
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
@@ -55,9 +55,6 @@ from pyct.run.tell import Ask, Told
 from pyct.run.token_limit import TokenLimit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown
 from pyct.solver.given import Given
-
-# why a rewrite does not run beside a second thread of pyct's process
-CANNOT_FORK = "cannot fork"
 
 
 class Rewrites(Asker):

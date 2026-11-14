@@ -41,6 +41,10 @@ from pyct.run.threads import running
 # the most bytes of JSON one answer crosses back in
 ANSWER_CAPACITY = 1024 * 1024
 
+# why no call on model-written code runs beside a second thread of pyct's process, as each
+# asking tool says it
+CANNOT_FORK = "cannot fork"
+
 # the answer's mapping: its state and its length, two native u64, then its bytes
 _HEAD = struct.Struct("=QQ")
 _NONE, _ANSWER, _UNENCODED = 0, 1, 2
