@@ -10,7 +10,9 @@ with no annotation, or one Python cannot test, gets ``0``.
 
 A default stays in the seed when JSON carries it and ``pyct run``'s own seed
 check accepts it. Otherwise the parameter is left out and the target's own
-default applies.
+default applies. A dict in a default, at any depth, writes its keys as seed
+JSON writes a plain dict's (``binding.seed_keys``), so a key ``"__class__"``
+reaches ``pyct run`` as a plain key, not as an object form.
 
 A text annotation is read in every module that could have written it, as
 the seed check reads it (``binding.resolve``), and those modules must agree
@@ -28,6 +30,7 @@ from collections.abc import Callable
 
 from pyct.binding.annotations import contradictions
 from pyct.binding.resolve import GATHERING, as_text, checked_annotations, resolved
+from pyct.binding.seed_keys import written_key
 
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
@@ -59,7 +62,7 @@ def seed_of(fn: Callable[..., object]) -> dict[str, object]:
         if parameter.default is inspect.Parameter.empty:
             seed[name] = _value_for(parameter, fn)
         elif carried(parameter.default) and not contradictions(checks, {name: parameter.default}):
-            seed[name] = parameter.default
+            seed[name] = written(parameter.default)
     if not seed:
         raise NoSeedError("no parameter to vary")
     return seed
@@ -79,6 +82,16 @@ def carried(value: object) -> bool:
         seen.add(id(item))
         pending.extend(item.values() if isinstance(item, dict) else typing.cast(list, item))
     return True
+
+
+def written(value: object) -> object:
+    """A value ``carried`` accepts, as seed JSON writes it: a copy in which every dict, at any
+    depth, writes its keys through ``written_key``. The value itself is not changed."""
+    if type(value) is dict:
+        return {written_key(key): written(item) for key, item in value.items()}
+    if type(value) is list:
+        return [written(item) for item in value]
+    return value
 
 
 def _container(item: object) -> bool:
