@@ -91,9 +91,7 @@ def asks_summaries(tools_text: str | None) -> bool:
     """Whether ``--llm`` as written names summaries, itself or through ``all``: the run then
     records each loop's runs, which the interception must know before the target loads. It
     reads the names alone; ``parse_llm`` refuses a wrong flag."""
-    if tools_text is None:
-        return False
-    return bool({part.strip() for part in tools_text.split(",")} & {SUMMARIES_TOOL, ALL})
+    return tools_text is not None and SUMMARIES_TOOL in _named(tools_text)
 
 
 def _limit(text: str) -> int:
@@ -110,9 +108,7 @@ def _limit(text: str) -> int:
 
 def _tools(text: str) -> tuple[str, ...]:
     """The tools named, each once, in ``TOOLS`` order. A name pyct does not have is refused."""
-    names = {part.strip() for part in text.split(",")}
-    if ALL in names:
-        names = (names - {ALL}) | set(TOOLS)
+    names = _named(text)
     unknown = sorted(names - set(TOOLS))
     if unknown:
         raise UsageError(
@@ -120,6 +116,12 @@ def _tools(text: str) -> tuple[str, ...]:
             f" joined by commas, or {ALL} for every one"
         )
     return tuple(tool for tool in TOOLS if tool in names)
+
+
+def _named(text: str) -> set[str]:
+    """The names ``--llm`` writes, joined by commas, ``all`` read as every tool pyct has."""
+    names = {part.strip() for part in text.split(",")}
+    return (names - {ALL}) | set(TOOLS) if ALL in names else names
 
 
 def _model(text: str) -> Model:
