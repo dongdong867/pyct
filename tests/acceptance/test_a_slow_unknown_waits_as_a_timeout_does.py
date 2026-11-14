@@ -14,12 +14,13 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
+from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Reason
-from pyct.results.record import MissWhy, RunResult
+from pyct.results.record import MissWhy, RunResult, Source
 from pyct.run import loop as loop_module
 from pyct.run.isolation import Isolation
 from pyct.run.loop import Solved
@@ -134,6 +135,27 @@ def test_a_quick_unknown_leaves_its_site_first_on_the_next_path(
     # the seed's path: the compare, then its `isfloat`, then the loop; the loop's input's path
     # reaches line 5 and its compare is asked about next, before the loop's deeper fork
     assert aims[:4] == [(HARD, False), (HARD, True), (LOOP, False), (HARD, False)], aims
+
+
+# a-slow-unknown-waits-for-the-last-picks-reaches-a-stuck-moment
+@pytest.mark.parametrize("seconds", [1.8, 2.0], ids=["unknown", "timeout"])
+def test_a_run_with_rewrites_reaches_a_stuck_moment_within_its_budget(
+    monkeypatch: pytest.MonkeyPatch, seconds: float
+) -> None:
+    # the check's case at a fifth of its scale: 1.8 s of a 2 s limit, in a 6 s budget. Asking
+    # line 5 first on each path, 4 asks spend the budget, one input short of a stuck moment
+    answering_after(monkeypatch, seconds)
+    provider = FakeRewrites(['s == "1e-30"'])
+    limits = Limits(budget=Budget(6), solver_timeout=SolverTimeout(2.0))
+
+    ran = run_rewrites(LOOPS, SEED, provider, limits)
+
+    assert [request.place for request in provider.requests] == [
+        f"targets.rewrites.loops:{HARD}:7"
+    ], ran.said
+    [found] = [record for record in ran.records if record.source is Source.REWRITE]
+    assert found.args == {"s": "1e-30", "n": found.args["n"]}
+    assert UNDER in found.covered_lines
 
 
 # a-slow-unknown-waits-for-the-last-picks-still-says-unknown
