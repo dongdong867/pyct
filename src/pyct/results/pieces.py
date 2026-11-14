@@ -28,7 +28,9 @@ included. A name it declares ``global`` or ``nonlocal`` is not one. A name
 read inside a comprehension, a lambda, or a function or class defined in
 the function is the function's when no such scope around the read binds it:
 a comprehension's own variables, and a nested scope's parameters, names and
-``global`` declarations. An annotation is not read.
+``global`` declarations. An annotation is not read. Each name keeps its
+written spelling, a ``__name`` in a class body too, which Python stores
+under another.
 """
 
 from __future__ import annotations

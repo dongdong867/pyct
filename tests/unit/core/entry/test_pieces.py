@@ -206,6 +206,29 @@ def test_a_name_not_bound_when_the_piece_starts_or_ends_is_left_out() -> None:
     assert sink == [run(4, 4, {"xs": "[]"}, {}), run(2, 4, {"xs": "[]"}, {})]
 
 
+MANGLED = """\
+class C:
+    def f(self, xs):
+        __t = 0
+        for x in xs:
+            __t += x
+        return __t
+"""
+
+
+def test_a_name_python_stores_under_another_spelling_is_left_out_as_an_unbound_one() -> None:
+    namespace: dict[str, object] = {}
+    exec(substituted_code(MANGLED.encode(), FILE, pieces=True), namespace)  # noqa: S102
+    made = namespace["C"]
+    assert isinstance(made, type)
+
+    with live() as sink:
+        assert made().f([1, 2]) == 3
+
+    # the frame holds `_C__t`, which the hooks, given `__t`, do not read
+    assert sink == [run(4, 8, {"xs": "[1, 2]"}, {})]
+
+
 def test_a_value_json_cannot_hold_or_one_too_long_leaves_that_run_unrecorded() -> None:
     f = hooked(LOOPS["while_not"], g=lambda: "z")
 

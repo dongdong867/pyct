@@ -18,9 +18,11 @@ moment, and whether the value was a tracked one. Its exit, `piece_out` in
 the same frame for a loop or `piece_value` with the entry's token for an
 assignment, reads each changed name bound then, an assignment's being the
 value it is handed, and appends the run to the sink `start` was given, as
-a `PieceRun`. A run that ends by ``return`` or a raise calls no exit and
-records nothing; the entry it left is dropped by the next entry of that
-piece in that frame, and when the input ends. A run is recorded only when
+a `PieceRun`. A name is read from the frame by its written spelling, so one
+Python stores under another spelling, a ``__name`` in a class body, is left
+out of a run as an unbound one is. A run that ends by ``return`` or a raise
+calls no exit and records nothing; the entry it left is dropped by the next
+entry of that piece in that frame, and when the input ends. A run is recorded only when
 each of its values is plain JSON data (`plain_json`) whose text is shorter
 than `MOST_VALUE`, a tuple not being such data, and while it fits in what
 the input's recorded runs may count together, `MOST_TEXT` by `size`. A
