@@ -314,16 +314,9 @@ def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
     assert checked(no_annotation) == {}
 
 
-def test_checked_annotations_leaves_out_star_args_whose_name_no_key_fills() -> None:
+def test_checked_annotations_leaves_out_star_args_and_star_kwargs() -> None:
     # a key named items reaches **named, so the annotation on *items asks nothing of it
-    kept = checked(gathers)
-    assert "items" not in kept
-    assert kept["first"] is int
-
-
-def test_checked_annotations_leaves_out_star_kwargs_whose_values_no_check_reads() -> None:
-    # a key named named is an extra keyword; the annotation on **named describes each extra
-    # keyword's value, which pyct does not check
+    # a key named named is an extra keyword, whose value the annotation on **named describes
     assert checked(gathers) == {"first": int}
 
 
