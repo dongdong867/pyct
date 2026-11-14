@@ -28,9 +28,15 @@ LEFT = {
     "while_chained": {(2, 4)},
     "while_and_last_in_if_in_for": {(5, 12)},
     "while_last_in_elif_in_with": {(7, 16)},
+    "while_and_last_in_if_in_try": {(4, 12)},
+    "while_or_last_in_if_in_try": {(4, 12)},
 }
 # the whiles whose false outcome lands on more than one line on some Python releases alone
-VARIES = {"while_last_in_elif_in_with": {(7, 16)}}
+VARIES = {
+    "while_last_in_elif_in_with": {(7, 16)},
+    "while_and_last_in_if_in_try": {(4, 12)},
+    "while_or_last_in_if_in_try": {(4, 12)},
+}
 # the names of the hooks a substituted module calls
 HOOKS = ("__pyct_piece_over__", "__pyct_piece_in__", "__pyct_piece_out__", "__pyct_piece_value__")
 

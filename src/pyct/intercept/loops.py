@@ -70,6 +70,8 @@ _NO_LINE = -1
 _HOPS = frozenset(
     {"JUMP_FORWARD", "JUMP_BACKWARD", "JUMP", "JUMP_NO_INTERRUPT", "JUMP_BACKWARD_NO_INTERRUPT"}
 )
+# the instructions a landing in a `while`'s test can pass on by without evaluating anything
+_PASSING = _HOPS | {"NOP"}
 _SCOPES = (*_FUNCTIONS, ast.Lambda, ast.ClassDef)
 
 # a place in the source, as `dis` gives an instruction's: line, last line, column, last column
@@ -346,9 +348,9 @@ def _false_outcomes(
 
     A landing in the loop's body, or on the first instruction of a later
     operand of an `and`, `or` or conditional expression in the test, is the
-    test going on, not its false outcome; a jump CPython places at such an
-    operand, on its way out of the loop, is not. A landing with no line is at
-    `_NO_LINE`.
+    test going on, not its false outcome; a jump or a NOP CPython places at
+    such an operand, on its way out of the loop, is not. A landing with no
+    line is at `_NO_LINE`.
     """
     test = loop.test
     start = (test.lineno, test.col_offset)
@@ -362,7 +364,7 @@ def _false_outcomes(
         for lands in copies:
             for landing in lands:
                 at = _place(landing)
-                if (landing.opname in _HOPS or at not in going_on) and at[0] not in body:
+                if (landing.opname in _PASSING or at not in going_on) and at[0] not in body:
                     found.append((start if start <= at < end else at, landing))
                     break
     return found

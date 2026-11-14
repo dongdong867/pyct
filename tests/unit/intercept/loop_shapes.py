@@ -304,6 +304,30 @@ LOOPS: dict[str, str] = {
         "            h()\n"
         "        g()\n"
     ),
+    "while_and_last_in_if_in_try": (
+        "def f(c, node):\n"
+        "    try:\n"
+        "        if c:\n"
+        "            while node is not None and node.v:\n"
+        "                node = node.next\n"
+        "        else:\n"
+        "            h()\n"
+        "    except E:\n"
+        "        pass\n"
+        "    return node\n"
+    ),
+    "while_or_last_in_if_in_try": (
+        "def f(c, node):\n"
+        "    try:\n"
+        "        if c:\n"
+        "            while c or node is None:\n"
+        "                node = node.next\n"
+        "        else:\n"
+        "            h()\n"
+        "    except E:\n"
+        "        pass\n"
+        "    return node\n"
+    ),
     "while_and_assign_hooked": (
         "def f(n, s):\n"
         "    while n > 0 and s:\n"
