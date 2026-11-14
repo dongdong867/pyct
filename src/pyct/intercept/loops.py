@@ -32,7 +32,10 @@ one that is the last statement of another loop's body, directly or as the
 last statement of an ``if`` that is, where CPython turns its test into a
 jump back into its body; one whose test's false outcome lands, in the
 module as written, on more than one line, or on a jump with no line of its
-own; and one whose test is a chained compare. A loop at module level
+own; and one whose test is a chained compare. A ``while`` whose test holds
+a comprehension's or a generator expression's own condition, as ``while
+any(x for x in xs if x > n)``, is left as written too, since the probe reads
+that condition's jumps as the test's. A loop at module level
 or in a class body is no piece, and gets no hooks either.
 
 A piece with no changed name is left as written too: a summary gives a

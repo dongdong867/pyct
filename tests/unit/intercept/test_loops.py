@@ -19,8 +19,8 @@ from tests.unit.intercept.test_substitute import BINDING
 
 SHAPES = {**LOOPS, **{f"assign {name}": source for name, source in ASSIGNMENTS.items()}}
 # the whiles left as written, by shape: each ends another loop's body, directly or through an
-# `if`, its test's false outcome lands on more than one line or on none, or its test is a chained
-# compare
+# `if`, its test's false outcome lands on more than one line or on none, its test is a chained
+# compare, or its test holds a comprehension's own condition
 LEFT = {
     "while_last_in_for": {(3, 8)},
     "while_last_in_while": {(4, 8)},
@@ -30,6 +30,8 @@ LEFT = {
     "while_last_in_elif_in_with": {(7, 16)},
     "while_and_last_in_if_in_try": {(4, 12)},
     "while_or_last_in_if_in_try": {(4, 12)},
+    "while_genexp_if": {(2, 4)},
+    "while_listcomp_if": {(2, 4)},
 }
 # the whiles whose false outcome lands on more than one line on some Python releases alone
 VARIES = {
