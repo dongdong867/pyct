@@ -3,6 +3,7 @@ code a rewrites ask sends: the function around one line; and the code a summarie
 function around a piece, the piece marked, then its callees."""
 
 import inspect
+import sys
 from pathlib import Path
 
 import pytest
@@ -209,6 +210,60 @@ def test_the_code_around_a_piece_marks_it_and_brings_the_function_s_callees(
         "def helper(n):\n"
         "    return n + 1"
     )
+
+
+# globals whose class, read through ``__class__``, runs code: one raises, as a lazy object's
+# setup can, and one keeps a mark in ``SEEN``
+LAZY = """
+
+SEEN = []
+
+
+class Raises:
+    @property
+    def __class__(self):
+        raise RuntimeError("set up")
+
+
+class Marks:
+    @property
+    def __class__(self):
+        SEEN.append("ran")
+        return Marks
+
+
+settings = Raises()
+marked = Marks()
+Box.settings = Raises()
+Box.marked = Marks()
+"""
+
+
+class Unreadable:
+    """An entry of ``sys.modules`` each of whose attribute reads raises, as a lazy module's load
+    can."""
+
+    def __getattribute__(self, name: str) -> object:
+        raise RuntimeError(f"read {name}")
+
+
+def test_reading_the_loaded_module_for_a_piece_runs_none_of_its_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "lazy_context"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "m.py").write_text(LOOPED + LAZY)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    monkeypatch.setitem(sys.modules, "lazy_entry", Unreadable())
+    target = load_target("lazy_context.m::helper")
+    module = sys.modules["lazy_context.m"]
+
+    code = code_with_piece(target, str(package / "m.py"), (8, 9))
+
+    assert code.startswith(f"# lazy_context.m.Box.f\ndef f(self, s):\n    t = 0\n    {MARK_START}")
+    assert code.endswith("# lazy_context.m.helper\ndef helper(n):\n    return n + 1")
+    assert vars(module)["SEEN"] == []
 
 
 def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(

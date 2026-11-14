@@ -12,8 +12,10 @@ import ast
 import inspect
 import sys
 import textwrap
+import types
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
+from typing import TypeGuard
 
 from pyct.intercept.hook import in_package
 from pyct.run.target import Target
@@ -134,16 +136,44 @@ def _function_at(file: str, first: int) -> Code | None:
     loaded module whose file it is or in a class there, read without running code; None when
     no module of that file is loaded or none holds it there."""
     for module in list(sys.modules.values()):
-        if getattr(module, "__file__", None) != file:
+        if _file_of(module) != file:
             continue
         held = list(vars(module).values())
-        held += [each for owner in held if inspect.isclass(owner) for each in vars(owner).values()]
+        held += [each for owner in held if _is_class(owner) for each in vars(owner).values()]
         for each in held:
-            found = each.__func__ if isinstance(each, staticmethod | classmethod) else each
-            code = getattr(found, "__code__", None) if inspect.isfunction(found) else None
-            if code is not None and (code.co_filename, code.co_firstlineno) == (file, first):
+            found = _unwrapped(each)
+            if not _is_function(found):
+                continue
+            if (found.__code__.co_filename, found.__code__.co_firstlineno) == (file, first):
                 return found
     return None
+
+
+def _is_class(value: object) -> TypeGuard[type]:
+    """Whether the value is a class, read by its type alone: ``isinstance`` would read its
+    ``__class__``, which a lazy object of the target's answers by running its setup."""
+    return issubclass(type(value), type)
+
+
+def _is_function(value: object) -> TypeGuard[types.FunctionType]:
+    """Whether the value is a Python function, read by its type alone."""
+    return type(value) is types.FunctionType
+
+
+def _unwrapped(value: object) -> object:
+    """The function a static or class method wraps, read by its type alone; else the value."""
+    if issubclass(type(value), staticmethod | classmethod):
+        assert isinstance(value, staticmethod | classmethod)
+        return value.__func__
+    return value
+
+
+def _file_of(module: object) -> object:
+    """The file an entry of ``sys.modules`` names in its namespace, read by its type alone, so
+    that no attribute hook of a lazy module runs; None for an entry that is not a module."""
+    if not issubclass(type(module), types.ModuleType):
+        return None
+    return object.__getattribute__(module, "__dict__").get("__file__")
 
 
 def _starts(target: Target) -> list[Code]:
