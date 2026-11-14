@@ -52,7 +52,7 @@ from collections.abc import Iterator
 
 from pyct.intercept.positions import Parts, after_the_value
 from pyct.intercept.watch import jumps_past
-from pyct.results.pieces import Piece, pieces
+from pyct.results.pieces import FUNCTIONS, SCOPES, Piece, pieces
 from pyct.results.sources import LOOPS
 
 _OVER = "__pyct_piece_over__"
@@ -66,7 +66,6 @@ BOUND: dict[str, str] = {
     _VALUE: "piece_value",
 }
 
-_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 # the line and column of an instruction with none
 _NO_LINE = -1
 # the jumps that take control on without a test
@@ -75,7 +74,6 @@ _HOPS = frozenset(
 )
 # the instructions a landing in a `while`'s test can pass on by without evaluating anything
 _PASSING = _HOPS | {"NOP"}
-_SCOPES = (*_FUNCTIONS, ast.Lambda, ast.ClassDef)
 
 # a place in the source, as `dis` gives an instruction's: line, last line, column, last column
 type _Span = tuple[int | None, int | None, int | None, int | None]
@@ -95,7 +93,7 @@ def hooked(tree: ast.Module, parts: Parts) -> None:
     found = [
         (statement, piece)
         for node in ast.walk(tree)
-        if isinstance(node, _FUNCTIONS)
+        if isinstance(node, FUNCTIONS)
         for statement, piece in pieces(node)
         if piece.changed
     ]
@@ -271,7 +269,7 @@ def _breaks(loop: ast.For | ast.AsyncFor | ast.While) -> list[tuple[list[ast.stm
                 found.append((statements, each))
             elif isinstance(each, LOOPS):
                 pending.append(each.orelse)
-            elif not isinstance(each, _SCOPES):
+            elif not isinstance(each, SCOPES):
                 pending.extend(_statement_lists(each))
     return found
 

@@ -41,8 +41,9 @@ from dataclasses import dataclass, field
 
 from pyct.results.sources import COMPREHENSIONS, LOOPS, names_in
 
-_FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
-_SCOPES = (*_FUNCTIONS, ast.Lambda, ast.ClassDef)
+# the definitions that are functions, and every node that has a scope of its own
+FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
+SCOPES = (*FUNCTIONS, ast.Lambda, ast.ClassDef)
 
 type Function = ast.FunctionDef | ast.AsyncFunctionDef
 # a scope a function holds, each with a body of its own
@@ -137,7 +138,7 @@ def _own_statements(function: Function) -> Iterator[ast.stmt]:
         node = pending.pop()
         if isinstance(node, ast.stmt):
             yield node
-        if not isinstance(node, _SCOPES):
+        if not isinstance(node, SCOPES):
             pending.extend(reversed(list(ast.iter_child_nodes(node))))
 
 
@@ -206,7 +207,7 @@ class _Walk:
         """The parts of a node to walk next, each with the names hidden from the function there."""
         if isinstance(node, COMPREHENSIONS):
             return _comprehension_parts(node, hidden, scoped)
-        if isinstance(node, _SCOPES):
+        if isinstance(node, SCOPES):
             own = self._names_of(node)
             outer: list[_Pending] = [(part, hidden, scoped) for part in _evaluated_outside(node)]
             body = node.body if isinstance(node.body, list) else [node.body]
@@ -253,7 +254,7 @@ def _named(node: ast.AST, hidden: frozenset[str], scoped: frozenset[str]) -> Ite
 
 def _bound_name(node: ast.AST) -> str | None:
     """The name a definition, an ``except`` or a ``match`` pattern binds, or None."""
-    if isinstance(node, (*_FUNCTIONS, ast.ClassDef)):
+    if isinstance(node, (*FUNCTIONS, ast.ClassDef)):
         return node.name
     if isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
         return node.name
@@ -317,6 +318,6 @@ def _declared(
         node = pending.pop()
         if isinstance(node, kind):
             names.update(node.names)
-        elif not isinstance(node, _SCOPES):
+        elif not isinstance(node, SCOPES):
             pending.extend(ast.iter_child_nodes(node))
     return names
