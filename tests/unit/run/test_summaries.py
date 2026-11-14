@@ -306,3 +306,27 @@ def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
 
     assert handled == Handled((Outcome.SKIPPED,), asked=True)
     assert notes[-1] == SummarySkipped(LOOP, "cannot fork")
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+@pytest.mark.parametrize(
+    ("answer", "can_ask"),
+    [
+        (SummaryReply(FORMULA, AskCost(1, tokens_left=5)), True),
+        (SummaryReply(FORMULA, AskCost(1, tokens_left=0)), False),
+        (Unanswered(Why.PROVIDER, "provider error 500", AskCost(1, tokens_left=5)), True),
+        (Unanswered(Why.LIMIT, "token limit reached", AskCost(1)), False),
+    ],
+    ids=["tokens left", "none left", "failed ask", "limit"],
+)
+def test_summaries_can_ask_until_an_answer_leaves_no_token(
+    answer: SummaryReply | Unanswered, can_ask: bool
+) -> None:
+    tool = Summaries(
+        Fake(answer), load_target(COUNTS), Told(scope=Scope.of_module(FILE), tell=Tell())
+    )
+    assert tool.can_ask is True
+
+    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+
+    assert tool.can_ask is can_ask

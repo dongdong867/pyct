@@ -73,6 +73,11 @@ class Rewrites(Asker):
         self._used: tuple[Condition, ...] = ()
         self._limit_reached = False
 
+    @property
+    def can_ask(self) -> bool:
+        """Whether rewrites may still ask this run: false once an ask met the token limit."""
+        return not self._limit_reached
+
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         """Ask about each entry's condition in turn; ``took``, ``gave up`` or ``skipped`` each."""
         outcomes: list[Outcome] = []

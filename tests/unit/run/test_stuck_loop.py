@@ -42,6 +42,7 @@ class Tool:
 
     kind: Kind
     asks: bool = True
+    can_ask: bool = True
     runs: Mapping[str, object] | None = None
     pauses: float = 0.0
     moments: list[tuple[int, int, tuple[WhyEntry, ...]]] = field(default_factory=list)

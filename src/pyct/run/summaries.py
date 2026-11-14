@@ -8,10 +8,11 @@ complete runs: the runs of it the inputs so far recorded that hold every
 name it changes, up to 3 per input. A loop with no complete run, and one
 asked about while pyct's process runs a second thread, so that no formula
 could run, is skipped at this moment with no ask, and said. An ask that got
-no answer is said and ends that loop's tries at this moment; once the token
-limit is reached no summary is asked for again this run, and the connection
-has said so. A reply with no code block is said and ends them too. The wait
-for the model pauses the run's clock. A call a cause names gets no ask.
+no answer is said and ends that loop's tries at this moment; once an
+answer leaves no token under the limit no summary is asked for again this
+run, the tool says it can ask no more, and the connection has said so. A
+reply with no code block is said and ends them too. The wait for the model
+pauses the run's clock. A call a cause names gets no ask.
 
 A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
@@ -160,6 +161,11 @@ class Summaries:
         self.loops: dict[Site, LoopState] = {}
         self._limit_reached = False
 
+    @property
+    def can_ask(self) -> bool:
+        """Whether summaries may still ask this run: false once the token limit is reached."""
+        return not self._limit_reached
+
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         """Ask once about each loop the entries' sources name, in code order; ``took``, ``gave
         up`` or ``skipped`` each entry by what came of its sources."""
@@ -251,9 +257,12 @@ class Summaries:
         self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
 
     def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
-        """The loop's state kept once an ask for it was sent, with the connection's try number."""
+        """The loop's state kept once an ask for it was sent, with the connection's try number;
+        an answer that leaves no token under the limit ends the asks for the run."""
         self.loops[site] = state
         state.attempts = cost.attempt
+        if cost.tokens_left <= 0:
+            self._limit_reached = True
 
     def states(self) -> tuple[LoopSummary, ...]:
         """Each loop an ask was sent for, in code order, as the summary line lists it."""

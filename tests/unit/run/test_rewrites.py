@@ -12,6 +12,10 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
+from pyct.config.plateau import Plateau
+from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.foundation.branch import Branch, Site
 from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition, Reason, WhyEntry
@@ -36,6 +40,8 @@ from tests.acceptance.llm_rewrites import FakeRewrites, file_of, llm_said, run_r
 
 TEXT = "targets.rewrites.text::exponent"
 COUNTED = "targets.rewrites.counted::exponent"
+# limits under which `loops` would be stuck after 5 inputs, again after 5 more, and stop soon after
+LONG = Limits(budget=Budget(60), plateau=Plateau(20), solver_timeout=SolverTimeout(1.0))
 
 
 @pytest.fixture(autouse=True)
@@ -111,6 +117,25 @@ def test_an_ask_past_the_token_limit_ends_every_later_ask_unsaid(
 
     assert llm_said(ran.said) == []
     assert len(provider.requests) == 1
+
+
+def test_no_moment_comes_after_an_ask_met_the_token_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(model_runs, "running", lambda: 1)
+    worked_out: list[float | None] = []
+    causes = loop_module.Loop.causes
+
+    def counted(self: loop_module.Loop, stop_at: float | None) -> tuple[WhyEntry, ...]:
+        worked_out.append(stop_at)
+        return causes(self, stop_at)
+
+    monkeypatch.setattr(loop_module.Loop, "causes", counted)
+    provider = FakeRewrites([Unanswered(Why.LIMIT, "token limit reached", AskCost(1))])
+
+    run_rewrites("targets.rewrites.loops::loops", {"s": "0", "n": 0}, provider, LONG)
+
+    assert len(worked_out) == 1
 
 
 def test_a_child_pyct_cannot_start_is_said_as_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:

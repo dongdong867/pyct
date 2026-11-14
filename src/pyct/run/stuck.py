@@ -4,8 +4,9 @@ LLM tool the entries it takes, in the order summaries, rewrites, guesses.
 A run is stuck when 5 inputs in a row cover no new line, counted from
 after the last seed and again from after each moment's last input, or
 when no fork is left to flip while a line is still missed. A run with no
-tool switched on is never stuck, so it runs as it would with no LLM at
-all. Decision llm-one-stuck-moment-for-summaries-rewrites-and-guesses.
+tool switched on, or none that can still ask, is never stuck, so it runs
+as it would with no LLM at all. Decision
+llm-one-stuck-moment-for-summaries-rewrites-and-guesses.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
 fork`` entry with a source to summaries, a ``not taken`` entry whose tries
@@ -107,10 +108,15 @@ class Moment:
 
 
 class StuckTool(Protocol):
-    """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry."""
+    """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry;
+    ``can_ask`` is false once the tool will ask no more this run, such as when the token limit is
+    reached."""
 
     @property
     def kind(self) -> Kind: ...
+
+    @property
+    def can_ask(self) -> bool: ...
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled: ...
 
@@ -145,15 +151,17 @@ class Stuck:
         self._gave_up: set[_Key] = set()
 
     def due(self, run: Running, progress: Progress, *, empty: bool) -> bool:
-        """Whether a moment comes now: a tool is on, a moment that asks is left, the budget is
-        not spent, a line is still missed and the run would not stop on full coverage.
+        """Whether a moment comes now: a tool that can still ask is on, a moment that asks is
+        left, the budget is not spent, a line is still missed and the run would not stop on full
+        coverage.
 
         ``empty`` says no fork is left to flip; a moment then comes when an
         input ran since the last one ended, so one that ran none ends the run.
         Otherwise it comes on 5 inputs in a row with no new line, counted
         from the last moment's end, or from after the last seed.
         """
-        if not self._tools or self._asked >= MOMENTS or not _goes_on(run, progress):
+        asking = any(tool.can_ask for tool in self._tools.values())
+        if not asking or self._asked >= MOMENTS or not _goes_on(run, progress):
             return False
         inputs = len(run.records)
         if empty:

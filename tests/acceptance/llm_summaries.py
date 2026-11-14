@@ -2,9 +2,10 @@
 target's package intercepted with the recording of each loop's runs, for the
 ask-for-a-stuck-loop-s-summary story's acceptance tests.
 
-The fake reads each reply as ``pyct.llm.summaries`` does and numbers its tries per place as the
-connection does, so a test reads the try numbers the stderr lines carry. No test here calls a
-model or sends anything off the machine.
+The fake reads each reply as ``pyct.llm.summaries`` does, and numbers its tries per place and
+charges each reply's tokens against a limit as the connection does, so a test reads the try
+numbers the stderr lines carry and can reach the limit. No test here calls a model or sends
+anything off the machine.
 """
 
 from __future__ import annotations
@@ -19,10 +20,11 @@ import pytest
 
 from pyct.cli.llm import note_line
 from pyct.config.limits import Limits
+from pyct.config.llm import DEFAULT_LIMIT
 from pyct.config.plateau import Plateau
 from pyct.llm.summaries import summary_reply
 from pyct.results.coverage import Coverage
-from pyct.results.llm_asks import AskCost, Unanswered
+from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, RunResult
 from pyct.run import model_runs
 from pyct.run.helpers import Helpers
@@ -45,6 +47,8 @@ SEED = {"s": "ab"}
 ONE_MOMENT = Limits(plateau=Plateau(8))
 # the reply `COUNT` of the criteria
 COUNT = 'Here it is:\n```python\ndef summary(s, t):\n    return {"t": t + s.count("z")}\n```\n'
+# the tokens in and out each reply the fake gives costs
+TOKENS = (120, 30)
 
 
 def code_reply(code: str) -> str:
@@ -55,24 +59,33 @@ def code_reply(code: str) -> str:
 @dataclass
 class FakeSummaries:
     """Answers the n-th ask with the n-th reply, the last one again past the end, and keeps each
-    request with the inputs the run had when it came."""
+    request with the inputs the run had when it came. Each reply costs ``TOKENS``; once they
+    reach ``limit`` an ask gets ``limit`` back, as the connection's does."""
 
     replies: Sequence[str | Unanswered]
+    limit: int = DEFAULT_LIMIT
     requests: list[SummaryRequest] = field(default_factory=list)
     inputs_then: list[int] = field(default_factory=list)
     tries: dict[str, int] = field(default_factory=dict)
     records: list[InputRecord] = field(default_factory=list)
+    charged: int = 0
 
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
         self.requests.append(request)
         self.inputs_then.append(len(self.records))
         attempt = self.tries.get(request.place, 0) + 1
         self.tries[request.place] = attempt
+        if self.charged >= self.limit:
+            return Unanswered(Why.LIMIT, "token limit reached", AskCost(attempt))
         reply = self.replies[min(len(self.requests), len(self.replies)) - 1]
-        cost = AskCost(attempt)
         if isinstance(reply, Unanswered):
-            return dataclasses.replace(reply, cost=cost)
-        return summary_reply(reply, cost)
+            return dataclasses.replace(reply, cost=self._cost(attempt, 0, 0))
+        return summary_reply(reply, self._cost(attempt, *TOKENS))
+
+    def _cost(self, attempt: int, tokens_in: int, tokens_out: int) -> AskCost:
+        self.charged += tokens_in + tokens_out
+        left = max(self.limit - self.charged, 0)
+        return AskCost(attempt, tokens_in, tokens_out, tokens_left=left)
 
 
 @dataclass
