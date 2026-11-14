@@ -8,8 +8,8 @@ from enum import Enum
 from typing import Any, cast
 
 from pyct.binding.annotations import Check, Fields, int_keys, item_check, reads_as_int
-from pyct.binding.builds import ARGS_KEY, CLASS_KEY
 from pyct.binding.hints import Inside
+from pyct.binding.seed_keys import ARGS_KEY, CLASS_KEY, read_key
 from pyct.binding.tuples import Holder, Slot
 from pyct.core.foundation.branch import Expression
 
@@ -76,22 +76,29 @@ def _is(key: object, name: str) -> bool:
     return type(key) is str and key == name
 
 
-def keyed(value: dict[object, object], check: Check | None) -> dict[object, object]:
-    """A dict's items, each key read back as its annotation's key type says.
+def keyed(value: dict[object, object], check: Check | None, *, plain: bool) -> dict[object, object]:
+    """A dict's items, each key read back as its annotation's key type says, and a plain dict's
+    escape read back too.
 
     JSON keys are always strings, so an int key an input's line wrote as ``"3"`` is read back
     as ``3`` under a ``dict[int, X]`` annotation, and the line's ``args`` given back through
-    ``--args`` is the same input. A key written any other way, or under any other annotation,
-    stays as it came.
+    ``--args`` is the same input. A ``plain`` dict, exactly a ``dict`` that is no object form
+    and not the dict under ``self``, reads ``"!__class__"`` back as ``"__class__"``
+    (``seed_keys``). A key written any other way, or under any other annotation, stays as it
+    came.
     """
-    if not int_keys(check):
+    ints = int_keys(check)
+    if not ints and not plain:
         return dict(value)
-    return {_read_back(key): item for key, item in dict.items(value)}
+    return {_read_back(key, ints, plain): item for key, item in dict.items(value)}
 
 
-def _read_back(key: object) -> object:
-    """A key as a ``dict[int, X]`` reads it: the int an int's JSON text writes, else itself."""
-    return int(key) if isinstance(key, str) and reads_as_int(key) else key
+def _read_back(key: object, ints: bool, plain: bool) -> object:
+    """A key as the walk reads it: under a ``dict[int, X]`` the int an int's JSON text writes,
+    in a plain dict an escaped key read back, else itself."""
+    if ints and isinstance(key, str) and reads_as_int(key):
+        return int(key)
+    return read_key(key) if plain else key
 
 
 class _Unnamed(Enum):
