@@ -13,8 +13,8 @@ from collections.abc import Callable
 
 from pyct.binding.annotations import Check, check_of, or_null
 
-# the parameters whose annotation no seed key is checked against
-_GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+# the parameters a key with their own name does not fill
+GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
 
 
 def checked_annotations(
@@ -57,7 +57,7 @@ def checked_annotations(
     for name, parameter in signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        if parameter.kind in _GATHERING:
+        if parameter.kind in GATHERING:
             continue
         check = resolved(parameter.annotation, fn, read)
         if check is not None:
