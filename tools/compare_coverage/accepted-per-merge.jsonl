@@ -26,6 +26,10 @@
 {"set": "v2", "target": "targets.dicts.changes::merged", "seed": {"config": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [64]}
 {"set": "v2", "target": "targets.dicts.changes::merged_in_place", "seed": {"config": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [72]}
 {"set": "v2", "target": "targets.dicts.changes::updated", "seed": {"config": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [50]}
+{"set": "v2", "target": "targets.dicts.class_key::first_has_class", "seed": {"xs": [{"a": 1}]}, "status": "differs", "only_legacy": [], "only_v2": [13]}
+{"set": "v2", "target": "targets.dicts.class_key::has_class", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [7]}
+{"set": "v2", "target": "targets.dicts.class_key::has_escaped", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [46]}
+{"set": "v2", "target": "targets.dicts.class_key::names_box", "seed": {"d": {"a": "x"}}, "status": "differs", "only_legacy": [], "only_v2": [40]}
 {"set": "v2", "target": "targets.dicts.compared::check", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.dicts.decided::found_truth", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [61]}
 {"set": "v2", "target": "targets.dicts.decided::looked_up_twice", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [35, 37]}
