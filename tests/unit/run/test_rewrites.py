@@ -36,7 +36,7 @@ from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver.answer import Sat, Timeout, Unsat
 from tests.acceptance.harness import REPO_ROOT
-from tests.acceptance.llm_rewrites import FakeRewrites, file_of, llm_said, run_rewrites
+from tests.acceptance.llm_rewrites import TOKENS, FakeRewrites, file_of, llm_said, run_rewrites
 
 TEXT = "targets.rewrites.text::exponent"
 COUNTED = "targets.rewrites.counted::exponent"
@@ -119,22 +119,41 @@ def test_an_ask_past_the_token_limit_ends_every_later_ask_unsaid(
     assert len(provider.requests) == 1
 
 
-def test_no_moment_comes_after_an_ask_met_the_token_limit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+@pytest.fixture
+def worked_out(monkeypatch: pytest.MonkeyPatch) -> list[float | None]:
+    """Each stop the run's cause analysis was given, counted as ``Loop.causes`` is called."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
-    worked_out: list[float | None] = []
+    stops: list[float | None] = []
     causes = loop_module.Loop.causes
 
     def counted(self: loop_module.Loop, stop_at: float | None) -> tuple[WhyEntry, ...]:
-        worked_out.append(stop_at)
+        stops.append(stop_at)
         return causes(self, stop_at)
 
     monkeypatch.setattr(loop_module.Loop, "causes", counted)
+    return stops
+
+
+def test_no_moment_comes_after_an_ask_met_the_token_limit(
+    worked_out: list[float | None],
+) -> None:
     provider = FakeRewrites([Unanswered(Why.LIMIT, "token limit reached", AskCost(1))])
 
     run_rewrites("targets.rewrites.loops::loops", {"s": "0", "n": 0}, provider, LONG)
 
+    assert len(worked_out) == 1
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_no_moment_comes_after_the_reply_that_reached_the_token_limit(
+    worked_out: list[float | None],
+) -> None:
+    # the first moment's fourth and last ask reaches the limit
+    provider = FakeRewrites(['s == "1e-29"'], limit=4 * sum(TOKENS))
+
+    run_rewrites("targets.rewrites.loops::loops", {"s": "0", "n": 0}, provider, LONG)
+
+    assert len(provider.requests) == 4
     assert len(worked_out) == 1
 
 

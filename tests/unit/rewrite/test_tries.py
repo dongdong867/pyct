@@ -62,6 +62,8 @@ class Fake:
     asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
     asked: int = 0
+    # the tokens each reply leaves under the limit
+    left: int = 1000
     requests: list[RewriteRequest] = field(default_factory=list)
     # the arguments each rewrite's run was handed
     handed: list[Mapping[str, object]] = field(default_factory=list)
@@ -71,7 +73,7 @@ class Fake:
         self.requests.append(request)
         if isinstance(self.reply, Unanswered):
             return self.reply
-        return RewriteReply(self.reply, AskCost(self.asked))
+        return RewriteReply(self.reply, AskCost(self.asked, tokens_left=self.left))
 
     def going(self) -> bool:
         return self.goes.pop(0)
@@ -124,6 +126,12 @@ def test_an_ask_with_no_answer_ends_the_tries() -> None:
     fake = Fake(reply=skipped)
 
     assert tried(fake) == Tried(False, True, unanswered=skipped)
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_the_tries_say_when_the_last_reply_left_no_token() -> None:
+    assert tried(Fake(left=0)) == Tried(True, True, spent=True)
+    assert tried(Fake()).spent is False
 
 
 def test_no_try_starts_once_the_run_stops_going() -> None:
