@@ -37,7 +37,7 @@ from pyct.config.llm import SUMMARIES_TOOL
 from pyct.core.foundation.branch import PieceRun, Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
-from pyct.results.llm_asks import AskCost, Unanswered, Why
+from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
 from pyct.results.pieces import FUNCTIONS, Piece, pieces
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
@@ -137,10 +137,11 @@ class Asked(enum.Enum):
 
 @dataclass
 class LoopState:
-    """One loop across the run: the connection's last try number, the earlier tries that
-    failed, the last formula the model gave, and, once one is checked, the runs it was checked
-    on."""
+    """One loop an ask was sent for, across the run: the names it changes, the connection's last
+    try number, the earlier tries that failed, the last formula the model gave, and, once one is
+    checked, the runs it was checked on."""
 
+    changes: tuple[str, ...]
     attempts: int = 0
     tries: list[EarlierFormula] = field(default_factory=list)
     formula: str | None = None
@@ -185,14 +186,14 @@ class Summaries:
         if loop is None or not can_fork():
             self.told.note(SummarySkipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK))
             return Asked.NOT_ASKED, False
-        state = self.loops.setdefault(site, LoopState())
+        state = state or LoopState(loop.piece.changed)
         started = time.monotonic()
         answer = self.provider.summarize(self._request(loop, state))
         run.pause(time.monotonic() - started)
         if isinstance(answer, Unanswered):
-            self._unanswered(answer)
+            self._unanswered(site, state, answer)
             return Asked.NOT_ASKED, True
-        state.attempts = answer.cost.attempt
+        self._sent(site, state, answer.cost)
         if answer.ignored is not None:
             self.told.note(ReplyIgnored(SUMMARIES_TOOL, answer.ignored))
             return Asked.FAILED, True
@@ -240,13 +241,36 @@ class Summaries:
             tries=tuple(state.tries),
         )
 
-    def _unanswered(self, answer: Unanswered) -> None:
-        """An ask that got no answer, said; once the token limit is reached, no loop asks
-        again."""
+    def _unanswered(self, site: Site, state: LoopState, answer: Unanswered) -> None:
+        """An ask that got no answer, said and kept for its loop; one the token limit refused
+        left no request, and once the limit is reached no loop asks again."""
         if answer.why is Why.LIMIT:
             self._limit_reached = True
-        else:
-            self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
+            return
+        self._sent(site, state, answer.cost)
+        self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
+
+    def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
+        """The loop's state kept once an ask for it was sent, with the connection's try number."""
+        self.loops[site] = state
+        state.attempts = cost.attempt
+
+    def states(self) -> tuple[LoopSummary, ...]:
+        """Each loop an ask was sent for, in code order, as the summary line lists it."""
+        return tuple(
+            LoopSummary(
+                site.file,
+                site.line,
+                site.col,
+                state.changes,
+                state.formula,
+                state.attempts,
+                state.checked_on,
+            )
+            for site, state in sorted(
+                self.loops.items(), key=lambda item: (item[0].file, item[0].line, item[0].col)
+            )
+        )
 
 
 def asked_loop(site: Site, records: Sequence[InputRecord]) -> AskedLoop | None:

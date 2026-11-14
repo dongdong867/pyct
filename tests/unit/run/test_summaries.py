@@ -11,7 +11,7 @@ from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
-from pyct.results.llm_asks import AskCost, Unanswered, Why
+from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.results.record import Source as RecordSource
 from pyct.run import model_runs
@@ -157,6 +157,17 @@ def test_a_failed_ask_is_said_and_skips_the_entry() -> None:
     assert notes == [AskSkipped("summaries", "timed out after 30 s")]
 
 
+def test_a_loop_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    failed = Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(2))
+    tool = Summaries(Fake(failed), load_target(COUNTS), told)
+
+    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
+
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, 2),)
+
+
 def test_the_token_limit_ends_the_asks_unsaid() -> None:
     limit = Unanswered(Why.LIMIT, "token limit reached", AskCost(1))
     second = Source(SourceKind.LOOP, "t", COMPREHENSION)
@@ -169,6 +180,16 @@ def test_the_token_limit_ends_the_asks_unsaid() -> None:
     assert len(fake.requests) == 1
     assert handled == Handled((Outcome.SKIPPED, Outcome.SKIPPED), asked=True)
     assert notes == []
+
+
+def test_a_loop_whose_only_ask_met_the_token_limit_is_not_listed() -> None:
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    limit = Unanswered(Why.LIMIT, "token limit reached", AskCost(1))
+    tool = Summaries(Fake(limit), load_target(COUNTS), told)
+
+    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
+
+    assert tool.states() == ()
 
 
 def test_no_ask_is_made_once_the_run_has_stopped() -> None:
@@ -248,7 +269,8 @@ def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
         SummaryRead(LOOP, 't = t + s.count("z")'),
         SummaryChecked(LOOP, 2),
     ]
-    assert tool.loops[LOOP] == LoopState(attempts=1, formula=FORMULA, checked_on=2)
+    assert tool.loops[LOOP] == LoopState(("t",), attempts=1, formula=FORMULA, checked_on=2)
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, 1, 2),)
 
 
 def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
@@ -264,6 +286,7 @@ def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
     assert notes[-1] == SummaryFailed(LOOP, 3, reason)
     assert tool.loops[LOOP].tries == [EarlierFormula(wrong, reason)]
     assert tool.loops[LOOP].checked_on is None
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), wrong, 3),)
 
 
 def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(

@@ -67,6 +67,8 @@ def test_a_loop_whose_formula_failed_is_asked_about_again_with_the_failed_formul
         f"{AT}: checked on {provider.inputs_then[1]} past runs",
     ]
     assert provider.inputs_then[0] < provider.inputs_then[1]
+    [loop] = done.result.summaries
+    assert (loop.tries, loop.checked_on) == (2, provider.inputs_then[1])
 
 
 # llm-summary-for-a-stuck-loop-checked-is-not-asked-again
