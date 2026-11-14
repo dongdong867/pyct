@@ -10,9 +10,10 @@ anything off the machine.
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Generator, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -130,13 +131,33 @@ def run_summaries(
     return Summarized(result, records, said)
 
 
+@contextlib.contextmanager
+def targets_imported_afresh() -> Generator[None]:
+    """Each ``targets`` module dropped from ``sys.modules`` for the block, so that the block
+    imports it again. After it, each ``targets`` module the block imported is dropped, so that
+    none compiled with the loop hooks reaches a later test, and each one dropped is back."""
+    before = {name: module for name, module in sys.modules.items() if _in_targets(name)}
+    for name in before:
+        del sys.modules[name]
+    try:
+        yield
+    finally:
+        for name in [name for name in sys.modules if _in_targets(name)]:
+            del sys.modules[name]
+        sys.modules.update(before)
+
+
+def _in_targets(name: str) -> bool:
+    return name.split(".")[0] == "targets"
+
+
 @pytest.fixture(autouse=True)
-def one_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def one_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
     """pyct's process as a run has it, one thread: pytest-timeout's watch runs another, and a
     formula's child forks beside it safely, since it takes no lock the call needs. The target's
     substituted code is kept in a cache folder of the test's own, and each target module is
-    imported again under the interception that records loops, then put back as it was."""
+    imported again under the interception that records loops (``targets_imported_afresh``)."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
     monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
-    for name in [name for name in sys.modules if name.split(".")[0] == "targets"]:
-        monkeypatch.delitem(sys.modules, name)
+    with targets_imported_afresh():
+        yield
