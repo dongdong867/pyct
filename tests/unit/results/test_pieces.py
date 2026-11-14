@@ -55,20 +55,31 @@ def test_a_loop_variable_nothing_reads_later_is_not_a_changed_name() -> None:
     assert names(read_after) == [(("xs",), ("x",))]
 
 
-def test_a_while_loop_reads_its_test_and_its_else_is_part_of_it() -> None:
+def test_a_while_loop_reads_its_test_and_its_else_is_not_part_of_it() -> None:
     source = """\
-    def f(n):
+    def f(n, m):
         i = 0
         while i < n:
             i += 1
         else:
-            done = i
+            done = i + m
         return done + i
     """
 
-    assert read(source) == [
-        Piece(line=3, col=4, going_in=("i", "n"), changed=("done", "i"), lines=(3, 6))
-    ]
+    assert read(source) == [Piece(line=3, col=4, going_in=("i", "n"), changed=("i",), lines=(3, 4))]
+
+
+def test_a_name_the_loop_binds_that_only_its_else_reads_is_changed() -> None:
+    source = """\
+    def f(xs):
+        for x in xs:
+            y = x * 2
+        else:
+            return y
+        return None
+    """
+
+    assert read(source) == [Piece(line=2, col=4, going_in=("xs",), changed=("y",), lines=(2, 3))]
 
 
 def test_a_read_before_the_piece_counts_inside_a_loop_around_it() -> None:

@@ -5,7 +5,9 @@ own body, at any depth, or an assignment there to one local name of the
 function's, with or without an annotation, whose value holds a list, set or
 dict comprehension or a generator expression outside any lambda. A function
 or class defined inside the function has a body of its own. Each piece is
-read off the function's AST, without running it:
+read off the function's AST, without running it. A loop's piece is the loop
+proper, its header and body: its ``else`` runs after the loop's exit hook,
+so it is outside the piece, as the code after the loop is.
 
 - its site: a loop's first keyword, and an assignment's first comprehension
   in the order written, which is where `pyct.results.sources` places a loop
@@ -14,9 +16,9 @@ read off the function's AST, without running it:
   them, that the piece reads, less a ``for`` loop's own variables, which
   it binds before its body reads them, unless its iterable reads them;
 - the changed names: for a loop, the function's local names it binds that
-  the function reads anywhere outside the loop, a loop around it included;
-  for an assignment, its target;
-- its first and last line.
+  the function reads anywhere outside the loop, its ``else`` and a loop
+  around it included; for an assignment, its target;
+- its first and last line, a loop's last being its body's.
 
 A function's local names are its parameters and the names its own code
 binds: by an assignment, an augmented one, which reads its name too, a
@@ -78,7 +80,7 @@ def _piece(
     statement: ast.stmt, walk: _Walk, local: frozenset[str], everywhere: list[tuple[str, ast.AST]]
 ) -> Piece:
     """One piece read off its statement, given every read of the function's own scope."""
-    met = list(walk.met([statement]))
+    met = list(walk.met(_proper(statement)))
     going_in = {name for bound, name, _ in met if not bound and name in local}
     going_in -= _bound_first(statement, walk)
     assigned = _assigned(statement)
@@ -96,8 +98,24 @@ def _piece(
         col=site[1],
         going_in=tuple(sorted(going_in)),
         changed=tuple(sorted(changed)),
-        lines=(statement.lineno, statement.end_lineno or statement.lineno),
+        lines=(statement.lineno, _last_line(statement)),
     )
+
+
+def _proper(statement: ast.stmt) -> list[ast.AST]:
+    """The parts of a statement that are its piece: a loop's header and body, without its
+    ``else``, and all of an assignment."""
+    if isinstance(statement, ast.For | ast.AsyncFor):
+        return [statement.target, statement.iter, *statement.body]
+    if isinstance(statement, ast.While):
+        return [statement.test, *statement.body]
+    return [statement]
+
+
+def _last_line(statement: ast.stmt) -> int:
+    """A piece's last line: a loop's body's, and an assignment's own."""
+    last = statement.body[-1] if isinstance(statement, LOOPS) else statement
+    return last.end_lineno or last.lineno
 
 
 def _bound_first(statement: ast.stmt, walk: _Walk) -> set[str]:

@@ -109,6 +109,61 @@ def test_a_while_true_and_a_for_record_a_run_that_ends_by_a_break() -> None:
     ]
 
 
+FOR_ELSE = """\
+def f(xs):
+    last = None
+    t = 0
+    for x in xs:
+        if x < 0:
+            break
+        t += x
+    else:
+        last = t
+    return t, last
+"""
+WHILE_ELSE = """\
+def f(n):
+    i = 0
+    done = False
+    while i < n:
+        if i == 5:
+            break
+        i += 1
+    else:
+        done = True
+    return i, done
+"""
+READ_IN_ELSE = """\
+def f(xs):
+    for x in xs:
+        y = x * 2
+    else:
+        return y
+    return None
+"""
+
+
+def test_a_loop_s_else_is_not_its_own_and_it_records_the_loop_s_values_however_it_ends() -> None:
+    # each loop in an input of its own, since two of them share a site
+    with live() as for_else:
+        assert hooked(FOR_ELSE)([1, 2]) == (3, 3)
+        assert hooked(FOR_ELSE)([1, -1]) == (1, None)
+    with live() as while_else:
+        assert hooked(WHILE_ELSE)(2) == (2, True)
+        assert hooked(WHILE_ELSE)(9) == (5, False)
+    with live() as read_in_else:
+        assert hooked(READ_IN_ELSE)([1, 2]) == 4
+
+    # the else's names are not the loop's; one the loop binds that its else reads is
+    assert for_else + while_else + read_in_else == [
+        run(4, 4, {"t": "0", "xs": "[1, 2]"}, {"t": "3"}),
+        run(4, 4, {"t": "0", "xs": "[1, -1]"}, {"t": "1"}),
+        run(4, 4, {"i": "0", "n": "2"}, {"i": "2"}),
+        run(4, 4, {"i": "0", "n": "9"}, {"i": "5"}),
+        run(2, 4, {"xs": "[1, 2]"}, {"y": "4"}),
+    ]
+
+
 def test_only_the_first_three_runs_of_a_piece_in_an_input_are_recorded() -> None:
     f = hooked(LOOPS["while"])
 
