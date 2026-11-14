@@ -35,10 +35,11 @@ class Tree:
     site, whatever came before it: a fork whose other side is in no input
     yet is a new side, and the pick tries those first (see `next`).
 
-    A pick whose ask ran to the solver's limit, or whose input left the plan
-    and covered no new line, turns the rest of its path's new sides
-    shallowest first (see `turn`); after a timeout, every other fork at its
-    site also waits until each fork elsewhere was aimed at (see `timed_out`).
+    A pick whose ask ran to the solver's limit or answered a slow
+    ``unknown``, or whose input left the plan and covered no new line, turns
+    the rest of its path's new sides shallowest first (see `turn`); after
+    such an ask, every other fork at its site also waits until each fork
+    elsewhere was aimed at (see `timed_out`).
 
     Each site gets a number the first time the tree meets it, and the tree
     keys a fork by that number: a ``Site`` hashes in Python, a number in C,
@@ -142,14 +143,16 @@ class Tree:
         return plan(forks[: depth + 1], path, facts)
 
     def timed_out(self) -> None:
-        """The last pick's ask ran to the solver's limit: its path turns (`turn`), and every
-        fork at its site on any path waits until each fork elsewhere was aimed at.
+        """The last pick's ask ran to the solver's limit, or answered ``unknown`` slowly, as the
+        run judges it: its path turns (`turn`), and every fork at its site on any path waits
+        until each fork elsewhere was aimed at.
 
         A fork at the same site asks the same condition of the same kind of
         value, as `int(s)` after `s.isdigit()` does in each call of a helper,
         which only a string of more digits than Python reads flips, so it
-        would likely run out of time as well. Decision
-        fork-order-a-timed-out-site-waits-for-the-last-picks.
+        would likely run out of time as well. Decisions
+        fork-order-a-timed-out-site-waits-for-the-last-picks and
+        fork-order-a-slow-unknown-waits-as-a-timeout-does.
         """
         if self._picked_number is not None:
             self._timed_out.add(self._picked_number)
@@ -159,14 +162,15 @@ class Tree:
         """The last pick's path's other new sides, still waiting, go shallowest first, once per
         path, whichever cause turns it first.
 
-        The run turns a path when the pick's ask ran to the solver's limit
-        (`timed_out`), or when its input left the plan and covered no line no
-        earlier input had. The ask for a fork holds the path up to it, so the
-        next deepest holds nearly the same and would likely run out of time
-        or leave the plan too, on what the solver does not model, such as a
-        cache's key compares; the shallowest holds the least. A pick from the
-        oldest-path order or the last picks has none of its path's new sides
-        waiting, so its turn moves nothing. Decisions
+        The run turns a path when the pick's ask ran to the solver's limit or
+        answered a slow ``unknown`` (`timed_out`), or when its input left the
+        plan and covered no line no earlier input had. The ask for a fork
+        holds the path up to it, so the next deepest holds nearly the same
+        and would likely run out of time or leave the plan too, on what the
+        solver does not model, such as a cache's key compares; the shallowest
+        holds the least. A pick from the oldest-path order or the last picks
+        has none of its path's new sides waiting, so its turn moves nothing.
+        Decisions
         fork-order-shallowest-first-after-a-timeout and
         fork-order-shallowest-first-after-a-leave-without-gain.
         """
