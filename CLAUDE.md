@@ -35,7 +35,8 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   │                 each ask to a model in a worker process of its own, `python -I -m
 │   │                 pyct.llm.worker`, killed at 30 s; a replay answers from its file. Only the
 │   │                 worker imports a provider's SDK. Records each reply and keeps the run's
-│   │                 token ledger
+│   │                 token ledger. seeds.py, summaries.py and rewrites.py write each tool's
+│   │                 request text and read its reply
 │   ├── run/          run(target, seed, *, limits, setup, tell) -> RunResult. Setup holds the
 │   │                 isolation and the LLM helpers. The budget's clock pauses while it waits
 │   │                 for the LLM.
@@ -43,7 +44,8 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   │                 moment that hands the LLM tools their missed lines, isolation.py runs each
 │   │                 input in a throwaway process, and model_runs.py runs each call on
 │   │                 model-written code in a forked child; rewrites.py fills the moment's
-│   │                 rewrites slot
+│   │                 rewrites slot, and summaries.py its summaries slot, checking each
+│   │                 formula through summary_checks.py
 │   ├── rewrite/      the LLM rewrite of a condition the solver gives up on: the request, the
 │   │                 reply read and checked, the ask on the same path, the tries, the rewrites
 │   │                 kept. run passes in the run as the tries see it, through `Around`
@@ -97,10 +99,10 @@ core's top level fails lint.
 
 ## Protocols
 
-Five one-method protocols, each declared at its consumer and implemented in
-`llm/`: `SummaryProvider` in core, `HintProvider` in solver, `RewriteProvider`
-in rewrite (`rewrite/provider.py`), `SeedProvider` in run (`run/llm_seeds.py`),
-`TriageProvider` in sweep. A provider returns its reply or `Unanswered` and
+Three one-method protocols, each declared at its consumer and implemented in
+`llm/`: `SeedProvider` in run (`run/llm_seeds.py`), `SummaryProvider` in run
+(`run/summaries.py`), `RewriteProvider` in rewrite (`rewrite/provider.py`).
+`HintProvider` in solver and `TriageProvider` in sweep come with their tools. A provider returns its reply or `Unanswered` and
 never raises for an LLM problem. `run()` takes the helpers in
 `Setup(isolation=..., helpers=Helpers(...))`, one field per tool; `Helpers()`
 with nothing set is pure concolic. A helper never changes the tree and never
