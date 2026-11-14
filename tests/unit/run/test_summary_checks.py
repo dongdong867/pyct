@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
+from pyct.execution.blame import one_line
 from pyct.intercept.model_code import Refused
 from pyct.run import model_runs
 from pyct.run.summary_checks import (
@@ -345,9 +346,12 @@ def test_a_value_json_cannot_hold_is_named_by_its_kind() -> None:
 
 
 def test_a_raise_on_a_past_run_names_its_input() -> None:
+    with pytest.raises(ZeroDivisionError) as plain:
+        1 // len("")
+
     reason = checked("def summary(s, t):\n    return {'t': t + 1 // (len(s) - 2)}")
 
-    assert reason == "it raised at input 1: ZeroDivisionError: integer division or modulo by zero"
+    assert reason == f"it raised at input 1: {one_line(plain.value)}"
 
 
 def test_a_correct_formula_passes_on_runs_whose_values_pass_the_answer_s_capacity() -> None:
