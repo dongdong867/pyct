@@ -40,7 +40,8 @@ BEFORE_SEED_FORM = (
     " annotation does not name, when the code shows it uses one."
 )
 ESCAPE_SENTENCE = (
-    ' An argument the code uses as a dict writes a key "__class__" it holds as "!__class__".'
+    ' A dict the code uses as a dict, at any depth, writes a key "__class__" it holds as'
+    ' "!__class__".'
 )
 # a recording pyct wrote at 2e3ac4fa, before this ticket, for a run of kind_of whose seeds
 # reply builds a Box, then gives a dict holding "__complex__"
