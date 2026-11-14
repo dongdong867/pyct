@@ -1,7 +1,7 @@
-"""Acceptance tests for sweep-writes-a-default-dict-s-class-key-escaped: a default dict reaches
+"""The acceptance test for sweep-writes-a-default-dict-s-class-key-escaped: a default dict reaches
 each entry's ``pyct run`` as the same dict.
 
-Each sweeps a module in a temporary folder whose entries write the value they got, as JSON, to a
+It sweeps a module in a temporary folder whose entries write the value they got, as JSON, to a
 file of their own in the folder ``SEEN`` names. An entry with no branch runs once, so its file's
 first line is the seed's value as the target got it.
 """
