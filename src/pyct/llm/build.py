@@ -15,6 +15,7 @@ from pyct.llm.recording import Recording
 from pyct.llm.replay import ReplayCaller, read_replay
 from pyct.llm.rewrites import REWRITES, LlmRewrites
 from pyct.llm.seeds import SEEDS, LlmSeeds
+from pyct.llm.summaries import SUMMARIES, LlmSummaries
 from pyct.results.llm_asks import Why
 from pyct.run.helpers import Helpers
 from pyct.run.tell import Noted
@@ -72,6 +73,7 @@ def _built(settings: LlmSettings, model: Model, caller: Caller, noted: Noted | N
     tools = settings.tools
     helpers = Helpers(
         seeds=LlmSeeds(connection) if SEEDS.name in tools else None,
+        summaries=LlmSummaries(connection) if SUMMARIES.name in tools else None,
         rewrites=LlmRewrites(connection) if REWRITES.name in tools else None,
     )
     return Built(helpers, model, connection)

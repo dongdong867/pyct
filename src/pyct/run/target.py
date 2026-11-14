@@ -300,10 +300,12 @@ def _reason(error: BaseException) -> str:
     return lines[0] if type(error) in _INSPECT_S_OWN else f"{named}: {lines[0]}"
 
 
-def interception(spec: str) -> contextlib.AbstractContextManager[None]:
+def interception(spec: str, *, pieces: bool = False) -> contextlib.AbstractContextManager[None]:
     """The block that substitutes the target's package, for the owner of a run to hold open.
 
     The spec's module names the package. Its code is kept in the cache
-    folder as it is when the block opens.
+    folder as it is when the block opens. With ``pieces``, each loop and
+    comprehension's runs are recorded (``Interception.pieces``).
     """
-    return intercepting(Interception(module=spec.partition("::")[0], cache=cache_folder()))
+    module = spec.partition("::")[0]
+    return intercepting(Interception(module=module, cache=cache_folder(), pieces=pieces))

@@ -41,7 +41,7 @@ from pyct.config.command_line import (
     parse_solver_timeout,
 )
 from pyct.config.limits import Limits
-from pyct.config.llm import SEEDS_TOOL, LlmSettings, parse_llm
+from pyct.config.llm import SEEDS_TOOL, LlmSettings, asks_summaries, parse_llm
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -166,7 +166,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         command = parse_command(sys.argv[1:] if argv is None else argv)
         if isinstance(command, SweepCommand):
             return run_sweep(command)
-        with interception(command.spec):
+        with interception(command.spec, pieces=asks_summaries(command.llm_text)):
             result, started = _run(command, watch)
     except UsageError as error:
         print(error, file=sys.stderr)

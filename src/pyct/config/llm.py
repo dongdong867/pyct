@@ -10,11 +10,13 @@ from pyct.config.command_line import UsageError
 
 # the seeds tool's name, as ``--llm``, stderr and the code that builds it write it
 SEEDS_TOOL = "seeds"
+# the summaries tool's name, written the same ways
+SUMMARIES_TOOL = "summaries"
 # the rewrites tool's name, written the same ways
 REWRITES_TOOL = "rewrites"
 # every LLM tool this version has, in the order ``--llm all`` lists them: seeds, summaries,
 # rewrites, guesses, as each lands
-TOOLS = (SEEDS_TOOL, REWRITES_TOOL)
+TOOLS = (SEEDS_TOOL, SUMMARIES_TOOL, REWRITES_TOOL)
 # the word ``--llm`` takes for every tool in TOOLS
 ALL = "all"
 # the providers ``--llm-model`` takes, each with an adapter of its own
@@ -83,6 +85,15 @@ def parse_llm(
     replay = None if replay_text is None else Path(replay_text)
     limit = DEFAULT_LIMIT if limit_text is None else _limit(limit_text)
     return LlmSettings(tools, model, replay, limit)
+
+
+def asks_summaries(tools_text: str | None) -> bool:
+    """Whether ``--llm`` as written names summaries, itself or through ``all``: the run then
+    records each loop's runs, which the interception must know before the target loads. It
+    reads the names alone; ``parse_llm`` refuses a wrong flag."""
+    if tools_text is None:
+        return False
+    return bool({part.strip() for part in tools_text.split(",")} & {SUMMARIES_TOOL, ALL})
 
 
 def _limit(text: str) -> int:
