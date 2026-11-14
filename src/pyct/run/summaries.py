@@ -53,16 +53,21 @@ from pyct.run.notes import (
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
+from pyct.run.summary_checks import (
+    CANNOT_FORK,
+    CompleteRun,
+    Ended,
+    check_formula,
+    formula_code,
+)
 from pyct.run.target import Target
 from pyct.run.tell import Told
 
 # the recorded runs a request shows at most
 SHOWN_RUNS = 10
-# why a loop is not asked about: no run of it holds every name it changes, or no formula could
-# run beside a second thread of pyct's process
+# why a loop is not asked about: no run of it holds every name it changes; or, as
+# ``CANNOT_FORK`` says, no formula could run beside a second thread of pyct's process
 NO_RECORDED_RUN = "no recorded run"
-CANNOT_FORK = "cannot fork"
 
 
 @dataclass(frozen=True)
