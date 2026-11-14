@@ -1,6 +1,7 @@
 """Acceptance tests for the ask-for-a-stuck-loop-s-summary story through ``pyct run``:
 ``--llm summaries`` switches the tool on, alone or in ``all``, the recording of each loop's runs
-it switches on changes no input, and the summary line lists each loop asked about with its state.
+it switches on changes no input, the summary line lists each loop asked about with its state, and
+a recorded run replays its summaries asks.
 
 Each run's base URLs point at a stub on localhost or at a local port nothing listens on, and
 neither real key reaches pyct, so no request leaves the machine.
@@ -8,8 +9,17 @@ neither real key reaches pyct, so no request leaves the machine.
 
 from pathlib import Path
 
-from tests.acceptance.harness import input_lines, run_pyct, summary_line
-from tests.acceptance.llm_stub import Stub, closed_port, llm_lines, llm_run
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.llm_stub import (
+    KEY_VARIABLES,
+    Stub,
+    closed_port,
+    llm_env,
+    llm_lines,
+    llm_run,
+    read_recording,
+    recordings,
+)
 from tests.acceptance.llm_summaries import COUNT, F, code_reply
 
 COUNTS = "targets.why.stuck::counts"
@@ -115,3 +125,65 @@ def test_a_run_that_asked_about_no_loop_lists_none(stub: Stub, tmp_path: Path) -
     assert result.returncode == 0, result.stderr
     assert stub.received == []
     assert summaries_of(result.stdout) == []
+
+
+def recorded_run(stub: Stub, cache: Path) -> tuple[Path, list[str]]:
+    """A run of ``counts`` whose one summaries ask the stub answered with ``COUNT``: its
+    recording, and its ``llm: summary for`` lines."""
+    stub.reply = COUNT
+    result = llm_run(stub.port, cache, SEED, "--llm", "summaries", *PLATEAU, target=COUNTS)
+    assert result.returncode == 0, result.stderr
+    [recording] = recordings(cache)
+    return recording, summary_said(result.stderr)
+
+
+def summary_said(stderr: str) -> list[str]:
+    return [line for line in llm_lines(stderr) if line.startswith("llm: summary for")]
+
+
+# llm-summary-for-a-stuck-loop-replayed
+def test_a_recorded_summaries_ask_is_answered_from_the_file(stub: Stub, tmp_path: Path) -> None:
+    recording, said = recorded_run(stub, tmp_path)
+    [_, reply] = read_recording(recording)
+    assert (reply["tool"], reply["place"], reply["try"]) == (
+        "summaries",
+        "targets.why.stuck:10:4",
+        1,
+    )
+    replay = ("--llm", "summaries", "--llm-replay", str(recording), *PLATEAU)
+
+    replayed = llm_run(closed_port(), tmp_path, SEED, *replay, target=COUNTS)
+
+    assert replayed.returncode == 0, replayed.stderr
+    assert len(stub.received) == 1
+    llm = summary_line(replayed.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert (llm["asks"], llm["replayed"], llm["skipped"]) == (0, 1, 0)
+    assert len(said) == 2
+    assert summary_said(replayed.stderr) == said
+
+
+# llm-summary-for-a-stuck-loop-replay-misses-a-moved-loop
+def test_a_loop_that_moved_is_not_in_the_replay_file(stub: Stub, tmp_path: Path) -> None:
+    recording, _ = recorded_run(stub, tmp_path)
+    copy = tmp_path / "copy"
+    (copy / "targets" / "why").mkdir(parents=True)
+    source = (REPO_ROOT / "targets" / "why" / "stuck.py").read_text()
+    moved = source.replace("    t = 0\n    for c in s:", "    t = 0\n\n    for c in s:", 1)
+    assert moved != source
+    (copy / "targets" / "why" / "stuck.py").write_text(moved)
+    replay = ("--llm", "summaries", "--llm-replay", str(recording), *PLATEAU)
+
+    result = run_pyct(
+        COUNTS,
+        SEED,
+        *replay,
+        cwd=copy,
+        unset=KEY_VARIABLES,
+        env=llm_env(tmp_path, closed_port()),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "llm: summaries ask skipped: not in the replay file" in llm_lines(result.stderr)
+    assert summary_said(result.stderr) == []
+    assert summary_line(result.stdout)["stopped"] == "no gain in 8 inputs"
