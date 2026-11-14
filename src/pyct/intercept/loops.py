@@ -59,6 +59,9 @@ _OVER = "__pyct_piece_over__"
 _IN = "__pyct_piece_in__"
 _OUT = "__pyct_piece_out__"
 _VALUE = "__pyct_piece_value__"
+# the module that defines the hooks, which a module binds them from, so one compiled with the
+# switch off never loads it
+HOOKS = "pyct.core.entry.pieces"
 BOUND: dict[str, str] = {
     _OVER: "piece_over",
     _IN: "piece_in",

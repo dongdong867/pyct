@@ -8,7 +8,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyct.core.entry import substitutes
+from pyct.core.entry import pieces as hooks
 from pyct.intercept.substitute import substitute
 from pyct.results.pieces import pieces
 from tests.unit.intercept.lines_up import lined_up
@@ -38,6 +38,8 @@ VARIES = {
     "while_and_last_in_if_in_try": {(4, 12)},
     "while_or_last_in_if_in_try": {(4, 12)},
 }
+# how the import of the hooks a module compiled with the switch on binds begins
+HOOKS_BINDING = "from pyct.core.entry.pieces import "
 # the names of the hooks a substituted module calls
 HOOKS = ("__pyct_piece_over__", "__pyct_piece_in__", "__pyct_piece_out__", "__pyct_piece_value__")
 
@@ -45,7 +47,8 @@ HOOKS = ("__pyct_piece_over__", "__pyct_piece_in__", "__pyct_piece_out__", "__py
 def hooked(source: str) -> str:
     """The source with the switch on, written back as Python, less its binding import."""
     lines = ast.unparse(substitute(ast.parse(source), pieces=True)).splitlines()
-    return "\n".join(line for line in lines if not line.startswith(BINDING)).lstrip("\n")
+    kept = [line for line in lines if not line.startswith((BINDING, HOOKS_BINDING))]
+    return "\n".join(kept).lstrip("\n")
 
 
 def piece_sites(source: str) -> set[tuple[int, int]]:
@@ -156,7 +159,9 @@ def test_the_hooks_are_bound_by_the_module_and_by_each_class_body() -> None:
 
     text = ast.unparse(substitute(ast.parse(source), pieces=True))
 
-    assert f"{BINDING}piece_over as __pyct_piece_over__, piece_out as __pyct_piece_out__" in text
+    bound = "piece_over as __pyct_piece_over__, piece_out as __pyct_piece_out__"
+    assert f"{HOOKS_BINDING}{bound}" in text
+    assert BINDING not in text
     assert "global __pyct_piece_over__, __pyct_piece_out__" in text
 
 
@@ -181,8 +186,8 @@ def recording(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[str, int, 
         return held
 
     for name, hook in (("piece_over", over), ("piece_in", entry), ("piece_out", out)):
-        monkeypatch.setattr(substitutes, name, hook)
-    monkeypatch.setattr(substitutes, "piece_value", value)
+        monkeypatch.setattr(hooks, name, hook)
+    monkeypatch.setattr(hooks, "piece_value", value)
     yield calls
 
 

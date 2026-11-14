@@ -1,16 +1,16 @@
 """Which compares the transform substitutes, what it leaves alone, and what each call is handed."""
 
 import ast
+import importlib
 import time
 
 import pytest
 
-from pyct.core.entry import substitutes
 from pyct.core.entry.hashed import SEARCHED_MOST
 from pyct.core.foundation.branch import SinkItem
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.intercept.compiled import SubstitutionError, substituted_code
-from pyct.intercept.substitute import BOUND, substitute
+from pyct.intercept.substitute import BOUND, FROM, substitute
 
 # how the import a module with a substitution starts with begins
 BINDING = "from pyct.core.entry.substitutes import "
@@ -338,7 +338,19 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_piece_out__": "piece_out",
         "__pyct_piece_value__": "piece_value",
     }
-    assert all(hasattr(substitutes, function) for function in BOUND.values())
+
+
+def test_each_bound_name_is_a_function_of_the_module_it_is_bound_from() -> None:
+    # substitutes, or pieces for the loop hooks, which a module compiled with the switch off skips
+    assert {FROM[name] for name in BOUND if name.startswith("__pyct_piece_")} == {
+        "pyct.core.entry.pieces"
+    }
+    assert {FROM[name] for name in BOUND if not name.startswith("__pyct_piece_")} == {
+        "pyct.core.entry.substitutes"
+    }
+    assert all(
+        hasattr(importlib.import_module(FROM[name]), function) for name, function in BOUND.items()
+    )
 
 
 def test_a_repeated_constant_is_handed_over_once_as_the_display_holds_it() -> None:

@@ -29,7 +29,8 @@ link there becomes an `in` on ``__pyct_identity__`` whatever its right,
 and a compare runs on the operand the call holds
 (interception-chain-links-searched-through-a-container).
 
-The module binds those names itself, in an import placed before its first
+The module binds those names itself, in an import of each module that
+defines some (`FROM`), placed before its first
 statement that runs code, after its docstring and its ``__future__``
 imports and at that statement's first instruction
 (`positions.statement_start`), so it adds no line and the code has them in
@@ -82,7 +83,7 @@ _NAMES: dict[type[ast.cmpop], str] = {
 # the name a chain's `in` link searches through, and the one an `is` link's right side becomes
 _SEARCHED = "__pyct_searched__"
 _IDENTITY = "__pyct_identity__"
-# the function of pyct.core.entry.substitutes each name any rule calls is bound to
+# the function each name any rule calls is bound to, of the module `FROM` names
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
@@ -109,8 +110,12 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.NotIn: ast.In,
 }
 
-# the module the bound names come from
+# the module each bound name comes from: pyct.core.entry.substitutes, but for the loop hooks,
+# which a module compiled with the pieces switch off never loads
 _SUBSTITUTES = "pyct.core.entry.substitutes"
+FROM: dict[str, str] = {
+    name: loops.HOOKS if name in loops.BOUND else _SUBSTITUTES for name in BOUND
+}
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -371,7 +376,7 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> No
     for index in range(start, len(body)):
         found = statement_start(body[:start], body[index])
         if found is not None:
-            body.insert(index, _imported(names, *found))
+            body[index:index] = _imported(names, *found)
             break
     for owner in classes:
         place = _after_preamble(owner.body, module=False)
@@ -380,10 +385,17 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> No
         owner.body.insert(place, _at(declared, where.lineno, where.col_offset))
 
 
-def _imported(names: list[str], line: int, column: int) -> ast.ImportFrom:
-    """``from pyct.core.entry.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
-    aliases = [_at(ast.alias(name=BOUND[name], asname=name), line, column) for name in names]
-    return _at(ast.ImportFrom(module=_SUBSTITUTES, names=aliases, level=0), line, column)
+def _imported(names: list[str], line: int, column: int) -> list[ast.stmt]:
+    """``from pyct.core.entry.substitutes import in_ as __pyct_in__, ...``, one for each module
+    the names come from, in the order first named, each placed at one spot."""
+    aliases: dict[str, list[ast.alias]] = {}
+    for name in names:
+        alias = _at(ast.alias(name=BOUND[name], asname=name), line, column)
+        aliases.setdefault(FROM[name], []).append(alias)
+    return [
+        _at(ast.ImportFrom(module=module, names=held, level=0), line, column)
+        for module, held in aliases.items()
+    ]
 
 
 def _after_preamble(body: list[ast.stmt], *, module: bool) -> int:

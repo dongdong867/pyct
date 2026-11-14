@@ -13,6 +13,7 @@ from pyct.core.entry.pieces import piece_in, piece_out, piece_over, piece_value
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, SinkItem, Site
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.intercept.compiled import substituted_code
+from pyct.intercept.loops import BOUND
 from tests.unit.intercept.loop_shapes import ASSIGNMENTS, LOOPS
 
 SITE = (3, 4, ("t", "xs"), ("t",))
@@ -27,9 +28,9 @@ def test_each_hook_hands_back_what_the_code_needs() -> None:
     assert piece_out(*SITE) is None
 
 
-def test_substituted_modules_import_the_hooks_from_substitutes() -> None:
-    assert (substitutes.piece_over, substitutes.piece_in) == (piece_over, piece_in)
-    assert (substitutes.piece_out, substitutes.piece_value) == (piece_out, piece_value)
+def test_the_hooks_are_not_among_what_every_substituted_module_imports() -> None:
+    # a module compiled with the pieces switch on imports them from here itself
+    assert not any(hasattr(substitutes, name) for name in BOUND.values())
 
 
 def hooked(source: str, **names: object) -> Callable[..., object]:

@@ -110,3 +110,38 @@ def test_a_warm_substituted_import_costs_at_most_a_quarter_or_1_ms_more(
     substituted = min(second for _, second in pairs)
 
     assert substituted <= allowed(written), (substituted, written)
+
+
+# an import in a fresh interpreter, with the pieces switch as the argument says: whether it loaded
+# the hooks of a piece
+LOADS = """
+import sys
+from pathlib import Path
+sys.path.insert(0, ".")
+from pyct.intercept.hook import Interception, intercepting
+switch = sys.argv[1] == "on"
+with intercepting(Interception(module="looped", cache=Path("cache"), pieces=switch)):
+    import looped
+print("pyct.core.entry.pieces" in sys.modules)
+"""
+LOOPED = "def f(xs):\n    t = 0\n    for x in xs:\n        t += x in (1, 2)\n    return t\n"
+
+
+@pytest.mark.parametrize(("switch", "loaded"), [("off", False), ("on", True)])
+def test_a_module_compiled_with_the_pieces_switch_off_loads_no_hook_of_a_piece(
+    tmp_path: Path, switch: str, loaded: bool
+) -> None:
+    (tmp_path / "looped.py").write_text(LOOPED)
+    environment = {k: v for k, v in os.environ.items() if k not in COVERAGE_STARTUP}
+
+    finished = subprocess.run(
+        [sys.executable, "-c", LOADS, switch],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+    assert finished.stdout.strip() == str(loaded)
