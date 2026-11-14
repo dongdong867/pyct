@@ -26,7 +26,7 @@ from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of
 from pyct.run.stuck import Stuck
 from pyct.run.tell import Ask, Told
-from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown
+from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import taking
 
@@ -385,34 +385,43 @@ def _attempt(
     stop = _covered_or_plateau(bounds, progress)
     if stop is not None:
         return Attempt(stop=stop, unrun=unrun)
-    origin, limit = inputs[wanted.path], _solve_limit(bounds, left)
+    origin = inputs[wanted.path]
+    limit = _solve_limit(bounds, left)
     solved = ways.asker.solved(wanted, origin, limit)
-    answer, asked = solved.answer, solved.asked
     if _site_waits(solved, limit):
         tree.timed_out()
-    if isinstance(answer, Error):
-        stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
-        return Attempt(stop=stop, unrun=unrun, asked=asked)
+    answer = solved.answer
     if not isinstance(answer, Sat):
-        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, solved.seconds)
-        return Attempt(miss=miss, asked=asked)
+        return _unanswered(wanted, answer, solved, unrun)
     return _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
 
 
 def _site_waits(solved: Solved, limit: float) -> bool:
     """Whether the pick's site waits for the last picks (`Tree.timed_out`): its ask ran to its
-    limit, or cvc5 answered ``unknown`` after at least a quarter of ``limit``.
+    limit, or the pick's ask answered ``unknown`` after at least a quarter of ``limit``. In a
+    rewrites run the pick's seconds hold a kept rewrite's run and ask too.
 
     An ``unknown`` that slow at a site would likely be as slow at the next
     path's fork there, which is a new side and would be picked first on each
-    path. A quicker ``unknown`` may belong to its one path, and a guarded one
-    cost no solver time. Decision
+    path. A quicker ``unknown`` may belong to its one path. Decision
     fork-order-a-slow-unknown-waits-as-a-timeout-does.
     """
     answer = solved.answer
     if isinstance(answer, Unknown):
-        return not answer.guarded and solved.seconds >= limit * SLOW_UNKNOWN_SHARE
+        return solved.seconds >= limit * SLOW_UNKNOWN_SHARE
     return isinstance(answer, Timeout)
+
+
+def _unanswered(
+    wanted: Plan, answer: Unsat | Unknown | Timeout | Error, solved: Solved, unrun: ForkSite
+) -> Attempt:
+    """The pass for an answer that gives no input: the run's end when the solver crashed, and
+    a miss on the fork otherwise."""
+    if isinstance(answer, Error):
+        stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
+        return Attempt(stop=stop, unrun=unrun, asked=solved.asked)
+    miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, solved.seconds)
+    return Attempt(miss=miss, asked=solved.asked)
 
 
 def _input(ways: Ways, wanted: Plan, found: Seed, solved: Solved, until: float | None) -> Attempt:

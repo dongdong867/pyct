@@ -36,8 +36,8 @@ class Unsat:
 class Unknown:
     """The solver gave up on the prefix without deciding it."""
 
-    # whether a step guard, of tracked-key lookups or of a program's size, gave the ask up
-    # before cvc5 ran: it cost no solver time
+    # whether a step guard, of tracked-key lookups or of a program's size, gave up the ask's
+    # last program before cvc5 ran it; cvc5 may have answered an earlier program of the ask
     guarded: bool = field(default=False, compare=False)
 
 
