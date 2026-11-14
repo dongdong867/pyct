@@ -223,7 +223,7 @@ def test_from_a_seed_s_escaped_key() -> None:
 # run-a-plain-dict-stays-a-dict-escapes-an-escaped-key
 def test_escapes_an_escaped_key() -> None:
     code, stdout, stderr = pyct("has_escaped", {"d": {"a": 1}})
-    _, given, given_stderr = pyct("has_escaped", {"d": {"!__class__": 1}})
+    given_code, given, given_stderr = pyct("has_escaped", {"d": {"!__class__": 1}})
 
     assert code == 0, stderr
     lines = [
@@ -236,7 +236,11 @@ def test_escapes_an_escaped_key() -> None:
     ]
     assert lines, stdout
     assert covers(lines[0], returns_1(class_key.has_escaped))
-    assert not covers(input_lines(given)[0], returns_1(class_key.has_escaped)), given_stderr
+    assert given_code == 0, given_stderr
+    first = input_lines(given)[0]
+    assert first["failure"] is None, first
+    assert not covers(first, returns_1(class_key.has_escaped)), first
+    assert covers(first, line_of(class_key.has_escaped, "return 0")), first
 
 
 # run-a-plain-dict-stays-a-dict-around-a-built-object
