@@ -99,22 +99,11 @@ class FormCheck:
         function = tree.body[0]
         assert isinstance(function, ast.FunctionDef)
         function.body = formula_body(function)
-        refused = _bare(function) or self._signature(function.args) or self._body(function.body)
+        refused = _def_line(function, self.parameters) or self._body(function.body)
         if refused is not None:
             return refused
         tree.body.extend(ast.parse(_DRIVERS).body)
         return tree
-
-    def _signature(self, arguments: ast.arguments) -> str | None:
-        """Why the parameters are not exactly the formula's, each one bare, or None."""
-        names = [each.arg for each in arguments.args]
-        others = (arguments.posonlyargs, arguments.kwonlyargs, arguments.kw_defaults)
-        stars = (arguments.vararg, arguments.kwarg)
-        plain = not any((*others, arguments.defaults, *stars))
-        if not plain or sorted(names) != sorted(self.parameters) or len(set(names)) < len(names):
-            listed = ", ".join(self.parameters) or "none"
-            return f"{SUMMARY} must take exactly the parameters {listed}"
-        return next(filter(None, map(_bare_parameter, arguments.args)), None)
 
     def _body(self, body: list[ast.stmt]) -> str | None:
         """Why the function's body is outside the form, or None."""
@@ -183,29 +172,60 @@ def _one_function(tree: ast.Module) -> str | None:
     return _unread(tree) or (_TYPE_COMMENT if tree.type_ignores else None)
 
 
-def _bare(function: ast.FunctionDef) -> str | None:
-    """Why the definition holds more than its name, its parameters and its body, or None: a
-    decorator, type parameters, a return annotation or a type comment."""
-    refused = _unread(function) or _unread(function.args)
+def _def_line(function: ast.FunctionDef, parameters: tuple[str, ...]) -> str | None:
+    """Why the definition holds more than its name, the formula's parameters, each bare, and its
+    body, or None: a field the check does not read; else every cause in one reason, parameters
+    that are not exactly the formula's first, then what the line holds that a formula may not."""
+    every = _every_parameter(function.args)
+    refused = next(filter(None, map(_unread, [function, function.args, *every])), None)
     if refused is not None:
         return refused
-    if function.decorator_list:
-        return "a formula may not use a decorator"
+    causes = []
+    if not _exact(function.args, parameters):
+        listed = ", ".join(parameters) or "none"
+        causes.append(f"{SUMMARY} must take exactly the parameters {listed}")
+    held = _held(function, every)
+    if held:
+        either = f"{', '.join(held[:-1])} or {held[-1]}" if len(held) > 1 else held[0]
+        causes.append(f"a formula may not {either}")
+    return "; ".join(causes) or None
+
+
+def _every_parameter(arguments: ast.arguments) -> list[ast.arg]:
+    """Each parameter the definition names, the starred ones included."""
+    stars = [each for each in (arguments.vararg, arguments.kwarg) if each is not None]
+    return [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, *stars]
+
+
+def _exact(arguments: ast.arguments, parameters: tuple[str, ...]) -> bool:
+    """Whether the definition takes exactly the formula's parameters, each once, by position or
+    name, with no default."""
+    names = [each.arg for each in arguments.args]
+    others = (arguments.posonlyargs, arguments.kwonlyargs, arguments.kw_defaults)
+    stars = (arguments.vararg, arguments.kwarg)
+    plain = not any((*others, arguments.defaults, *stars))
+    return plain and sorted(names) == sorted(parameters) and len(set(names)) == len(names)
+
+
+def _held(function: ast.FunctionDef, every: list[ast.arg]) -> list[str]:
+    """What the definition holds that a formula may not, each as what it may not do, in the
+    order the line writes them: a decorator, type parameters, annotations, a type comment."""
+    annotated = [
+        what
+        for what, held in (
+            ("its parameters", any(each.annotation is not None for each in every)),
+            ("its return", function.returns is not None),
+        )
+        if held
+    ]
+    held = ["use a decorator"] if function.decorator_list else []
     if function.type_params:
-        return "a formula may not take type parameters"
-    if function.returns is not None:
-        return "a formula may not annotate its return"
-    return None if function.type_comment is None else _TYPE_COMMENT
-
-
-def _bare_parameter(parameter: ast.arg) -> str | None:
-    """Why a parameter holds more than its name, or None: an annotation or a type comment."""
-    refused = _unread(parameter)
-    if refused is not None:
-        return refused
-    if parameter.annotation is not None:
-        return "a formula may not annotate its parameters"
-    return None if parameter.type_comment is None else _TYPE_COMMENT
+        held.append("take type parameters")
+    if annotated:
+        held.append(f"annotate {' or '.join(annotated)}")
+    if function.type_comment is not None or any(each.type_comment for each in every):
+        held.append("hold a type comment")
+    return held
 
 
 def _unread(node: ast.AST) -> str | None:

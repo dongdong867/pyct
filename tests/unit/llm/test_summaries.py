@@ -62,6 +62,12 @@ def test_the_form_names_the_function_its_parameters_and_each_changed_name() -> N
     assert 'return {"t": ..., "u": ...}' in form
 
 
+def test_the_form_says_the_def_line_holds_no_annotation_default_or_decorator() -> None:
+    form = answer_form(("s", "t"), ("t",))
+
+    assert "Write the def line exactly as shown, with no annotation, default or decorator." in form
+
+
 def test_a_later_request_holds_each_earlier_formula_and_why_it_failed() -> None:
     tried = (EarlierFormula('def summary(s, t):\n    return {"t": len(s)}\n', "at input 1"),)
 

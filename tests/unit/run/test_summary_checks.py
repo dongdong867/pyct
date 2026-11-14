@@ -133,6 +133,7 @@ def test_the_form_check_refuses_with_one_short_reason(code: str, reason: str) ->
 
 BODY = "    return {'t': t + s.count('z')}"
 ONE_FUNCTION = "the code must define one function, summary, and nothing else"
+NOT_EXACT = "summary must take exactly the parameters s, t"
 
 
 @pytest.mark.parametrize(
@@ -140,19 +141,44 @@ ONE_FUNCTION = "the code must define one function, summary, and nothing else"
     [
         ("def summary(s: int, t):", "a formula may not annotate its parameters"),
         ("def summary(s, t) -> dict:", "a formula may not annotate its return"),
-        ("def summary[T](s: T, t):", "a formula may not take type parameters"),
+        (
+            "def summary[T](s: T, t):",
+            "a formula may not take type parameters or annotate its parameters",
+        ),
         ("def summary[T: int](s, t):", "a formula may not take type parameters"),
         ("def summary[*T](s, t):", "a formula may not take type parameters"),
         ("def summary(s, t=0):", "summary must take exactly the parameters s, t"),
         ("def summary(s, *, t=0):", "summary must take exactly the parameters s, t"),
         ("def summary(s, /, t):", "summary must take exactly the parameters s, t"),
-        ("def summary(s, t, *a: int):", "summary must take exactly the parameters s, t"),
-        ("def summary(s, t, **k: int):", "summary must take exactly the parameters s, t"),
+        ("def summary(s, t, *a: int):", f"{NOT_EXACT}; a formula may not annotate its parameters"),
+        ("def summary(s, t, **k: int):", f"{NOT_EXACT}; a formula may not annotate its parameters"),
         ("@max\ndef summary(s, t):", "a formula may not use a decorator"),
         ("async def summary(s, t):", ONE_FUNCTION),
     ],
 )
 def test_the_def_line_holds_the_name_and_the_bare_parameters_alone(line: str, reason: str) -> None:
+    assert refusal(f"{line}\n{BODY}") == reason
+
+
+@pytest.mark.parametrize(
+    ("line", "reason"),
+    [
+        (
+            "def summary(s: str, t: int) -> dict:",
+            "a formula may not annotate its parameters or its return",
+        ),
+        (
+            "@max\ndef summary[T](s, t) -> T:",
+            "a formula may not use a decorator, take type parameters or annotate its return",
+        ),
+        (
+            "def summary(s: str, t: int = 0):",
+            "summary must take exactly the parameters s, t;"
+            " a formula may not annotate its parameters",
+        ),
+    ],
+)
+def test_the_def_line_s_refusal_names_every_cause_at_once(line: str, reason: str) -> None:
     assert refusal(f"{line}\n{BODY}") == reason
 
 
