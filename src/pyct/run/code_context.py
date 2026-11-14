@@ -3,7 +3,9 @@
 The target comes first, and for a method its class's ``__init__``, then each function they call
 that its package defines, breadth first, each once and whole, while the code stays within the
 limit. A call is found by its name, read from the module the function was written in, or from
-the class a method's ``self`` or ``cls`` names, without running any code of the target's.
+the class a method's ``self`` or ``cls`` names. Each module, class and wrapper it reads to find
+a call is read by its type alone. The code itself is read by ``inspect.getsource``, as ``_part``
+says, which reads attributes as Python does.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import textwrap
 import types
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
-from typing import TypeGuard
+from typing import TypeGuard, cast
 
 from pyct.intercept.hook import in_package
 from pyct.run.target import Target
@@ -26,6 +28,11 @@ CODE_LIMIT = 16_000
 AROUND_LINES = 200
 
 type Code = Callable[..., object]
+
+# the descriptors that hold a class's and a module's own namespace, read by ``type`` and
+# ``types.ModuleType`` themselves, whatever the class of the value they read
+_CLASS_NAMES = vars(type)["__dict__"]
+_MODULE_NAMES = vars(types.ModuleType)["__dict__"]
 
 # the comments that mark a piece's first and last line in the code a summaries ask sends
 MARK_START = "# >>> the loop"
@@ -138,8 +145,8 @@ def _function_at(file: str, first: int) -> Code | None:
     for module in list(sys.modules.values()):
         if _file_of(module) != file:
             continue
-        held = list(vars(module).values())
-        held += [each for owner in held if _is_class(owner) for each in vars(owner).values()]
+        held = list(_namespace(module).values())
+        held += [each for owner in held if _is_class(owner) for each in _namespace(owner).values()]
         for each in held:
             found = _unwrapped(each)
             if not _is_function(found):
@@ -163,8 +170,7 @@ def _is_function(value: object) -> TypeGuard[types.FunctionType]:
 def _unwrapped(value: object) -> object:
     """The function a static or class method wraps, read by its type alone; else the value."""
     if issubclass(type(value), staticmethod | classmethod):
-        assert isinstance(value, staticmethod | classmethod)
-        return value.__func__
+        return cast("staticmethod[..., object] | classmethod[object, ..., object]", value).__func__
     return value
 
 
@@ -173,7 +179,18 @@ def _file_of(module: object) -> object:
     that no attribute hook of a lazy module runs; None for an entry that is not a module."""
     if not issubclass(type(module), types.ModuleType):
         return None
-    return object.__getattribute__(module, "__dict__").get("__file__")
+    return _namespace(module).get("__file__")
+
+
+def _namespace(value: object) -> Mapping[str, object]:
+    """The names a class or a module holds in its own namespace, read through the descriptor
+    ``type`` or ``types.ModuleType`` defines, so that no attribute hook of the value's own class
+    runs; empty for any other value."""
+    if issubclass(type(value), type):
+        return _CLASS_NAMES.__get__(value)
+    if issubclass(type(value), types.ModuleType):
+        return _MODULE_NAMES.__get__(value)
+    return {}
 
 
 def _starts(target: Target) -> list[Code]:
@@ -188,7 +205,10 @@ def _starts(target: Target) -> list[Code]:
 
 def _part(function: Code) -> str | None:
     """The function's code, dedented, under a ``# module.qualname`` line. None when Python
-    cannot give its source."""
+    cannot give its source. ``inspect.getsource`` and the line read the function's attributes,
+    and the ``__dict__`` of the ``sys.modules`` entry its ``__module__`` names, as Python reads
+    them, so an attribute hook of that entry's class runs, and so does one of the target's own
+    callable when it is not a plain function."""
     try:
         source = inspect.getsource(function)
     except (OSError, TypeError):
@@ -210,7 +230,7 @@ def _callees(function: Code, part: str, package: str) -> Iterator[Code]:
         if not _is_function(found):
             continue
         module = found.__module__
-        if isinstance(module, str) and in_package(package, module):
+        if issubclass(type(module), str) and in_package(package, module):
             yield found
 
 
@@ -230,7 +250,7 @@ def _resolved(expression: ast.expr, function: Code) -> object:
     if isinstance(expression, ast.Name):
         if expression.id in ("self", "cls"):
             return _owner(function)
-        return vars(_module(function)).get(expression.id)
+        return _namespace(_module(function)).get(expression.id)
     if isinstance(expression, ast.Attribute):
         base = _resolved(expression.value, function)
         if base is None:
@@ -244,26 +264,19 @@ def _resolved(expression: ast.expr, function: Code) -> object:
 
 
 def _module(function: Code) -> object:
-    """The module the function was written in, or an empty one when it is not loaded."""
-    return sys.modules.get(getattr(function, "__module__", ""), _NOWHERE)
+    """The entry of ``sys.modules`` the function names as its module, or None."""
+    return sys.modules.get(getattr(function, "__module__", ""))
 
 
 def _owner(function: Code) -> object:
     """The class a method was written in, read from its module by its qualified name."""
     owner: object = _module(function)
     for name in getattr(function, "__qualname__", "").split(".")[:-1]:
-        owner = vars(owner).get(name) if hasattr(owner, "__dict__") else None
+        owner = _namespace(owner).get(name)
     return owner if _is_class(owner) else None
 
 
 def _function(cls: type, name: str) -> Code | None:
     """The Python function the class itself defines under ``name``, or None."""
-    found = vars(cls).get(name)
+    found = _namespace(cls).get(name)
     return found if _is_function(found) else None
-
-
-class _Nowhere:
-    """A module that holds no name."""
-
-
-_NOWHERE = _Nowhere()

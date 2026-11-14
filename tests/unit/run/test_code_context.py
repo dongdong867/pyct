@@ -5,6 +5,7 @@ function around a piece, the piece marked, then its callees."""
 import inspect
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -125,6 +126,33 @@ def test_a_callee_that_names_no_module_is_left_out() -> None:
     code = code_context(here("calls_nowhere", calls_nowhere))
 
     assert headers(code) == [f"# {__name__}.calls_nowhere"]
+
+
+class Recording(type):
+    """A metaclass that keeps a mark of each attribute read on its classes, as a target's hook
+    can."""
+
+    reads: ClassVar[list[str]] = []
+
+    def __getattribute__(cls, name: str) -> object:
+        Recording.reads.append(name)
+        return super().__getattribute__(name)
+
+
+class Outer(metaclass=Recording):
+    class Inner:
+        def told(self, x: int) -> int:
+            return self.told(x) + helper(x)
+
+
+def test_finding_a_nested_class_s_method_reads_nothing_through_its_metaclass() -> None:
+    told = Outer.Inner.told
+    Recording.reads.clear()
+
+    code = code_context(here("Outer.Inner.told", told))
+
+    assert headers(code) == [f"# {__name__}.Outer.Inner.told", f"# {__name__}.helper"]
+    assert Recording.reads == []
 
 
 def test_code_python_cannot_parse_alone_leads_to_no_callee(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -290,6 +318,49 @@ def test_following_the_calls_to_the_target_s_objects_runs_none_of_their_code(
 
     assert headers(code) == ["# lazy_calls.m.calls", "# lazy_calls.m.helper"]
     assert vars(sys.modules["lazy_calls.m"])["SEEN"] == []
+
+
+# a class method whose wrapper's class, read through ``__class__``, keeps a mark in ``SEEN``
+WRAPPED = """
+
+class Recorded(classmethod):
+    @property
+    def __class__(self):
+        SEEN.append("ran")
+        return classmethod
+
+
+class Shelf:
+    @Recorded
+    def build(cls, s):
+        return helper(s)
+
+
+def builds(s):
+    return Shelf.build(s)
+"""
+
+
+def test_reading_a_class_method_s_wrapper_of_a_subclass_runs_none_of_its_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "wrapped_calls"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "m.py").write_text(LOOPED + LAZY + WRAPPED)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = load_target("wrapped_calls.m::builds")
+
+    code = code_context(target)
+    piece = code_with_piece(target, str(package / "m.py"), (8, 9))
+
+    assert headers(code) == [
+        "# wrapped_calls.m.builds",
+        "# wrapped_calls.m.Shelf.build",
+        "# wrapped_calls.m.helper",
+    ]
+    assert piece.startswith("# wrapped_calls.m.Box.f\n")
+    assert vars(sys.modules["wrapped_calls.m"])["SEEN"] == []
 
 
 def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
