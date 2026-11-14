@@ -167,8 +167,9 @@ class Asking:
         if blocked is not None:
             around.note(RewriteSkipped(self.given.condition.site, blocked))
             return _Ended(blocked)
+        request = request_for(self.given, self.about, earlier, self.objects)
         started = time.monotonic()
-        answer = self.provider.rewrite(request_for(self.given, self.about, earlier, self.objects))
+        answer = self.provider.rewrite(request)
         around.pause(time.monotonic() - started)
         return answer
 

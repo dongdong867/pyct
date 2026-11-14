@@ -4,6 +4,9 @@ budget or an input that met the run's stop, and fail with a reason for each othe
 import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
+
+import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
@@ -119,6 +122,34 @@ def test_an_input_that_takes_the_side_ends_the_tries_with_the_rewrite_kept() -> 
 
     assert tried(fake) == Tried(True, True)
     assert fake.asked == 1
+
+
+def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr(tries, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    built = tries.request_for
+
+    def building(*args: Any) -> RewriteRequest:
+        now[0] += 10.0
+        return built(*args)
+
+    @dataclass
+    class Waits(Fake):
+        paused: list[float] = field(default_factory=list)
+
+        def rewrite(self, request: RewriteRequest) -> RewriteReply | Unanswered:
+            now[0] += 3.0
+            return super().rewrite(request)
+
+        def pause(self, seconds: float) -> None:
+            self.paused.append(seconds)
+
+    monkeypatch.setattr(tries, "request_for", building)
+    fake = Waits(reply=Unanswered(Why.TIMED_OUT, "timed out", AskCost(1)))
+
+    tried(fake)
+
+    assert fake.paused == [3.0]
 
 
 def test_an_ask_with_no_answer_ends_the_tries() -> None:
