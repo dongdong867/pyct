@@ -35,7 +35,7 @@ module as written, on more than one line, or on a jump with no line of its
 own; and one whose test is a chained compare. The second takes in a
 ``while`` whose test, on a line apart from its body, holds a
 comprehension's or a generator expression's own condition, as ``while
-any(x for x in xs if x > n):``: the probe reads that condition's jumps as
+sum(1 for x in xs if x > n):``: the probe reads that condition's jumps as
 false outcomes on the test's line, beside the one past the loop. A loop at
 module level or in a class body is no piece, and gets no hooks either.
 

@@ -18,8 +18,9 @@ from tests.unit.intercept.test_substitute import BINDING
 
 SHAPES = {**LOOPS, **{f"assign {name}": source for name, source in ASSIGNMENTS.items()}}
 # the whiles left as written, by shape: each ends another loop's body, directly or through an
-# `if`, its test's false outcome lands on more than one line or on none, its test is a chained
-# compare, or its test holds a comprehension's own condition
+# `if`, its test's false outcome lands on more than one line or on none, as that of a test that
+# holds a comprehension's own condition on a line apart from its body, or its test is a chained
+# compare
 LEFT = {
     "while_last_in_for": {(3, 8)},
     "while_last_in_while": {(4, 8)},
