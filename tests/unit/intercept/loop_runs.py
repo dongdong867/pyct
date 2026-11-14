@@ -200,12 +200,12 @@ _RUNS: list[tuple[str, tuple[object, ...], str, str]] = [
     ("while_true_no_break_last", (2,), "in 3:4", "raise"),
     ("while_in_except", (2,), "in 5:8, out 5:8", "test false"),
     ("while_chained", (8, 4), "", "left"),
-    ("while_last_in_elif_in_with", (Queue(3), True, None), "", "left"),
+    ("while_last_in_elif_in_with", (Queue(3), True, None), "", "while"),
     ("while_last_in_elif_in_with", (Queue(3), True, 1), "", "else"),
     ("while_and_last_in_if_in_for", (2, "x", [1]), "over 3:4, out 3:4", "inner while left"),
-    ("while_and_last_in_if_in_try", (True, Node(1, Node(0, None))), "", "left"),
+    ("while_and_last_in_if_in_try", (True, Node(1, Node(0, None))), "", "while"),
     ("while_and_last_in_if_in_try", (False, None), "", "else"),
-    ("while_or_last_in_if_in_try", (True, Node(1, None)), "", "left, raises"),
+    ("while_or_last_in_if_in_try", (True, Node(1, None)), "", "while raises"),
     ("while_or_last_in_if_in_try", (False, None), "", "else"),
     ("while_genexp_if", ([1, 5], 0), "", "left"),
     ("while_listcomp_if", ([1, 5], 0), "", "left"),
@@ -226,8 +226,23 @@ _RUNS: list[tuple[str, tuple[object, ...], str, str]] = [
     ("assign last_in_function", ("ab",), "in 2:8, value 2:8", "last"),
     ("assign unpack_target", ("abc",), "", "no piece"),
 ]
+# the calls a run of a while left as written on some releases alone makes where it is hooked, by
+# the run's id; any other run makes the same calls on every release
+_HOOKED: dict[str, str] = {
+    "while_last_in_elif_in_with: while": "in 7:16, out 7:16",
+    "while_and_last_in_if_in_try: while": "in 4:12, out 4:12",
+    "while_or_last_in_if_in_try: while raises": "in 4:12",
+}
+# each run: its shape, its arguments, and its calls where the shape is left as written and where
+# it is hooked
 RUNS = [
-    pytest.param(shape, args, hooks(calls), id=f"{shape}: {how}")
+    pytest.param(
+        shape,
+        args,
+        hooks(calls),
+        hooks(_HOOKED.get(f"{shape}: {how}", calls)),
+        id=f"{shape}: {how}",
+    )
     for shape, args, calls, how in _RUNS
 ]
 

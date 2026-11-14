@@ -191,11 +191,12 @@ def recording(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[tuple[str, int, 
     yield calls
 
 
-@pytest.mark.parametrize(("shape", "args", "expected"), RUNS)
+@pytest.mark.parametrize(("shape", "args", "expected", "expected_hooked"), RUNS)
 def test_each_run_behaves_as_written_and_calls_each_hook_once_in_order(
     shape: str,
     args: tuple[object, ...],
     expected: list[tuple[str, int, int]],
+    expected_hooked: list[tuple[str, int, int]],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = SHAPES[shape]
@@ -204,10 +205,10 @@ def test_each_run_behaves_as_written_and_calls_each_hook_once_in_order(
     with recording(monkeypatch) as calls:
         answer = run(shape, source, args, pieces=True)
 
-    # a while hooked on some releases alone calls its hooks there, so only its answer is compared
+    # a while left as written on some releases alone calls its hooks where it is hooked
     hooked_here = entered(substitute(ast.parse(source), pieces=True)) & VARIES.get(shape, set())
     assert answer == written
-    assert hooked_here or calls == expected
+    assert calls == (expected_hooked if hooked_here else expected)
 
 
 def test_every_shape_is_run() -> None:
