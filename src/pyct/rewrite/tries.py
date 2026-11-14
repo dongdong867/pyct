@@ -149,7 +149,7 @@ class Asking:
             asked = True
             if isinstance(answer, Unanswered):
                 return Tried(False, asked, unanswered=answer)
-            spent = answer.cost.tokens_left <= 0
+            spent = answer.cost.tokens_left == 0
             outcome = self._try(answer, around)
             if outcome is None or isinstance(outcome, _Ended):
                 ended = None if outcome is None else outcome.reason

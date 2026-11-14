@@ -350,10 +350,11 @@ def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try(
     [
         (SummaryReply(FORMULA, AskCost(1, tokens_left=5)), True),
         (SummaryReply(FORMULA, AskCost(1, tokens_left=0)), False),
+        (SummaryReply(FORMULA, AskCost(1)), True),
         (Unanswered(Why.PROVIDER, "provider error 500", AskCost(1, tokens_left=5)), True),
         (Unanswered(Why.LIMIT, "token limit reached", AskCost(1)), False),
     ],
-    ids=["tokens left", "none left", "failed ask", "limit"],
+    ids=["tokens left", "none left", "left unknown", "failed ask", "limit"],
 )
 def test_summaries_can_ask_until_an_answer_leaves_no_token(
     answer: SummaryReply | Unanswered, can_ask: bool

@@ -269,7 +269,7 @@ class Summaries:
         an answer that leaves no token under the limit ends the asks for the run."""
         self.loops[site] = state
         state.attempts = cost.attempt
-        if cost.tokens_left <= 0:
+        if cost.tokens_left == 0:
             self._limit_reached = True
 
     def states(self) -> tuple[LoopSummary, ...]:

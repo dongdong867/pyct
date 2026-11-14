@@ -35,7 +35,8 @@ class AskCost:
 
     A replayed reply's tokens are the ones its recording holds until the connection hands the
     reply to its tool, which then reads 0: a replay spends no tokens. The connection fills
-    ``tokens_left`` as it hands the answer on.
+    ``tokens_left`` as it hands the answer on; None says it is not known, as from a provider
+    built outside the connection, and a tool stops asking only on a known 0.
     """
 
     attempt: int
@@ -43,7 +44,7 @@ class AskCost:
     tokens_out: int = 0
     seconds: float = 0.0
     replayed: bool = False
-    tokens_left: int = 0
+    tokens_left: int | None = None
 
 
 @dataclass(frozen=True)

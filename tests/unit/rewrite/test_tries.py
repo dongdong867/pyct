@@ -65,8 +65,8 @@ class Fake:
     asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
     asked: int = 0
-    # the tokens each reply leaves under the limit
-    left: int = 1000
+    # the tokens each reply leaves under the limit, None when unknown
+    left: int | None = None
     requests: list[RewriteRequest] = field(default_factory=list)
     # the arguments each rewrite's run was handed
     handed: list[Mapping[str, object]] = field(default_factory=list)
@@ -162,6 +162,8 @@ def test_an_ask_with_no_answer_ends_the_tries() -> None:
 # llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
 def test_the_tries_say_when_the_last_reply_left_no_token() -> None:
     assert tried(Fake(left=0)) == Tried(True, True, spent=True)
+    assert tried(Fake(left=5)).spent is False
+    # a provider that does not say what is left leaves the limit unreached
     assert tried(Fake()).spent is False
 
 
