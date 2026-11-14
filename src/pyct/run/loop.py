@@ -389,7 +389,7 @@ def _attempt(
     limit = _solve_limit(bounds, left)
     solved = ways.asker.solved(wanted, origin, limit)
     if _site_waits(solved, limit):
-        tree.timed_out()
+        tree.ran_long()
     answer = solved.answer
     if not isinstance(answer, Sat):
         return _unanswered(wanted, answer, solved, unrun)
@@ -397,7 +397,7 @@ def _attempt(
 
 
 def _site_waits(solved: Solved, limit: float) -> bool:
-    """Whether the pick's site waits for the last picks (`Tree.timed_out`): its ask ran to its
+    """Whether the pick's site waits for the last picks (`Tree.ran_long`): its ask ran to its
     limit, or the pick's ask answered ``unknown`` after at least a quarter of ``limit``. In a
     rewrites run the pick's seconds hold a kept rewrite's run and ask too.
 
