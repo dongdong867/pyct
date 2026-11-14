@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+import pytest
+
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
 from pyct.core.foundation.branch import Branch, Fact, Site
@@ -30,7 +32,7 @@ from pyct.rewrite.notes import (
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.rewrite.request import VALUE_SIZE, About
 from pyct.rewrite.tries import Asking, Tried
-from pyct.solver.answer import Answer, Error, Sat
+from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -330,6 +332,47 @@ def test_a_solver_that_fails_on_a_rewrite_fails_the_try() -> None:
     tried(fake)
 
     assert failed(fake)[0] == "the solver failed: cvc5 said no"
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-after-the-solver-gave-up
+@pytest.mark.parametrize(("answer", "said"), [(Timeout(), "timeout"), (Unknown(), "unknown")])
+def test_a_try_the_solver_could_not_answer_is_marked_given_up_in_the_next_ask(
+    answer: Answer, said: str
+) -> None:
+    fake = Fake(answer=answer)
+
+    tried(fake)
+
+    earlier = fake.requests[1].tries[0]
+    assert (earlier.reason, earlier.solver_gave_up) == (f"the solver answered {said}", True)
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
+@pytest.mark.parametrize(
+    "fake",
+    [
+        Fake(answer=Unsat()),
+        Fake(answer=Error("cvc5 said no")),
+        Fake(record=InputRecord({"s": "1e-29"}, (FORK,), frozenset())),
+        Fake(reply='__import__("os").getcwd() == s'),
+        Fake(reply="prose"),
+        Fake(ran=ExecutionResult(frozenset(), ())),
+    ],
+    ids=["unsat", "solver failed", "other side", "form", "no expression", "reads no argument"],
+)
+def test_a_try_that_failed_for_another_reason_is_not_marked_given_up(fake: Fake) -> None:
+    tried(fake)
+
+    assert [each.solver_gave_up for each in fake.requests[-1].tries] == [False] * 3
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask
+def test_a_first_ask_carries_no_earlier_try() -> None:
+    fake = Fake()
+
+    tried(fake)
+
+    assert fake.requests[0].tries == ()
 
 
 def test_a_reply_with_no_expression_is_quoted_cut_in_the_next_ask() -> None:

@@ -45,7 +45,7 @@ from pyct.rewrite.notes import (
 )
 from pyct.rewrite.provider import EarlierTry, RewriteProvider, RewriteReply
 from pyct.rewrite.request import About, request_for, value_text
-from pyct.solver.answer import Answer, Error, Sat
+from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown
 
 # the asks about one condition at one moment: the first and 3 more
 ASKS = 4
@@ -190,44 +190,53 @@ class Asking:
         if isinstance(ran, str):
             around.note(RewriteSkipped(site, ran))
             return _Ended(ran)
-        failed = self._input(rewrite.code, ran, around)
+        failed = self._input(expression, rewrite.code, ran, around)
         if failed is None:
             around.note(RewriteTook(site))
             self.kept.keep(self.given.condition, rewrite)
-            return None
-        return failed if isinstance(failed, _Ended) else EarlierTry(expression, failed)
+        return failed
 
     def _input(
-        self, code: types.CodeType, ran: ExecutionResult, around: Around
-    ) -> str | _Ended | None:
-        """The rewrite's ask on the plan's path, each kept rewrite in its own condition's place,
-        and its input on the real code: None when the input took the wanted side, else why the
-        try failed or ended."""
+        self, expression: str, code: types.CodeType, ran: ExecutionResult, around: Around
+    ) -> EarlierTry | _Ended | None:
+        """The rewrite's ask on the plan's path, each kept rewrite in its own condition's place:
+        None when its input took the wanted side, else how the try failed or why it ended."""
         given = self.given
         items = recorded(ran, code.co_filename)
         if isinstance(items, str):
-            return items
+            return EarlierTry(expression, items)
         if items.met:
             written = _written(given.origin.args)
-            return f"the input {written} already meets it, yet took the other side"
+            met = f"the input {written} already meets it, yet took the other side"
+            return EarlierTry(expression, met)
         if not around.going():
             return _Ended("budget spent")
         origin = given.origin
         reused = self.kept.reused(given.plan, origin, around.run_rewrite)
         held = given.plan.asked if reused is None else reused.asked
         answer = around.ask(in_place(held, given.condition, items.items), given.plan, origin)
+        return self._answered(expression, answer, around)
+
+    def _answered(
+        self, expression: str, answer: Answer | None, around: Around
+    ) -> EarlierTry | _Ended | None:
+        """The solver's answer to the rewrite's ask, and its input run on the real code: None
+        when the input took the wanted side, else how the try failed or why it ended."""
         if answer is None:
             return _Ended("budget spent")
         if isinstance(answer, Error):
-            return f"the solver failed: {answer.detail}"
+            return EarlierTry(expression, f"the solver failed: {answer.detail}")
         if not isinstance(answer, Sat):
-            return f"the solver answered {type(answer).__name__.lower()}"
-        record = around.run_input(apply(origin, answer.model), given.plan)
+            said = f"the solver answered {type(answer).__name__.lower()}"
+            return EarlierTry(
+                expression, said, solver_gave_up=isinstance(answer, Timeout | Unknown)
+            )
+        record = around.run_input(apply(self.given.origin, answer.model), self.given.plan)
         if isinstance(record, Stop):
             return _Ended(record.reason)
-        if takes(record, given.condition):
+        if takes(record, self.given.condition):
             return None
-        return f"the input {_written(record.args)} took the other side"
+        return EarlierTry(expression, f"the input {_written(record.args)} took the other side")
 
 
 def _written(args: Mapping[str, object]) -> str:
