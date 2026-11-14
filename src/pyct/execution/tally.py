@@ -11,9 +11,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from pyct.core.entry import watch
+from pyct.core.entry import pieces, watch
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Branch, Downgrade, Fact, SinkItem, Site
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, PieceRun, SinkItem, Site
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -47,7 +47,8 @@ class Watch(Protocol):
     count so far: a count of 1 starts an entry, and a higher count means the
     last entry grew by one. The tally decides what an entry is; a watch only
     mirrors it. ``bound`` comes once, when the call goes past the forks it
-    keeps, with the words its line ends on.
+    keeps, with the words its line ends on. A recorded run of a piece of the
+    target's code comes as the hooks record it (`pyct.core.entry.pieces`).
     """
 
     def fork(self, branch: Branch) -> None: ...
@@ -64,10 +65,13 @@ class Watch(Protocol):
 
     def bound(self, note: str) -> None: ...
 
+    def piece(self, run: PieceRun) -> None: ...
+
 
 class Tally:
     """What one call did so far: its lines, its forks, its facts and its downgrades, in call order,
-    and the functions it entered and the ways their branches went.
+    the functions it entered and the ways their branches went, and the recorded runs of its
+    pieces.
 
     It is the call's sink, so core pushes forks and downgrades into it, and
     the line tracer feeds it lines. Consecutive downgrades of one name at one
@@ -79,8 +83,9 @@ class Tally:
 
     Once the call has taken ``MOST_FORKS`` forks it is ``past_bound``: it
     tells the watch so once, and keeps no fork or fact after them nor tells
-    the watch of one, while the lines and downgrades the call reaches are
-    still kept.
+    the watch of one, while the lines, the downgrades and the recorded runs
+    the call reaches are still kept. While it is live, the hooks around the
+    target's pieces record into it (`pyct.core.entry.pieces`).
     """
 
     def __init__(self, watch: Watch | None = None) -> None:
@@ -91,6 +96,7 @@ class Tally:
         self._went: set[tuple[int, int]] = set()
         # each fact as the path came to hold it, placed after the forks recorded before it
         self.facts: list[Fact] = []
+        self.pieces: list[PieceRun] = []
         self.watch = watch
         self.sealed = False
         self.past_bound = False
@@ -99,14 +105,17 @@ class Tally:
         self._entries: list[_Entry] = []
 
     def append(self, item: SinkItem, /) -> None:
-        """Keep a fork, a fact or a downgrade the call just made. The ``BranchSink`` core pushes to.
+        """Keep a fork, a fact, a downgrade or a recorded run the call just made. The
+        ``BranchSink`` core pushes to.
 
-        A sealed tally keeps nothing. A value the target kept from this call can still reach it
-        from a later call in the same process, and that call's condition is then lost: the
-        call running now names it, a fork by the operation that took it: a truth test's `__bool__`,
-        a walk's `__iter__`, an index's `__getitem__`.
+        A sealed tally keeps nothing, and a recorded run names no loss. A value the target kept
+        from this call can still reach it from a later call in the same process, and that
+        call's condition is then lost: the call running now names it, a fork by the operation
+        that took it: a truth test's `__bool__`, a walk's `__iter__`, an index's `__getitem__`.
         """
         if self.sealed:
+            if isinstance(item, PieceRun):
+                return
             live = _LIVE[0]
             # a place names no check the target ran, so it names no loss
             placed = isinstance(item, Fact) and not item.decided
@@ -121,6 +130,11 @@ class Tally:
         if isinstance(item, Fact):
             if not self.past_bound:
                 self._fact(item)
+            return
+        if isinstance(item, PieceRun):
+            self.pieces.append(item)
+            if self.watch is not None:
+                self.watch.piece(item)
             return
         self._downgrade(item.name, item.site)
 
@@ -182,16 +196,19 @@ class Tally:
 
     def go_live(self) -> None:
         """Make this the tally of the call running now, which a value from a call that is over
-        names its loss to. The walk keys an earlier call handed out are no keys of its path."""
+        names its loss to, and the hooks around the target's pieces record into. The walk keys
+        an earlier call handed out are no keys of its path."""
         _LIVE[0] = self
         escapes.forget()
         watch.forget()
+        pieces.start(self)
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""
         self.sealed = True
         if _LIVE[0] is self:
             _LIVE[0] = None
+            pieces.forget()
 
     def counted(self) -> tuple[DowngradeCount, ...]:
         """The downgrades as the line lists them, one entry per run of one name at one site."""

@@ -14,8 +14,9 @@ class SubstitutionError(Exception):
     """pyct could not substitute a module that compiles as written. A pyct bug."""
 
 
-def substituted_code(source: bytes, path: str) -> types.CodeType:
-    """Parse the source, substitute its compares, and compile it against the file's own path.
+def substituted_code(source: bytes, path: str, *, pieces: bool = False) -> types.CodeType:
+    """Parse the source, substitute its compares, with pyct's loop hooks when ``pieces`` says so
+    (`pyct.intercept.loops`), and compile it against the file's own path.
 
     ``path`` becomes every code object's file name, so a line tracer, a
     fork and a traceback name the file as written. The source's encoding
@@ -27,7 +28,7 @@ def substituted_code(source: bytes, path: str) -> types.CodeType:
     """
     tree = cast(ast.Module, own(ast.parse, source, filename=path))
     try:
-        substituted = substitute(tree)
+        substituted = substitute(tree, pieces=pieces)
     except Exception as error:
         raise SubstitutionError(f"cannot substitute {path}: {error!r}") from error
     try:

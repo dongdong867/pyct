@@ -40,7 +40,7 @@ from pyct.execution.execute import ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
-from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal import CAPACITY, PIECE_ROOM, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import execution_context, load_target
@@ -93,7 +93,7 @@ def in_a_fresh_interpreter(
 
 def main(request: int, journal: int) -> NoReturn:
     """The new interpreter's side: read the input, import the target by name, run it once."""
-    writer = JournalWriter(mmap.mmap(journal, CAPACITY))
+    writer = JournalWriter(mmap.mmap(journal, CAPACITY + PIECE_ROOM), pieces=PIECE_ROOM)
     serve(writer, functools.partial(_requested, request))
 
 
@@ -114,12 +114,14 @@ def _intercepting(interception: Interception | None) -> contextlib.AbstractConte
 
 @contextlib.contextmanager
 def _journal() -> Generator[tuple[int, mmap.mmap]]:
-    """A journal in an unlinked file, mapped here, whose descriptor the new interpreter maps."""
+    """A journal in an unlinked file, mapped here, whose descriptor the new interpreter maps: its
+    own bytes, then the room of the recorded runs of the input's pieces."""
+    size = CAPACITY + PIECE_ROOM
     with contextlib.ExitStack() as stack:
         try:
             backing = stack.enter_context(tempfile.TemporaryFile())
-            os.ftruncate(backing.fileno(), CAPACITY)
-            buffer = stack.enter_context(mmap.mmap(backing.fileno(), CAPACITY))
+            os.ftruncate(backing.fileno(), size)
+            buffer = stack.enter_context(mmap.mmap(backing.fileno(), size))
         except OSError as error:
             raise InputStartError(f"could not map the input's journal: {error}") from error
         yield backing.fileno(), buffer

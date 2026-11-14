@@ -4,12 +4,14 @@ from collections.abc import Mapping
 
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Branch, Downgrade, Fact, Site
+from pyct.core.foundation.branch import Branch, Changed, Downgrade, Fact, GoingIn, PieceRun, Site
 from pyct.core.lists.lists import ConcolicList
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
 from tests.unit.core.dicts.test_dict_walk_keys import in_the_target
 from tests.unit.core.dicts.test_dicts import decided, tracked
+from tests.unit.core.entry.test_pieces import hooked
+from tests.unit.intercept.loop_shapes import LOOPS
 from tests.unit.interrupted import Interrupt, at_every_line
 
 # the file the tally's own code comes from, as its frames name it
@@ -44,6 +46,9 @@ class Heard:
 
     def went(self, line: int, to: int) -> None:
         self.told.append(("went", line, to))
+
+    def piece(self, run: PieceRun) -> None:
+        self.told.append(("piece", run))
 
 
 def test_a_tally_keeps_the_forks_in_call_order() -> None:
@@ -333,3 +338,42 @@ def test_a_tally_with_no_watch_keeps_what_the_call_reached() -> None:
     tally.went(1, 2)
 
     assert tally.reach().went == {(1, 2)}
+
+
+RUN = PieceRun(site=SITE, going_in=(GoingIn("n", "1", tracked=True),), changed=(Changed("t", "2"),))
+
+
+def test_a_tally_keeps_each_recorded_run_of_a_piece_and_tells_the_watch() -> None:
+    heard = Heard()
+    tally = Tally(heard)
+
+    tally.append(FORK)
+    tally.append(RUN)
+
+    assert tally.pieces == [RUN]
+    assert tally.branches == [FORK]
+    assert heard.told == [("fork", FORK), ("piece", RUN)]
+
+
+def test_a_sealed_tally_keeps_no_run_and_names_no_loss_for_one() -> None:
+    live, over = Tally(), Tally()
+    live.go_live()
+    over.sealed = True
+
+    over.append(RUN)
+
+    assert (over.pieces, live.pieces, live.counted()) == ([], [], ())
+    live.seal()
+
+
+def test_the_hooks_record_into_the_tally_from_its_going_live_until_its_seal() -> None:
+    f = hooked(LOOPS["while"])
+    tally = Tally()
+    f(1)
+
+    tally.go_live()
+    f(2)
+    tally.seal()
+    f(3)
+
+    assert [run.changed for run in tally.pieces] == [(Changed("i", "2"),)]

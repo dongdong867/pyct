@@ -27,7 +27,7 @@ import struct
 from collections.abc import Buffer
 from dataclasses import dataclass, field
 
-from pyct.core.foundation.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Changed, Expression, Fact, GoingIn, PieceRun, Site
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -49,6 +49,8 @@ from pyct.run.journal import (
     NUMBER,
     OPEN,
     PART,
+    PIECE,
+    PIECE_HEAD,
     RECORDS,
     START,
     STATE,
@@ -89,7 +91,8 @@ class Reading:
     fault: the writer met a fact it could not encode, or a record could not
     be read. ``bound`` says the writer stopped at the bound on what pyct
     keeps for one input, which is the input's own ending. ``reach`` is the
-    functions the call entered and the ways their branches went.
+    functions the call entered and the ways their branches went, and
+    ``pieces`` the recorded runs of the pieces of the target's code.
     """
 
     lines: frozenset[int]
@@ -102,6 +105,7 @@ class Reading:
     facts: tuple[Fact, ...] = ()
     bound: str | None = None
     reach: Reach = field(default_factory=Reach)
+    pieces: tuple[PieceRun, ...] = ()
 
 
 def read(buffer: Journal) -> Reading:
@@ -215,6 +219,7 @@ class _Facts:
     # the facts the path holds, each placed after the fork records read before it
     facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
+    pieces: list[PieceRun] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
     sites: dict[tuple[str, int, int], Site] = field(default_factory=dict)
     started: bool = False
@@ -261,6 +266,8 @@ class _Facts:
             self.recount(payload.obj)
             self._downgrade(bytes(payload), carries_on=kind == CARRY_ON)
             self.counted_at = at
+        elif kind == PIECE:
+            self.pieces.append(self._piece(bytes(payload)))
         elif kind == START:
             self.started = True
         elif kind == END:
@@ -303,6 +310,20 @@ class _Facts:
             self.downgrades[-1] = entry
         else:
             self.downgrades.append(entry)
+
+    def _piece(self, payload: bytes) -> PieceRun:
+        """A recorded run, read from its head and its NUL-separated file, names and values."""
+        line, col, going_in, changed = PIECE_HEAD.unpack_from(payload)
+        file, *fields = payload[PIECE_HEAD.size :].decode(errors="surrogatepass").split("\0")
+        if len(fields) != 3 * going_in + 2 * changed:
+            raise ValueError("a recorded run holds three fields a name going in, two a changed")
+        held = [fields[at : at + 3] for at in range(0, 3 * going_in, 3)]
+        if any(tracked not in ("0", "1") for _, tracked, _ in held):
+            raise ValueError("a name going in is marked 1 for tracked or 0")
+        ins = tuple(GoingIn(name, value, tracked == "1") for name, tracked, value in held)
+        rest = fields[3 * going_in :]
+        outs = tuple(Changed(*rest[at : at + 2]) for at in range(0, len(rest), 2))
+        return PieceRun(self._site(file, line, col), ins, outs)
 
     def recount(self, view: Buffer) -> None:
         """Read the last entry's count again: the writer grows it in place while it repeats, so
@@ -370,6 +391,7 @@ class _Facts:
             branches=tuple(self.branches),
             downgrades=tuple(self.downgrades),
             facts=tuple(self.facts),
+            pieces=tuple(self.pieces),
             started=self.started,
             ended=self.ended,
             end=self.end,

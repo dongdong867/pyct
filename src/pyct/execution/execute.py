@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind_call
 from pyct.binding.builds import Build, BuildError, CallPlan, SelfBuild, plan_call
-from pyct.core.foundation.branch import Branch, Fact
+from pyct.core.foundation.branch import Branch, Fact, PieceRun
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.branch_ways import CodeWays
@@ -61,7 +61,9 @@ class ExecutionResult:
 
     On a failure the lines, forks and facts are those reached before it. ``facts`` are what its
     path holds beside the forks, each placed after the forks recorded before it. ``reach`` is
-    the functions of the file it entered and the ways their branches went.
+    the functions of the file it entered and the ways their branches went. ``pieces`` are the
+    recorded runs of the pieces of the target's code, in the order each ended
+    (`pyct.core.entry.pieces`), none when its code has no hooks.
     """
 
     lines: frozenset[int]
@@ -70,6 +72,7 @@ class ExecutionResult:
     failure: Failure | None = None
     facts: tuple[Fact, ...] = ()
     reach: Reach = field(default_factory=Reach)
+    pieces: tuple[PieceRun, ...] = ()
 
 
 def execute(
@@ -122,6 +125,7 @@ def execute(
         failure=_ended(tally, _failure(ctx.fn, ending)),
         facts=tuple(tally.facts),
         reach=tally.reach(),
+        pieces=tuple(tally.pieces),
     )
 
 
