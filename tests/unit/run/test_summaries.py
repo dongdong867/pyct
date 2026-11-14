@@ -1,6 +1,7 @@
 """The summaries tool at a stuck moment: which loops it asks about, with which runs, and what it
 hands back for each entry, given records made by hand."""
 
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -306,6 +307,20 @@ def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
 
     assert handled == Handled((Outcome.SKIPPED,), asked=True)
     assert notes[-1] == SummarySkipped(LOOP, "cannot fork")
+
+
+def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    slow = 'def summary(s, t):\n    return {"t": math.factorial(10 ** 7)}\n'
+    tool = Summaries(Fake(SummaryReply(slow, AskCost(1))), load_target(COUNTS), told)
+    run = Run([record(counted("ab"))], bounds=Bounds(until=time.monotonic() + 0.3))
+
+    handled = tool.take((entry(LOOPED),), Moment(1, (), run))
+
+    assert handled == Handled((Outcome.SKIPPED,), asked=True)
+    assert notes[-1] == SummarySkipped(LOOP, "the run's budget ran out")
+    assert tool.loops[LOOP].tries == []
 
 
 # llm-stuck-moment-needs-a-tool-that-can-ask-token-limit

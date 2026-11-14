@@ -4,6 +4,7 @@ follows."""
 
 import ast
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -47,10 +48,12 @@ def run_of(number: int, s: str, t: int = 0, *, tracked: bool = True) -> Complete
 RUNS = (run_of(1, "ab"), run_of(2, "zz"), run_of(4, "az", 1))
 
 
-def checked(code: str, runs: tuple[CompleteRun, ...] = RUNS) -> str | Ended | None:
+def checked(
+    code: str, runs: tuple[CompleteRun, ...] = RUNS, until: float | None = None
+) -> str | Ended | None:
     formula = read(code)
     assert isinstance(formula, Formula), formula
-    return check_formula(formula.code, runs, PARAMETERS, ("t",), None)
+    return check_formula(formula.code, runs, PARAMETERS, ("t",), until)
 
 
 @pytest.mark.parametrize(
@@ -359,11 +362,33 @@ def test_a_correct_formula_passes_on_runs_whose_values_pass_the_answer_s_capacit
     assert checked("def summary(s, t):\n    return {'t': t + s}", runs) is None
 
 
-def test_a_formula_that_does_not_finish_fails_the_check() -> None:
-    reason = checked("def summary(s, t):\n    return {'t': math.factorial(10 ** 7)}")
+@pytest.mark.parametrize("seconds_left", [None, 60.0])
+def test_a_formula_that_does_not_finish_within_the_check_s_limit_fails_the_check(
+    seconds_left: float | None,
+) -> None:
+    until = None if seconds_left is None else time.monotonic() + seconds_left
+
+    reason = checked("def summary(s, t):\n    return {'t': math.factorial(10 ** 7)}", until=until)
 
     assert isinstance(reason, str)
     assert reason.startswith("it did not finish on the past runs: ")
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # big-int arithmetic, which looks for signals, so the child's alarm ends it
+        "math.factorial(10 ** 7)",
+        # a sort, which does not, of values each slow to compare, so pyct's kill ends it
+        "len(sorted([10 ** 90000 + 1, 10 ** 90000] * 10 ** 6))",
+    ],
+)
+def test_a_check_the_run_s_deadline_ends_is_no_failed_formula(value: str) -> None:
+    until = time.monotonic() + 0.2
+
+    ended = checked(f"def summary(s, t):\n    return {{'t': {value}}}", until=until)
+
+    assert ended == Ended("the run's budget ran out")
 
 
 def test_a_value_pyct_does_not_follow_names_the_operation() -> None:

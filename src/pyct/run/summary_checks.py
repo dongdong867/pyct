@@ -48,6 +48,8 @@ from pyct.run.summary_form import (
 CHECK_SECONDS = 2.0
 # why no check could run beside a second thread of pyct's process
 CANNOT_FORK = "cannot fork"
+# why a check did not finish: the run's deadline ended its child before the check's limit did
+BUDGET_RAN_OUT = "the run's budget ran out"
 
 
 def answer_form(parameters: Sequence[str], changed: Sequence[str]) -> str:
@@ -89,7 +91,8 @@ class CompleteRun:
 
 @dataclass(frozen=True)
 class Ended:
-    """A check that could not run, and why: no child could fork or start."""
+    """A check that could not run, and why: no child could fork or start, or the run's deadline,
+    which came before the check's own limit, ended its child."""
 
     reason: str
 
@@ -201,13 +204,19 @@ def _going_in(run: PieceRun, parameters: Sequence[str]) -> dict[str, object]:
 
 def _child(call: ModelCall, until: float | None) -> ModelRun | Ended:
     """The call run in a child forked from pyct's process, within ``CHECK_SECONDS`` or by
-    ``until``, whichever comes first; or why it did not run."""
+    ``until``, whichever comes first; or why it did not run, or did not finish by ``until``."""
     end = time.monotonic() + CHECK_SECONDS
+    by_budget = until is not None and until < end
     try:
-        ran = run_model(call, end if until is None else min(end, until))
+        ran = run_model(call, min(end, until) if until is not None else end)
     except InputStartError as error:
         return Ended(f"cannot start a child: {error}")
-    return Ended(CANNOT_FORK) if isinstance(ran, CannotFork) else ran
+    if isinstance(ran, CannotFork):
+        return Ended(CANNOT_FORK)
+    failure = ran.result.failure
+    if by_budget and failure is not None and failure.kind is FailureKind.TIMEOUT:
+        return Ended(BUDGET_RAN_OUT)
+    return ran
 
 
 def _answer(ran: ModelRun, where: str) -> dict[str, Any] | str:

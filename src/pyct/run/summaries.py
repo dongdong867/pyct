@@ -18,8 +18,9 @@ A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
 A formula that fails a check is a failed try, said with its reason and kept
 for the loop's later asks; one that passes both is kept for its loop as
-checked, and that loop is not asked about again. No input runs and nothing
-is rebound.
+checked, and that loop is not asked about again. A check whose child could
+not start, or that the run's deadline ended, is no try: the loop is skipped
+at this moment, and said. No input runs and nothing is rebound.
 
 ``SummaryProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.summaries``.
 Decision llm-summary-provider-declared-in-run.
@@ -208,7 +209,8 @@ class Summaries:
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
         """The reply's formula read, its form checked, then checked on the loop's runs and
         for values pyct follows: kept when it passes, else a failed try, said with its reason.
-        A check that could not run skips the loop at this moment."""
+        A check that could not run, or that the run's deadline ended, skips the loop at this
+        moment."""
         state.formula = reply.code
         site, piece = loop.site, loop.piece
         file = f"<summary {self._place(site)}>"
