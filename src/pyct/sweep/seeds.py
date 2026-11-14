@@ -27,7 +27,7 @@ import typing
 from collections.abc import Callable
 
 from pyct.binding.annotations import contradictions
-from pyct.binding.resolve import as_text, checked_annotations, resolved
+from pyct.binding.resolve import GATHERING, as_text, checked_annotations, resolved
 
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
@@ -35,9 +35,6 @@ VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
 # what JSON carries as it stands, matched by exact type so a subclass is not taken for one; a
 # float includes NaN and the infinities, which Python's json writes and pyct run reads
 PLAIN = (bool, int, float, str)
-
-# the parameters a seed never names
-GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
 
 # no value in VALUES fits, and one Python could not test
 NO_FIT = object()

@@ -201,13 +201,9 @@ def _read_inside(cls: type) -> Inside:
     if signature is None:
         return NOTHING
     checks = checked_annotations(signature, cls, hints_of(cls))
-    parameters = signature.parameters
-    # checked_annotations leaves out *args; **kwargs is no key of its own name either
-    gathers = inspect.Parameter.VAR_KEYWORD
-    keys = {name: each for name, each in checks.items() if parameters[name].kind is not gathers}
     items = {
         at: checks[parameter.name]
         for at, parameter in enumerate(by_position(signature))
         if parameter.name in checks
     }
-    return Inside(Fields(keys), Fields(items))
+    return Inside(Fields(checks), Fields(items))
