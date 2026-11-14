@@ -20,6 +20,7 @@ from pyct.run.code_context import MARK_END, MARK_START
 from pyct.run.summaries import ShownRun
 from pyct.run.summary_checks import answer_form
 from tests.acceptance.llm_summaries import (
+    COUNT,
     COUNTS,
     SEED,
     F,
@@ -77,13 +78,15 @@ def test_the_request_holds_the_loop_its_names_its_runs_the_form_and_what_pyct_fo
 # llm-summary-for-a-stuck-loop-sends-ten-runs-at-most
 def test_the_request_holds_ten_runs_those_whose_values_going_in_differ_first() -> None:
     seeds = [{"s": "zz"}] * 3 + [{"s": letter} for letter in "abcdefghi"]
-    provider = FakeSummaries([ANY])
+    provider = FakeSummaries([COUNT])
 
     done = run_summaries(COUNTS, seeds, provider)
 
     [request] = provider.requests
-    assert provider.inputs_then[0] > 12
+    recorded = provider.inputs_then[0]
+    assert recorded > 12
     assert request.runs == tuple(shown(record) for record in done.records[2:12])
+    assert f"llm: summary for the loop at {F}:10: checked on {recorded} past runs" in done.said
 
 
 # llm-summary-for-a-stuck-loop-one-ask-per-loop
@@ -98,8 +101,8 @@ def test_a_loop_two_missed_lines_name_is_asked_about_once_for_both_its_values() 
 
 
 # llm-summary-for-a-stuck-loop-loop-that-returns
-def test_the_request_holds_only_the_runs_in_which_the_loop_ended() -> None:
-    provider = FakeSummaries([ANY])
+def test_the_request_and_the_check_hold_only_the_runs_in_which_the_loop_ended() -> None:
+    provider = FakeSummaries([COUNT])
 
     done = run_summaries(STOPS, SEED, provider)
 
@@ -108,6 +111,7 @@ def test_the_request_holds_only_the_runs_in_which_the_loop_ended() -> None:
     ended = [record for record in before if "!" not in str(record.args["s"])]
     assert len(ended) < len(before)
     assert request.runs == tuple(shown(record) for record in ended)[:10]
+    assert f"llm: summary for the loop at {G}:22: checked on {len(ended)} past runs" in done.said
 
 
 # llm-summary-for-a-stuck-loop-no-recorded-run

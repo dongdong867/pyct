@@ -13,6 +13,13 @@ limit is reached no summary is asked for again this run, and the connection
 has said so. A reply with no code block is said and ends them too. The wait
 for the model pauses the run's clock. A call a cause names gets no ask.
 
+A reply's formula is read, checked for its form, then checked on the
+loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
+A formula that fails a check is a failed try, said with its reason and kept
+for the loop's later asks; one that passes both is kept for its loop as
+checked, and that loop is not asked about again. No input runs and nothing
+is rebound.
+
 ``SummaryProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.summaries``.
 Decision llm-summary-provider-declared-in-run.
 """
@@ -28,14 +35,23 @@ from typing import Protocol
 
 from pyct.config.llm import SUMMARIES_TOOL
 from pyct.core.foundation.branch import PieceRun, Site
+from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.pieces import FUNCTIONS, Piece, pieces
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
 from pyct.run.model_runs import can_fork
-from pyct.run.notes import AskSkipped, ReplyIgnored, SummarySkipped
+from pyct.run.notes import (
+    AskSkipped,
+    ReplyIgnored,
+    SummaryChecked,
+    SummaryFailed,
+    SummaryRead,
+    SummarySkipped,
+)
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
+from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
 from pyct.run.target import Target
 from pyct.run.tell import Told
 
@@ -98,15 +114,6 @@ class SummaryProvider(Protocol):
     """Gives a loop's summary. It never raises for an LLM problem: it returns Unanswered."""
 
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered: ...
-
-
-@dataclass(frozen=True)
-class CompleteRun:
-    """A recorded run of a loop that holds every name it changes, and the input that recorded
-    it, numbered in the run from 1."""
-
-    number: int
-    run: PieceRun
 
 
 @dataclass(frozen=True)
@@ -192,14 +199,40 @@ class Summaries:
         return self._tried(loop, state, answer, run), True
 
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
-        """The checks of the reply's formula."""
+        """The reply's formula read, its form checked, then checked on the loop's runs and
+        for values pyct follows: kept when it passes, else a failed try, said with its reason.
+        A check that could not run skips the loop at this moment."""
         state.formula = reply.code
+        site, piece = loop.site, loop.piece
+        file = f"<summary {self._place(site)}>"
+        formula = formula_code(reply.code, loop.parameters, piece.changed, file)
+        if isinstance(formula, Refused):
+            return self._failed(state, site, formula.reason)
+        self.told.note(SummaryRead(site, formula.text, formula.below))
+        until = run.bounds.until
+        failed = check_formula(formula.code, loop.runs, loop.parameters, piece.changed, until)
+        if isinstance(failed, Ended):
+            self.told.note(SummarySkipped(site, failed.reason))
+            return Asked.NOT_ASKED
+        if failed is not None:
+            return self._failed(state, site, failed)
+        state.checked_on = len(loop.runs)
+        self.told.note(SummaryChecked(site, len(loop.runs)))
+        return Asked.CHECKED
+
+    def _failed(self, state: LoopState, site: Site, reason: str) -> Asked:
+        """A failed try, said and kept for the loop's later asks."""
+        self.told.note(SummaryFailed(site, state.attempts, reason))
+        state.tries.append(EarlierFormula(state.formula or "", reason))
         return Asked.FAILED
+
+    def _place(self, site: Site) -> str:
+        return f"{self.target.module_of(site.file)}:{site.line}:{site.col}"
 
     def _request(self, loop: AskedLoop, state: LoopState) -> SummaryRequest:
         site = loop.site
         return SummaryRequest(
-            place=f"{self.target.module_of(site.file)}:{site.line}:{site.col}",
+            place=self._place(site),
             code=code_with_piece(self.target, site.file, loop.piece.lines),
             parameters=loop.parameters,
             changed=loop.piece.changed,

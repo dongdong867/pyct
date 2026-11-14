@@ -10,6 +10,7 @@ model or sends anything off the machine.
 from __future__ import annotations
 
 import dataclasses
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -120,6 +121,9 @@ def run_summaries(
 def one_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """pyct's process as a run has it, one thread: pytest-timeout's watch runs another, and a
     formula's child forks beside it safely, since it takes no lock the call needs. The target's
-    substituted code is kept in a cache folder of the test's own."""
+    substituted code is kept in a cache folder of the test's own, and each target module is
+    imported again under the interception that records loops, then put back as it was."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
     monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
+    for name in [name for name in sys.modules if name.split(".")[0] == "targets"]:
+        monkeypatch.delitem(sys.modules, name)

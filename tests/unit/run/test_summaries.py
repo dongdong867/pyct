@@ -16,11 +16,19 @@ from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.results.record import Source as RecordSource
 from pyct.run import model_runs
 from pyct.run.bounds import Bounds
-from pyct.run.notes import AskSkipped, Note, SummarySkipped
+from pyct.run.notes import (
+    AskSkipped,
+    Note,
+    SummaryChecked,
+    SummaryFailed,
+    SummaryRead,
+    SummarySkipped,
+)
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.summaries import (
     AskedLoop,
-    CompleteRun,
+    EarlierFormula,
+    LoopState,
     ShownRun,
     Summaries,
     SummaryReply,
@@ -29,6 +37,7 @@ from pyct.run.summaries import (
     piece_at,
     shown_runs,
 )
+from pyct.run.summary_checks import CompleteRun
 from pyct.run.target import load_target
 from pyct.run.tell import Ask, Tell, Told
 from tests.acceptance.harness import REPO_ROOT
@@ -37,6 +46,7 @@ FILE = str(REPO_ROOT / "targets" / "why" / "stuck.py")
 LOOP = Site(FILE, 10, 4)
 COMPREHENSION = Site(FILE, 19, 11)
 CALL = Site(FILE, 26, 7)
+COUNTS = "targets.why.stuck::counts"
 
 
 def counted(s: str, *, tracked: bool = True, changed: bool = True) -> PieceRun:
@@ -219,3 +229,57 @@ def test_the_piece_at_a_site_is_read_off_its_file() -> None:
     assert (piece.going_in, piece.changed, piece.lines) == (("s",), ("t",), (19, 19))
     assert piece_at(Site(FILE, 13, 4)) is None
     assert piece_at(Site("/nowhere/gone.py", 1, 0)) is None
+
+
+FORMULA = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
+
+
+def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    fake = Fake(SummaryReply(FORMULA, AskCost(1)))
+    tool = Summaries(fake, load_target("targets.why.stuck::counts"), told)
+    run = Run([record(counted("ab")), record(counted("zz"))])
+
+    handled = tool.take((entry(LOOPED),), Moment(1, (), run))
+
+    assert handled == Handled((Outcome.TOOK,), asked=True)
+    assert notes == [
+        SummaryRead(LOOP, 't = t + s.count("z")'),
+        SummaryChecked(LOOP, 2),
+    ]
+    assert tool.loops[LOOP] == LoopState(attempts=1, formula=FORMULA, checked_on=2)
+
+
+def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    wrong = 'def summary(s, t):\n    return {"t": len(s)}\n'
+    tool = Summaries(Fake(SummaryReply(wrong, AskCost(3))), load_target(COUNTS), told)
+
+    handled = tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+
+    reason = "at input 1, t was 0, the formula gave 2"
+    assert handled == Handled((Outcome.GAVE_UP,), asked=True)
+    assert notes[-1] == SummaryFailed(LOOP, 3, reason)
+    assert tool.loops[LOOP].tries == [EarlierFormula(wrong, reason)]
+    assert tool.loops[LOOP].checked_on is None
+
+
+def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    tool = Summaries(Fake(SummaryReply(FORMULA, AskCost(1))), load_target(COUNTS), told)
+
+    class Thread(Fake):
+        def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
+            monkeypatch.setattr(model_runs, "running", lambda: 2)
+            return super().summarize(request)
+
+    tool.provider = Thread(SummaryReply(FORMULA, AskCost(1)))
+    handled = tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+
+    assert handled == Handled((Outcome.SKIPPED,), asked=True)
+    assert notes[-1] == SummarySkipped(LOOP, "cannot fork")
