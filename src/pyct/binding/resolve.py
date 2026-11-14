@@ -13,6 +13,9 @@ from collections.abc import Callable
 
 from pyct.binding.annotations import Check, check_of, or_null
 
+# the parameters whose annotation no seed key is checked against
+_GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+
 
 def checked_annotations(
     signature: inspect.Signature,
@@ -42,6 +45,10 @@ def checked_annotations(
     past the parameters that take a position, which does fill it, is not
     checked.
 
+    The ``**kwargs`` parameter is left out too. A key with its name is an
+    extra keyword, and the annotation describes each extra keyword's value,
+    which pyct does not check.
+
     The parameters come from ``signature``, the one the caller already read
     for ``fn``, the same one the seed's fit check reads, so a class target is
     read at its ``__init__`` and the signature is not read again.
@@ -50,7 +57,7 @@ def checked_annotations(
     for name, parameter in signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        if parameter.kind is inspect.Parameter.VAR_POSITIONAL:
+        if parameter.kind in _GATHERING:
             continue
         check = resolved(parameter.annotation, fn, read)
         if check is not None:
