@@ -24,6 +24,12 @@ ESCAPED_KEY = (
     ' writes it d["__class__"], and a key shown with more "!" before "__class__" holds one "!"'
     " fewer."
 )
+# what a retry asks for once the solver answered timeout or unknown to the latest try's ask
+EXACT_VALUE = (
+    "The solver could not answer that condition. Answer this time with a condition that fixes"
+    " each parameter it reads to one exact value, such as `name == value`, that the wanted"
+    " side's inputs meet."
+)
 # a quoted key of one or more "!" then "__class__", as JSON or Python writes it
 _ESCAPED = re.compile(r"[\"']!+__class__[\"']")
 
@@ -44,7 +50,9 @@ class LlmRewrites:
 def request_text(request: RewriteRequest) -> str:
     """The exact text a rewrites ask sends: the task, the condition and the side its line needs,
     the path's earlier conditions, the function's code, the input, the parameters a rewrite may
-    not read, the solver's answer, this moment's earlier tries, and the answer's form."""
+    not read, the solver's answer, this moment's earlier tries, a request for one exact value
+    when the solver answered ``timeout`` or ``unknown`` to the latest try's ask, and the
+    answer's form."""
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
         " branches each input took. The solver could not answer for the condition below."
@@ -68,6 +76,8 @@ def request_text(request: RewriteRequest) -> str:
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")
+        if request.tries[-1].solver_gave_up:
+            parts.append(EXACT_VALUE)
     parts.append(FORM)
     return "\n\n".join(parts)
 

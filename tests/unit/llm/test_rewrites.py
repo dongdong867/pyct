@@ -4,6 +4,8 @@ came, asking about the condition's site."""
 import dataclasses
 from dataclasses import dataclass, field
 
+import pytest
+
 from pyct.config.llm import DEFAULT_LIMIT
 from pyct.llm.connection import Connection
 from pyct.llm.rewrites import REWRITES, LlmRewrites, request_text
@@ -69,6 +71,46 @@ def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
 
     assert 's == "1e-29"  ->  the input {"s": "1e-29"} took the other side' in text
     assert "before it" not in text
+
+
+# what a retry says once the solver could not answer the latest try's ask
+EXACT_VALUE_SAID = (
+    "The solver could not answer that condition. Answer this time with a condition that fixes"
+    " each parameter it reads to one exact value, such as `name == value`, that the wanted"
+    " side's inputs meet."
+)
+OTHER_SIDE = 'the input {"s": "1e-29"} took the other side'
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-after-the-solver-gave-up
+@pytest.mark.parametrize("answer", ["timeout", "unknown"])
+def test_a_retry_after_the_solver_gave_up_on_the_latest_try_asks_for_one_exact_value(
+    answer: str,
+) -> None:
+    reason = f"the solver answered {answer}"
+    tried = (
+        EarlierTry('s == "1e-29"', OTHER_SIDE),
+        EarlierTry("len(s) > 31", reason, solver_gave_up=True),
+    )
+
+    text = request_text(dataclasses.replace(REQUEST, tries=tried))
+
+    assert f"len(s) > 31  ->  {reason}\n\n{EXACT_VALUE_SAID}\n\n{FORM}" in text
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
+def test_a_retry_after_another_failure_does_not_ask_for_one_exact_value() -> None:
+    solver_gave_up = EarlierTry("len(s) > 31", "the solver answered unknown", solver_gave_up=True)
+    other = EarlierTry('s == "1e-29"', OTHER_SIDE)
+    refused = EarlierTry('__import__("os").getcwd() == s', "a rewrite may not call __import__")
+
+    for tried in ((other,), (refused,), (solver_gave_up, other)):
+        assert "one exact value" not in request_text(dataclasses.replace(REQUEST, tries=tried))
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask
+def test_a_first_ask_does_not_ask_for_one_exact_value() -> None:
+    assert "one exact value" not in request_text(REQUEST)
 
 
 # what the request says once a value or a reason it shows writes a plain dict's escaped key
