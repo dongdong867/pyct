@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from pyct.binding.bind import Seed
 from pyct.intercept.model_code import Refused
 from pyct.rewrite.condition import (
     FORM,
@@ -246,3 +247,20 @@ def test_a_reply_written_again_past_the_parser_s_nesting_is_refused() -> None:
 
     assert expression is not None
     assert refusal(expression).startswith("does not parse")
+
+
+def test_a_rewrite_reads_a_plain_dict_s_escaped_key_as_the_target_does() -> None:
+    rewrite = rewrite_code('d["__class__"] == 1', ("d",), FILE)
+    assert isinstance(rewrite, Rewrite), rewrite
+    args = Seed.of({"d": {"!__class__": 1}}).args
+
+    done = run_model(ModelCall(rewrite.code, FUNCTION, args), time.monotonic() + 5)
+
+    assert isinstance(done, ModelRun)
+    assert done.result.failure is None, done.result.failure
+    [fork] = [
+        fork
+        for fork in done.result.branches
+        if (fork.site.line, fork.site.col) == (HELD_LINE, HELD_COL)
+    ]
+    assert fork.taken is True

@@ -7,6 +7,8 @@ the run; the request text names the condition by its place too, never by its fil
 
 from __future__ import annotations
 
+import re
+
 from pyct.config.llm import REWRITES_TOOL
 from pyct.llm.connection import Connection
 from pyct.llm.tool import Tool
@@ -15,6 +17,15 @@ from pyct.rewrite.condition import FORM
 from pyct.rewrite.provider import RewriteReply, RewriteRequest, Side
 
 REWRITES = Tool(REWRITES_TOOL, 6000)
+
+# how the code reads a plain dict's key that seed JSON writes escaped (``pyct.binding.seed_keys``)
+ESCAPED_KEY = (
+    'A dict key shown as "!__class__" is the key "__class__" the code reads, so a condition'
+    ' writes it d["__class__"], and a key shown with more "!" before "__class__" holds one "!"'
+    " fewer."
+)
+# a quoted key of one or more "!" then "__class__", as JSON or Python writes it
+_ESCAPED = re.compile(r"[\"']!+__class__[\"']")
 
 
 class LlmRewrites:
@@ -47,12 +58,7 @@ def request_text(request: RewriteRequest) -> str:
         listed = "\n".join(f"{each.text}: {_side(each)}" for each in request.earlier)
         parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
-    values = "\n".join(f"{name} = {value}" for name, value in request.args)
-    parts.append(
-        "The input whose path the solver extended, each value as JSON, or as Python writes it"
-        " when JSON cannot hold it, and one that holds an object as a placeholder in angle"
-        f" brackets:\n{values}"
-    )
+    parts.append(_input(request))
     if request.unreadable:
         parts.append(
             "Parameters your condition may not read, since each holds an object: "
@@ -64,6 +70,19 @@ def request_text(request: RewriteRequest) -> str:
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")
     parts.append(FORM)
     return "\n\n".join(parts)
+
+
+def _input(request: RewriteRequest) -> str:
+    """The input's values, and how the code reads a plain dict's escaped key when a value or an
+    earlier try's reason shows one."""
+    values = "\n".join(f"{name} = {value}" for name, value in request.args)
+    shown = [value for _, value in request.args] + [each.reason for each in request.tries]
+    said = f"\n{ESCAPED_KEY}" if any(_ESCAPED.search(text) for text in shown) else ""
+    return (
+        "The input whose path the solver extended, each value as JSON, or as Python writes it"
+        " when JSON cannot hold it, and one that holds an object as a placeholder in angle"
+        f" brackets:\n{values}{said}"
+    )
 
 
 def _side(side: Side) -> str:
