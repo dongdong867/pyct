@@ -35,10 +35,11 @@ class Tree:
     site, whatever came before it: a fork whose other side is in no input
     yet is a new side, and the pick tries those first (see `next`).
 
-    A pick whose ask ran to the solver's limit, or whose input left the plan
-    and covered no new line, turns the rest of its path's new sides
-    shallowest first (see `turn`); after a timeout, every other fork at its
-    site also waits until each fork elsewhere was aimed at (see `timed_out`).
+    A pick whose ask ran to the solver's limit or answered a slow
+    ``unknown``, or whose input left the plan and covered no new line, turns
+    the rest of its path's new sides shallowest first (see `turn`); after
+    such an ask, every other fork at its site also waits until each fork
+    elsewhere was aimed at (see `ran_long`).
 
     Each site gets a number the first time the tree meets it, and the tree
     keys a fork by that number: a ``Site`` hashes in Python, a number in C,
@@ -68,12 +69,12 @@ class Tree:
         self._path = 0
         self._depth: int | None = None
         # the path and the site number of the last pick, the paths whose new sides a pick
-        # turned, and the sites' numbers a pick timed out at
+        # turned, and the sites' numbers a pick ran long at
         self._picked: int | None = None
         self._picked_number: int | None = None
         self._turned: set[int] = set()
-        self._timed_out: set[int] = set()
-        # the open forks at a site a pick timed out at, in the order the oldest-path pick passed
+        self._ran_long: set[int] = set()
+        # the open forks at a site a pick ran long at, in the order the oldest-path pick passed
         # them, oldest path first and deepest fork first: the last picks (`_next_later`)
         self._later: deque[Place] = deque()
 
@@ -123,8 +124,8 @@ class Tree:
         an open fork whose other side no input took at its site comes first,
         oldest path first and deepest fork first, or shallowest first on a
         path a pick turned (`turn`); otherwise the deepest open
-        fork on the oldest path; and last, a fork at a site a pick timed out
-        at, oldest path first and deepest fork first. A loop's test takes both
+        fork on the oldest path; and last, a fork at a site a pick ran long at
+        (`ran_long`), oldest path first and deepest fork first. A loop's test takes both
         sides on a path that runs it, so a loop that adds a pass on every
         input cannot starve the forks around it, and the seed's last fork is
         the first pick unless its other side already ran (flip-one-fork). The
@@ -141,34 +142,37 @@ class Tree:
         self._picked, self._picked_number = path, keys[depth][1]
         return plan(forks[: depth + 1], path, facts)
 
-    def timed_out(self) -> None:
-        """The last pick's ask ran to the solver's limit: its path turns (`turn`), and every
-        fork at its site on any path waits until each fork elsewhere was aimed at.
+    def ran_long(self) -> None:
+        """The run judged the last pick's ask long, as it judges one that ran to the solver's
+        limit or answered ``unknown`` slowly: its path turns (`turn`), and every fork at its
+        site on any path waits until each fork elsewhere was aimed at.
 
         A fork at the same site asks the same condition of the same kind of
         value, as `int(s)` after `s.isdigit()` does in each call of a helper,
-        which only a string of more digits than Python reads flips, so it
-        would likely run out of time as well. Decision
-        fork-order-a-timed-out-site-waits-for-the-last-picks.
+        which only a string of more digits than Python reads flips, so its ask
+        would likely run as long. Decisions
+        fork-order-a-timed-out-site-waits-for-the-last-picks and
+        fork-order-a-slow-unknown-waits-as-a-timeout-does.
         """
         if self._picked_number is not None:
-            self._timed_out.add(self._picked_number)
+            self._ran_long.add(self._picked_number)
         self.turn()
 
     def turn(self) -> None:
         """The last pick's path's other new sides, still waiting, go shallowest first, once per
         path, whichever cause turns it first.
 
-        The run turns a path when the pick's ask ran to the solver's limit
-        (`timed_out`), or when its input left the plan and covered no line no
-        earlier input had. The ask for a fork holds the path up to it, so the
-        next deepest holds nearly the same and would likely run out of time
-        or leave the plan too, on what the solver does not model, such as a
-        cache's key compares; the shallowest holds the least. A pick from the
-        oldest-path order or the last picks has none of its path's new sides
-        waiting, so its turn moves nothing. Decisions
-        fork-order-shallowest-first-after-a-timeout and
-        fork-order-shallowest-first-after-a-leave-without-gain.
+        The run turns a path when it judged the pick's ask long (`ran_long`),
+        or when its input left the plan and covered no line no earlier input
+        had. The ask for a fork holds the path up to it, so the next deepest
+        holds nearly the same and would likely run as long or leave the plan
+        too, on what the solver does not model, such as a cache's key
+        compares; the shallowest holds the least. A pick from the oldest-path
+        order or the last picks has none of its path's new sides waiting, so
+        its turn moves nothing. Decisions
+        fork-order-shallowest-first-after-a-timeout,
+        fork-order-shallowest-first-after-a-leave-without-gain and
+        fork-order-a-slow-unknown-waits-as-a-timeout-does.
         """
         path = self._picked
         if path is None or path in self._turned:
@@ -184,14 +188,14 @@ class Tree:
         """The first fork waiting as a new side that is still open and still new.
 
         A fork an input has since taken the other side of, anywhere, leaves the queue here and
-        waits for the oldest-path order instead, and so does one at a site a pick timed out at,
+        waits for the oldest-path order instead, and so does one at a site a pick ran long at,
         which that order passes on to the last picks.
         """
         while self._new:
             path, depth = self._new.popleft()
             forks, keys, _ = self._paths[path]
             fork, key = forks[depth], keys[depth]
-            waits = key[1] in self._timed_out
+            waits = key[1] in self._ran_long
             if not waits and self._open(key, fork.taken) and self._new_side(key, fork):
                 return path, depth
         return None
@@ -204,7 +208,7 @@ class Tree:
         return found
 
     def _next_later(self) -> Place | None:
-        """The first fork at a site a pick timed out at that is still open."""
+        """The first fork at a site a pick ran long at that is still open."""
         while self._later:
             path, depth = self._later.popleft()
             forks, keys, _ = self._paths[path]
@@ -215,7 +219,7 @@ class Tree:
     def _seek(self) -> Place | None:
         """Move where the oldest-path pick starts looking to the deepest open fork on the oldest
         path that holds one, and name it; None when no path holds one. An open fork at a site a
-        pick timed out at is passed on to the last picks."""
+        pick ran long at is passed on to the last picks."""
         while self._path < len(self._paths):
             depth = self._deepest_pickable()
             if depth >= 0:
@@ -227,14 +231,14 @@ class Tree:
 
     def _deepest_pickable(self) -> int:
         """The deepest position from where the oldest-path pick starts looking that holds an open
-        fork at a site no pick timed out at, or -1; each open fork passed on the way waits for
+        fork at a site no pick ran long at, or -1; each open fork passed on the way waits for
         the last picks."""
         forks, keys, _ = self._paths[self._path]
         depth = len(forks) - 1 if self._depth is None else self._depth
         while depth >= 0:
             key = keys[depth]
             if self._open(key, forks[depth].taken):
-                if key[1] not in self._timed_out:
+                if key[1] not in self._ran_long:
                     return depth
                 self._later.append((self._path, depth))
             depth -= 1

@@ -50,7 +50,7 @@ def test_a_turn_after_a_timeout_on_the_same_path_keeps_it_shallowest_first() -> 
     tree = Tree()
     tree.add(tuple(fork(line) for line in (2, 3, 4, 5)))
     tree.next()
-    tree.timed_out()
+    tree.ran_long()
     tree.next()
 
     tree.turn()
@@ -99,7 +99,7 @@ def test_a_timeout_on_a_turned_path_still_sends_its_site_last() -> None:
     tree.next()
     tree.next()
 
-    tree.timed_out()
+    tree.ran_long()
 
     # the fork at line 9 at position 2 waits for the last picks, behind line 6
     assert positions(tree) == [3, 2]

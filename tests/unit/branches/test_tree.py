@@ -108,7 +108,7 @@ def test_a_timeout_sends_the_rest_of_its_path_s_new_sides_shallowest_first() -> 
     tree.add(tuple(fork(line, taken=True) for line in (2, 3, 4, 5)))
     first = tree.next()
 
-    tree.timed_out()
+    tree.ran_long()
     later = [picked.aim.position for picked in iter(tree.next, None)]
 
     assert first is not None and first.aim.position == 3
@@ -119,10 +119,10 @@ def test_a_second_timeout_on_a_path_keeps_it_shallowest_first() -> None:
     tree = Tree()
     tree.add(tuple(fork(line, taken=True) for line in (2, 3, 4, 5)))
     tree.next()
-    tree.timed_out()
+    tree.ran_long()
     second = tree.next()
 
-    tree.timed_out()
+    tree.ran_long()
     later = [picked.aim.position for picked in iter(tree.next, None)]
 
     assert second is not None and second.aim.position == 0
@@ -135,7 +135,7 @@ def test_a_timeout_leaves_a_later_path_deepest_first() -> None:
     tree.add((fork(6, taken=True), fork(7, taken=True), fork(8, taken=True)))
     tree.next()
 
-    tree.timed_out()
+    tree.ran_long()
     aims = [(picked.aim.site.line, picked.aim.position) for picked in iter(tree.next, None)]
 
     assert aims == [(2, 0), (3, 1), (8, 2), (7, 1), (6, 0)]
@@ -145,7 +145,7 @@ def test_a_timeout_before_any_pick_changes_no_order() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True), fork(3, taken=True)))
 
-    tree.timed_out()
+    tree.ran_long()
     aims = [picked.aim.position for picked in iter(tree.next, None)]
 
     assert aims == [1, 0]
@@ -157,7 +157,7 @@ def test_a_timeout_sends_every_other_fork_at_its_site_last() -> None:
     tree.add(tuple(fork(line, taken=True) for line in (5, 9, 6, 9)))
     first = tree.next()
 
-    tree.timed_out()
+    tree.ran_long()
     later = [picked.aim.position for picked in iter(tree.next, None)]
 
     assert first is not None and first.aim.position == 3
@@ -169,7 +169,7 @@ def test_a_timeout_sends_a_fork_at_its_site_on_a_later_path_last() -> None:
     tree = Tree()
     tree.add((fork(5, taken=True), fork(9, taken=True)))
     tree.next()
-    tree.timed_out()
+    tree.ran_long()
     tree.add((fork(5, taken=False), fork(7, taken=True), fork(9, taken=True), fork(8, taken=True)))
 
     aims = [(picked.path, picked.aim.position) for picked in iter(tree.next, None)]
@@ -183,7 +183,7 @@ def test_a_fork_waiting_for_the_last_picks_keeps_its_path_to_extend() -> None:
     tree.add((fork(2, taken=True), fork(9, taken=True)))
     tree.add((fork(3, taken=True), fork(9, taken=True)))
     tree.next()
-    tree.timed_out()
+    tree.ran_long()
     tree.next()
     tree.next()
 
