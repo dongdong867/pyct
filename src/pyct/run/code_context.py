@@ -17,7 +17,7 @@ import textwrap
 import types
 from collections import deque
 from collections.abc import Callable, Iterator, Mapping
-from typing import TypeGuard, cast
+from typing import TypeGuard
 
 from pyct.intercept.hook import in_package
 from pyct.run.target import Target
@@ -33,6 +33,10 @@ type Code = Callable[..., object]
 # ``types.ModuleType`` themselves, whatever the class of the value they read
 _CLASS_NAMES = vars(type)["__dict__"]
 _MODULE_NAMES = vars(types.ModuleType)["__dict__"]
+# the members that hold the function a static and a class method wrap, read by ``staticmethod``
+# and ``classmethod`` themselves, whatever the subclass of the wrapper they read
+_STATIC_FUNC = vars(staticmethod)["__func__"]
+_CLASS_FUNC = vars(classmethod)["__func__"]
 
 # the comments that mark a piece's first and last line in the code a summaries ask sends
 MARK_START = "# >>> the loop"
@@ -168,9 +172,13 @@ def _is_function(value: object) -> TypeGuard[types.FunctionType]:
 
 
 def _unwrapped(value: object) -> object:
-    """The function a static or class method wraps, read by its type alone; else the value."""
-    if issubclass(type(value), staticmethod | classmethod):
-        return cast("staticmethod[..., object] | classmethod[object, ..., object]", value).__func__
+    """The function a static or class method wraps, read by its type alone, through the member
+    ``staticmethod`` or ``classmethod`` defines, so that no attribute hook of a subclass runs;
+    else the value."""
+    if issubclass(type(value), staticmethod):
+        return _STATIC_FUNC.__get__(value)
+    if issubclass(type(value), classmethod):
+        return _CLASS_FUNC.__get__(value)
     return value
 
 

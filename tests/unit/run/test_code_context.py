@@ -363,6 +363,75 @@ def test_reading_a_class_method_s_wrapper_of_a_subclass_runs_none_of_its_code(
     assert vars(sys.modules["wrapped_calls.m"])["SEEN"] == []
 
 
+# a class method and a static method whose wrappers, of a subclass each, keep in ``SEEN`` each
+# attribute read through them and each read of the function they wrap
+HOOKED = """
+
+class Hooked(classmethod):
+    @property
+    def __func__(self):
+        SEEN.append("__func__")
+        return vars(classmethod)["__func__"].__get__(self)
+
+    def __getattribute__(self, name):
+        SEEN.append(name)
+        return classmethod.__getattribute__(self, name)
+
+
+class Pinned(staticmethod):
+    @property
+    def __func__(self):
+        SEEN.append("__func__")
+        return vars(staticmethod)["__func__"].__get__(self)
+
+    def __getattribute__(self, name):
+        SEEN.append(name)
+        return staticmethod.__getattribute__(self, name)
+
+
+class Shelf:
+    @Hooked
+    def build(cls, s):
+        return helper(s)
+
+    @Pinned
+    def make(s):
+        for d in s:
+            s = helper(s)
+        return s
+
+
+def builds(s):
+    Shelf.make(s)
+    return Shelf.build(s)
+"""
+
+
+def test_unwrapping_a_class_or_static_method_of_a_hooked_subclass_runs_none_of_its_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = tmp_path / "hooked_calls"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    text = LOOPED + LAZY + HOOKED
+    (package / "m.py").write_text(text)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = load_target("hooked_calls.m::builds")
+    loop = text.splitlines().index("        for d in s:") + 1
+
+    code = code_context(target)
+    piece = code_with_piece(target, str(package / "m.py"), (loop, loop + 1))
+
+    assert headers(code) == [
+        "# hooked_calls.m.builds",
+        "# hooked_calls.m.Shelf.make",
+        "# hooked_calls.m.Shelf.build",
+        "# hooked_calls.m.helper",
+    ]
+    assert piece.startswith(f"# hooked_calls.m.Shelf.make\n@Pinned\ndef make(s):\n    {MARK_START}")
+    assert vars(sys.modules["hooked_calls.m"])["SEEN"] == []
+
+
 def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
     tmp_path: Path,
 ) -> None:
