@@ -15,10 +15,7 @@ class Rules:
     digested."""
 
     def __init__(self, folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        folder.mkdir()
-        self.files = tuple(str(folder / f"rule{n}.py") for n in range(3))
-        for n, file in enumerate(self.files):
-            Path(file).write_text(f"rule = {n}\n")
+        self.files = written(folder)
         self.digests = 0
         real = cache._digest
 
@@ -35,6 +32,15 @@ class Rules:
         return hashlib.sha256(whole).hexdigest()[:16]
 
 
+def written(folder: Path) -> tuple[str, ...]:
+    """Three stand-in files in ``folder``, as one checkout of pyct holds its own."""
+    folder.mkdir()
+    files = tuple(str(folder / f"rule{n}.py") for n in range(3))
+    for n, file in enumerate(files):
+        Path(file).write_text(f"rule = {n}\n")
+    return files
+
+
 @pytest.fixture
 def rules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Rules:
     return Rules(tmp_path / "rules", monkeypatch)
@@ -47,7 +53,9 @@ def settled(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def kept(root: Path) -> Path:
-    return root / "substituted" / "version"
+    """The one version record under ``root``."""
+    (record,) = (root / "substituted").glob("version-*")
+    return record
 
 
 def test_the_version_is_the_digest_of_pyct_s_files_read_in_order() -> None:
@@ -78,6 +86,8 @@ def test_an_edit_with_the_old_size_and_time_makes_a_new_version_and_keeps_it(
     before = os.stat(rules.files[1])
     Path(rules.files[1]).write_text("rule = 9\n")
     os.utime(rules.files[1], ns=(before.st_atime_ns, before.st_mtime_ns))
+    if os.stat(rules.files[1]).st_ctime_ns == before.st_ctime_ns:
+        pytest.skip("this file system's change time is too coarse to tell the rewrite apart")
 
     new = cache._version(tmp_path)
     again = cache._version(tmp_path)
@@ -113,7 +123,7 @@ def test_a_version_of_files_changed_just_now_is_not_kept(
     Path(rules.files[0]).write_text("rule = 7\n")
 
     assert cache._version(tmp_path) == rules.expected()
-    assert not kept(tmp_path).exists()
+    assert not list(tmp_path.glob("substituted/version-*"))
 
 
 @pytest.mark.usefixtures("settled")
@@ -165,13 +175,15 @@ def test_a_version_that_cannot_be_put_in_place_leaves_no_file_behind(
     monkeypatch.setattr(cache.os, "replace", refused)
 
     assert cache._version(tmp_path) == rules.expected()
-    assert [path.name for path in kept(tmp_path).parent.iterdir()] == []
+    assert list((tmp_path / "substituted").iterdir()) == []
 
 
 @pytest.mark.usefixtures("settled")
-def test_a_folder_that_cannot_be_written_still_gives_the_version_and_says_so_once(
+def test_a_folder_that_cannot_be_written_still_gives_the_version_with_no_warning(
     tmp_path: Path, rules: Rules, caplog: pytest.LogCaptureFixture
 ) -> None:
+    # the record only saves a digest: the entries are still read, so there is nothing to warn of
+    caplog.set_level("DEBUG", logger=cache.__name__)
     root = tmp_path / "cache"
     root.mkdir(mode=0o500)
     try:
@@ -181,4 +193,22 @@ def test_a_folder_that_cannot_be_written_still_gives_the_version_and_says_so_onc
 
     assert versions == {rules.expected()}
     assert rules.digests == 2
-    assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1
+    assert [record.levelname for record in caplog.records] == ["DEBUG", "DEBUG"]
+    assert str(root) in caplog.records[0].getMessage()
+
+
+@pytest.mark.usefixtures("settled")
+def test_two_checkouts_sharing_a_folder_each_reuse_their_own_version(
+    tmp_path: Path, rules: Rules
+) -> None:
+    first = rules.files
+    second = written(tmp_path / "other")
+
+    versions = []
+    for files in (first, second, first, second):
+        rules.files = files
+        versions.append(cache._version(tmp_path))
+
+    # the same code in two places makes the same version, so their entries are shared too
+    assert set(versions) == {rules.expected()}
+    assert rules.digests == 2

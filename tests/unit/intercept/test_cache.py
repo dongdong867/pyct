@@ -92,6 +92,8 @@ def test_an_edit_is_built_again_even_with_its_old_size_and_time(tmp_path: Path) 
 
     module.path.write_text("x = 2")
     os.utime(module.path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    if os.stat(module.path).st_ctime_ns == before.st_ctime_ns:
+        pytest.skip("this file system's change time is too coarse to tell the rewrite apart")
     code = module.code(tmp_path / "cache")
 
     assert module.builds == ["x = 1", "x = 2"]
