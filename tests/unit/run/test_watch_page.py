@@ -44,3 +44,14 @@ def test_the_page_names_the_input_s_process_beside_the_import() -> None:
         assert watch.input() == 4321
         watch.name_input(0)
         assert watch.input() is None
+
+
+def test_the_page_names_a_group_beside_the_input_and_the_import() -> None:
+    with contextlib.closing(WatchPage.for_command_line(ARGV)) as watch:
+        assert watch.group() is None
+        with watch.importing(MODULE):
+            watch.name_input(4321)
+            watch.name_group(8765)
+            assert (watch.group(), watch.input(), watch.module()) == (8765, 4321, MODULE)
+        watch.name_group(0)
+        assert (watch.group(), watch.input()) == (None, 4321)
