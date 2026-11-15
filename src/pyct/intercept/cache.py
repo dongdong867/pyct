@@ -20,6 +20,14 @@ time, so it never goes unseen. A folder or file that cannot be read or
 written is only a miss: the module is substituted again, and nothing is
 kept, which pyct says once as a warning.
 
+The version is a digest of pyct's own files that decide what an entry
+holds. Reading them costs more than a warm import of a small package, so
+the folder keeps the version beside those files' paths and stats, in a
+record of its own for each set of paths, under the same rule: it is used
+while every stat is the one recorded, and kept only when every file had
+settled. Any other version is digested again. A record that cannot be
+written costs only that digest, so pyct logs it at DEBUG alone.
+
 An entry is code that runs, so only this user's own entries are read, in a
 folder that is this user's alone: made with mode 0700, and never one that
 another user owns or may write to.
@@ -79,6 +87,12 @@ _HEAD = struct.Struct("<32s5q?")
 # how long after a file's last change its stat is trusted: FAT's two seconds, the coarsest clock
 _SETTLED_NS = 2_000_000_000
 
+# a record under the cache folder that keeps the transform's version, one per set of files it is
+# made from, so checkouts sharing the folder keep one each: a digest of the files' paths and
+# stats, then the version, 16 hex digits
+_VERSION = struct.Struct("<32s16s")
+_HEX = frozenset(b"0123456789abcdef")
+
 # a file's stat as an entry records it: when its content and its inode last changed, its size,
 # and which file it is
 type Stat = tuple[int, int, int, int, int]
@@ -127,25 +141,75 @@ def cached(
 @functools.cache
 def _entries(root: Path) -> str | None:
     """The folder of this transform's entries under ``root``, or None when ``root`` keeps none."""
-    return os.path.join(root, "substituted", _version()) if _usable(root) else None
+    return os.path.join(root, "substituted", _version(root)) if _usable(root) else None
 
 
-@functools.cache
-def _version() -> str:
-    """A digest of the code that decides what an entry holds: the transform and each of its
-    rules, the `math`, `builtins` and `operator` names and the range and view method names it
-    takes, each other module of pyct's a rule takes a name, a size, a text or a piece from, its
-    compile, and this module's format."""
-    digest = hashlib.sha256()
+def _version(root: Path) -> str:
+    """The transform's version: the digest of `_version_files`, as kept under ``root`` in the
+    record for those paths.
+
+    The kept one is used while every file has the stat it had when the
+    version was kept; any other is a digest made again, kept when every
+    file has settled.
+    """
+    files = _version_files()
+    stats = [_stat(file) for file in files]
+    key = hashlib.sha256(repr((files, stats)).encode()).digest()
+    named = hashlib.sha256(repr(files).encode()).hexdigest()[:16]
+    record = os.path.join(root, "substituted", f"version-{named}")
+    held = _held(record)
+    if held is not None and len(held) == _VERSION.size:
+        recorded, version = _VERSION.unpack(held)
+        if recorded == key and set(version) <= _HEX:
+            return version.decode()
+    made = _digest(files)
+    if all(_trusted_now(stat) for stat in stats):
+        try:
+            _put(root, record, _VERSION.pack(key, made.encode()))
+        except OSError as error:
+            # only a digest saved: the entries are still read and written as before
+            logger.debug("pyct cannot keep the transform's version in %s (%s)", root, error)
+    return made
+
+
+def _trusted_now(stat: Stat | None) -> bool:
+    """Whether a file was last changed more than 2 s ago, so its stat is trusted."""
+    return stat is not None and time.time_ns() - stat[1] > _SETTLED_NS
+
+
+def _version_files() -> tuple[str, ...]:
+    """The files of the code that decides what an entry holds, in the order they are digested:
+    the transform and each of its rules, the `math`, `builtins` and `operator` names and the range
+    and view method names it takes, each other module of pyct's a rule takes a name, a size, a
+    text or a piece from, its compile, and this module's format."""
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
     rules += (unpacks.__file__, percents.__file__, bool_returns.__file__, watch.__file__)
     rules += (loops.__file__,)
     # what the rules take from outside the transform: a size, the callee's text, and a piece
     rules += (hashed.__file__, sources.__file__, pieces.__file__)
-    for file in (*rules, compiled.__file__, __file__):
-        digest.update(Path(str(file)).read_bytes())
+    return tuple(str(file) for file in (*rules, compiled.__file__, __file__))
+
+
+def _digest(files: tuple[str, ...]) -> str:
+    """The version the files make: the first 16 hex digits of the SHA-256 of their contents, read
+    in order."""
+    digest = hashlib.sha256()
+    for file in files:
+        digest.update(_whole(file))
     return digest.hexdigest()[:16]
+
+
+def _whole(file: str) -> bytes:
+    """A file's contents, read with the operating system's calls alone."""
+    handle = os.open(file, os.O_RDONLY)
+    try:
+        chunks: list[bytes] = []
+        while chunk := os.read(handle, 1 << 20):
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(handle)
 
 
 def _name(path: str, variant: str) -> str:
@@ -237,8 +301,7 @@ def _code(held: bytes) -> types.CodeType | None:
 def _head(digest: bytes, stat: Stat | None) -> bytes:
     """An entry's head: the source's digest, and its stat, trusted once the file has settled."""
     recorded = stat or (0, 0, 0, 0, 0)
-    trusted = stat is not None and time.time_ns() - stat[1] > _SETTLED_NS
-    return _HEAD.pack(digest, *recorded, trusted)
+    return _HEAD.pack(digest, *recorded, _trusted_now(stat))
 
 
 def _write(root: Path, entry: str, data: bytes) -> None:
@@ -247,19 +310,25 @@ def _write(root: Path, entry: str, data: bytes) -> None:
     Two processes writing one entry, forked inputs or sweep's entries,
     leave one whole entry behind.
     """
-    folder = os.path.dirname(entry)
     try:
-        os.makedirs(folder, mode=0o700, exist_ok=True)
-        ignore = root / ".gitignore"
-        if not ignore.exists():
-            ignore.write_text(_IGNORE)
-        with tempfile.NamedTemporaryFile(dir=folder, prefix=".", delete=False) as handle:
-            handle.write(data)
-        try:
-            os.replace(handle.name, entry)
-        except OSError:
-            with contextlib.suppress(OSError):
-                os.unlink(handle.name)
-            raise
+        _put(root, entry, data)
     except OSError as error:
         _cannot_keep(root, str(error))
+
+
+def _put(root: Path, path: str, data: bytes) -> None:
+    """Write a file under ``root`` whole, beside it first and then in its place, or raise the
+    `OSError` that stopped it, removing its temporary file when the move fails."""
+    folder = os.path.dirname(path)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
+    ignore = root / ".gitignore"
+    if not ignore.exists():
+        ignore.write_text(_IGNORE)
+    with tempfile.NamedTemporaryFile(dir=folder, prefix=".", delete=False) as handle:
+        handle.write(data)
+    try:
+        os.replace(handle.name, path)
+    except OSError:
+        with contextlib.suppress(OSError):
+            os.unlink(handle.name)
+        raise
