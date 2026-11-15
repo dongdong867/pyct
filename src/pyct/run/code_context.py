@@ -193,8 +193,8 @@ def _part(function: Code) -> str | None:
     """The function's code, dedented, under a ``# module.qualname`` line. None when Python
     cannot give its source. ``inspect.getsource`` and the line read the function's attributes,
     and the ``__dict__`` of the ``sys.modules`` entry its ``__module__`` names, as Python reads
-    them, so an attribute hook of that entry's class runs, and so does one of the target's own
-    callable when it is not a plain function."""
+    them, so an attribute hook of that entry's class runs, and so does an attribute hook of the
+    target's own callable when it is not a plain function."""
     try:
         source = inspect.getsource(function)
     except (OSError, TypeError):

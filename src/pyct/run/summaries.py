@@ -182,8 +182,8 @@ class Summaries:
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
         self.loops: dict[Site, LoopState] = {}
-        # each loop skipped with no ask, with each reason it was skipped for, said once a run
-        self.skipped: set[tuple[Site, str]] = set()
+        # each loop skipped with no ask, with each reason it was skipped for, already said this run
+        self.said_skips: set[tuple[Site, str]] = set()
 
     @property
     def can_ask(self) -> bool:
@@ -239,8 +239,8 @@ class Summaries:
     def _skipped(self, site: Site, reason: str) -> None:
         """A loop skipped with no ask, said the first time this run it is skipped for
         ``reason``."""
-        if (site, reason) not in self.skipped:
-            self.skipped.add((site, reason))
+        if (site, reason) not in self.said_skips:
+            self.said_skips.add((site, reason))
             self.told.note(SummarySkipped(site, reason))
 
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:

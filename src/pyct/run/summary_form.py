@@ -210,14 +210,11 @@ def _exact(arguments: ast.arguments, parameters: tuple[str, ...]) -> bool:
 def _held(function: ast.FunctionDef, every: list[ast.arg]) -> list[str]:
     """What the definition holds that a formula may not, each as what it may not do, in the
     order the line writes them: a decorator, type parameters, annotations, a type comment."""
-    annotated = [
-        what
-        for what, held in (
-            ("its parameters", any(each.annotation is not None for each in every)),
-            ("its return", function.returns is not None),
-        )
-        if held
-    ]
+    annotated: list[str] = []
+    if any(each.annotation is not None for each in every):
+        annotated.append("its parameters")
+    if function.returns is not None:
+        annotated.append("its return")
     held = ["use a decorator"] if function.decorator_list else []
     if function.type_params:
         held.append("take type parameters")
