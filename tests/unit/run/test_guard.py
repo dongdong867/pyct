@@ -17,21 +17,31 @@ from pyct.run.guard import STOP_GRACE, guard
 from pyct.run.process import Child, Waited
 from pyct.run.watch_page import WatchPage
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import is_running
+from tests.acceptance.test_the_watcher import group_ended
 
 
-def stand_in(on_sigterm: int | Callable[[int, object], None], page: WatchPage | None = None) -> int:
+def stand_in(
+    on_sigterm: int | Callable[[int, object], None],
+    page: WatchPage | None = None,
+    *,
+    group: bool = False,
+) -> int:
     """A process that waits, taking a SIGTERM as ``on_sigterm`` says, once it is ready.
 
     At its default action, or ignored, as a process whose handler cannot run
     takes it. With ``page``, it first starts an input's process of its own,
-    which waits too, and names it on ``page``, as pyct's process does.
+    which waits too, and names it on ``page``, as pyct's process does. With
+    ``group`` too, the process it starts leads a group of its own, and the
+    page names that group instead, as sweep names the command it runs.
     """
     ready, running = os.pipe()
     pid = os.fork()
     if pid == 0:
         try:
             signal.signal(signal.SIGTERM, on_sigterm)
-            if page is not None:
+            if page is not None and group:
+                page.name_group(leading())
+            elif page is not None:
                 page.name_input(waiting())
             os.write(running, b"!")
             time.sleep(10)
@@ -51,6 +61,22 @@ def waiting() -> int:
             time.sleep(10)
         finally:
             os._exit(0)
+    return pid
+
+
+def leading() -> int:
+    """A child of this process that leads a session of its own, with one more waiting process in
+    its group, as each process sweep starts does; its pid, once it leads its group."""
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.setsid()
+            waiting()
+            time.sleep(10)
+        finally:
+            os._exit(0)
+    while os.getpgid(pid) != pid:
+        time.sleep(0.001)
     return pid
 
 
@@ -142,6 +168,52 @@ def test_the_guard_leaves_a_named_pid_that_is_not_pyct_s_child_alone(page: Watch
         assert os.waitpid(sibling, os.WNOHANG) == (0, 0)
     finally:
         Child(sibling).end()
+
+
+# the same for a group the page names, as sweep names the process group of the command it runs:
+# the guard kills every process in it
+@pytest.mark.parametrize("watcher_gone", [False, True], ids=["sigterm-passed-on", "watcher-gone"])
+def test_the_guard_ends_the_group_the_page_names_with_pyct_s_process(
+    watcher_gone: bool, page: WatchPage
+) -> None:
+    pid = stand_in(signal.SIG_IGN, page, group=True)
+    named = page.group()
+    assert named is not None
+    try:
+        with guarding(pid, page) as (_, kept):
+            if watcher_gone:
+                os.close(kept)
+            else:
+                os.write(kept, b"!")
+            waited, _ = ended(pid)
+
+        assert waited.signal == signal.SIGKILL
+        assert group_ended(named)
+    finally:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(named, signal.SIGKILL)
+
+
+# a group the page names whose leader is not pyct's child, as one whose leader pyct reaped, gets
+# no signal: once every process of it is gone the system can hand its id out again
+def test_the_guard_leaves_a_named_group_whose_leader_is_not_pyct_s_child_alone(
+    page: WatchPage,
+) -> None:
+    sibling = leading()
+    page.name_group(sibling)
+    pid = stand_in(signal.SIG_IGN)
+    try:
+        with guarding(pid, page) as (_, kept):
+            os.write(kept, b"!")
+            waited, _ = ended(pid)
+
+        assert waited.signal == signal.SIGKILL
+        assert os.waitpid(sibling, os.WNOHANG) == (0, 0)
+        assert not group_ended(sibling, within=0.1)
+    finally:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(sibling, signal.SIGKILL)
+        os.waitpid(sibling, 0)
 
 
 def test_the_watcher_gone_has_the_guard_send_the_sigterm_itself() -> None:

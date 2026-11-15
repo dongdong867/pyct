@@ -1,3 +1,4 @@
+import contextlib
 import os
 import signal
 import subprocess
@@ -8,8 +9,10 @@ from typing import Any
 
 import pytest
 
+import pyct.run.process as run_process
 from pyct.run.process import Waited
-from pyct.sweep.process import run_command, waited_of
+from pyct.run.watch_page import WatchPage
+from pyct.sweep.process import Where, run_command, started, waited_of
 
 # a command that sleeps an hour
 SLEEPS = "import time\ntime.sleep(3600)\n"
@@ -164,3 +167,22 @@ def test_a_command_that_cannot_start_raises_and_holds_no_signal_after(tmp_path: 
     with pytest.raises(FileNotFoundError):
         run_command([str(tmp_path / "missing")], cwd=tmp_path, env=dict(os.environ), limit=30)
     assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == before
+
+
+# the watcher's guard kills the group the page names when it kills sweep's process, so the page
+# names the group of the command sweep runs from its start until it is reaped, however the block
+# ends
+@pytest.mark.parametrize("raises", [False, True], ids=["returns", "raises"])
+def test_a_command_s_group_is_named_on_the_page_while_it_runs(
+    raises: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with contextlib.closing(WatchPage.for_command_line([])) as page:
+        monkeypatch.setattr(run_process, "_page", page)
+        with contextlib.suppress(RuntimeError):
+            null = subprocess.DEVNULL
+            with started(python(SLEEPS), Where(), stdout=null, stderr=null) as child:
+                assert page.group() == child.pid
+                if raises:
+                    raise RuntimeError("the block raised")
+        assert child.returncode == -signal.SIGKILL
+        assert page.group() is None
