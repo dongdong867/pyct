@@ -23,6 +23,7 @@ from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
+from pyct.run.namespaces import file_of
 from pyct.run.own_imports import keep_own_imports
 from pyct.run.watch_page import WatchPage
 
@@ -88,6 +89,17 @@ class Target:
         function was written in, or the spec's own module for a callable that names none."""
         written = getattr(self.fn, "__module__", None)
         return written if isinstance(written, str) else self.spec.partition("::")[0]
+
+    def module_of(self, file: str) -> str:
+        """The dotted name of the module ``file`` holds, as an LLM ask's place names it: the
+        target's own, or the name of an entry of ``sys.modules`` whose file it is, each entry's
+        file read by its type alone (``file_of``), or the file's stem when no entry's is."""
+        if file == self.file:
+            return self.spec.partition("::")[0]
+        for name, module in list(sys.modules.items()):
+            if file_of(module) == file:
+                return name
+        return os.path.splitext(os.path.basename(file))[0]
 
 
 def load_target(
@@ -300,10 +312,12 @@ def _reason(error: BaseException) -> str:
     return lines[0] if type(error) in _INSPECT_S_OWN else f"{named}: {lines[0]}"
 
 
-def interception(spec: str) -> contextlib.AbstractContextManager[None]:
+def interception(spec: str, *, pieces: bool = False) -> contextlib.AbstractContextManager[None]:
     """The block that substitutes the target's package, for the owner of a run to hold open.
 
     The spec's module names the package. Its code is kept in the cache
-    folder as it is when the block opens.
+    folder as it is when the block opens. With ``pieces``, each loop and
+    comprehension's runs are recorded (``Interception.pieces``).
     """
-    return intercepting(Interception(module=spec.partition("::")[0], cache=cache_folder()))
+    module = spec.partition("::")[0]
+    return intercepting(Interception(module=module, cache=cache_folder(), pieces=pieces))

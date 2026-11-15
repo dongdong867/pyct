@@ -44,6 +44,7 @@ def test_the_summary_and_stderr_count_the_ask_its_tokens_and_its_wait(
         "replayed": 0,
         "skipped": 0,
         "tokens": {"in": 1200, "out": 300},
+        "summaries": [],
     }
     counts = "llm: 1 asks, 0 replayed, 0 skipped, 1200 tokens in, 300 out"
     assert result.stderr.splitlines()[-2] == f"{counts}, {seconds:.1f} s waiting"

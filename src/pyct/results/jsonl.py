@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pyct.core.foundation.branch import Branch, Expression, as_the_code_read_it
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.llm_asks import LlmUse
+from pyct.results.llm_asks import LlmUse, LoopSummary
 from pyct.results.printed import CUT, PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
@@ -51,7 +51,8 @@ def render_summary(result: RunResult, llm: LlmUse | None = None) -> str:
     carries. The coverage is written the way an input line writes its own,
     and ``uncovered`` is keyed like ``total``: a file with nothing left over
     carries an empty list rather than dropping out. ``llm`` is what the
-    run's LLM tools did, null for a run with no ``--llm``.
+    run's LLM tools did, with each loop summaries asked about, null for a
+    run with no ``--llm``.
     """
     payload = {
         "stopped": result.stopped.reason,
@@ -65,13 +66,14 @@ def render_summary(result: RunResult, llm: LlmUse | None = None) -> str:
         "uncovered": _numbers(result.coverage.uncovered),
         "why_uncovered": [why_json(entry) for entry in result.why_uncovered],
         "environment": _environment(result.environment),
-        "llm": None if llm is None else _llm(llm),
+        "llm": None if llm is None else _llm(llm, result.summaries),
     }
     return json.dumps(payload)
 
 
-def _llm(use: LlmUse) -> dict[str, object]:
-    """The LLM's model, tools and counts, its tokens in and out, and its wait to the millisecond."""
+def _llm(use: LlmUse, summaries: tuple[LoopSummary, ...]) -> dict[str, object]:
+    """The LLM's model, tools and counts, its tokens in and out, its wait to the millisecond, and
+    each loop summaries asked about, an empty list when none."""
     return {
         "model": use.model,
         "tools": list(use.tools),
@@ -80,6 +82,24 @@ def _llm(use: LlmUse) -> dict[str, object]:
         "skipped": use.skipped,
         "tokens": {"in": use.tokens_in, "out": use.tokens_out},
         "seconds": round(use.seconds, 3),
+        "summaries": [_summary(each) for each in summaries],
+    }
+
+
+def _summary(loop: LoopSummary) -> dict[str, object]:
+    """One loop summaries asked about. A loop and a comprehension are each written ``loop``,
+    with no condition."""
+    return {
+        "kind": "loop",
+        "file": loop.file,
+        "line": loop.line,
+        "col": loop.col,
+        "changes": list(loop.changes),
+        "formula": loop.formula,
+        "condition": None,
+        "state": loop.state.value,
+        "tries": loop.tries,
+        "checked_on": loop.checked_on,
     }
 
 

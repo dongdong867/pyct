@@ -59,6 +59,9 @@ def own_fork(expression: str, args: dict[str, object]) -> tuple[object, bool]:
         ('  s == "1e-30"\n', 's == "1e-30"'),
         ("Here it is:\n```python\nn > 3\n```\n", "n > 3"),
         ("```\nn > 3\n```", "n > 3"),
+        ("```python3\nn > 3\n```", "n > 3"),
+        ("```python \nn > 3\n```", "n > 3"),
+        ("```py\nn > 3\n```\nor\n```py\nn > 4\n```", "n > 3"),
     ],
 )
 def test_the_expression_is_the_fence_s_text_or_the_whole_reply(reply: str, expression: str) -> None:

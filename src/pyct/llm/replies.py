@@ -4,7 +4,16 @@ from __future__ import annotations
 
 import json
 
+from pyct.utils.fences import code_blocks
+
 _DECODER = json.JSONDecoder()
+
+
+def last_code_block(text: str) -> str | None:
+    """The code of the last fenced code block in ``text``, as written, or None when the text
+    holds no closed one. A block is read as ``pyct.utils.fences`` reads it."""
+    found = code_blocks(text)
+    return found[-1] if found else None
 
 
 def json_items(text: str) -> tuple[str, ...] | None:
