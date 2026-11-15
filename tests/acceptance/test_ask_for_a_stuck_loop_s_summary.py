@@ -13,11 +13,12 @@ from collections.abc import Iterator
 import pytest
 
 from pyct.llm.summaries import FOLLOWS, request_text
-from pyct.results.llm_asks import AskCost, Unanswered, Why
+from pyct.results.jsonl import render_summary
+from pyct.results.llm_asks import AskCost, LlmUse, Unanswered, Why
 from pyct.results.record import InputRecord, StopKind
 from pyct.run import model_runs, threads
 from pyct.run.code_context import MARK_END, MARK_START
-from pyct.run.summaries import ShownRun
+from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
 from pyct.run.summary_checks import answer_form
 from tests.acceptance.llm_summaries import (
     COUNT,
@@ -36,6 +37,8 @@ STOPS = "targets.summaries.loops::stops"
 VOWELS = "targets.summaries.loops::vowels"
 # a formula the checks would refuse, for a test about the ask alone
 ANY = code_reply('def summary(s, t):\n    return {"t": t}')
+# the code block `COUNT` holds
+FORMULA = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
 
 
 def shown(record: InputRecord) -> ShownRun:
@@ -145,6 +148,26 @@ def test_no_ask_is_made_while_pyct_s_process_runs_a_second_thread() -> None:
 
     assert provider.requests == []
     assert f"llm: summary for the loop at {F}:10 skipped: cannot fork" in done.said
+
+
+# llm-summary-for-a-stuck-loop-state-in-the-summary-line
+def test_a_loop_whose_formula_found_no_child_to_run_it_is_listed_unchecked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class ThreadDuringTheAsk(FakeSummaries):
+        """Answers as the fake does, while a second thread starts in pyct's process."""
+
+        def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
+            monkeypatch.setattr(model_runs, "running", lambda: 2)
+            return super().summarize(request)
+
+    done = run_summaries(COUNTS, SEED, ThreadDuringTheAsk([COUNT]))
+
+    assert f"llm: summary for the loop at {F}:10 skipped: cannot fork" in done.said
+    use = LlmUse("openai:gpt-6-luna", ("summaries",))
+    [item] = json.loads(render_summary(done.result, use))["llm"]["summaries"]
+    assert (item["formula"], item["tries"]) == (FORMULA, 1)
+    assert (item["state"], item["checked_on"]) == ("unchecked", None)
 
 
 # llm-summary-for-a-stuck-loop-reply-without-code

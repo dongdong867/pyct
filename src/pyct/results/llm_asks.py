@@ -86,27 +86,32 @@ class LlmUse:
 
 
 class SummaryState(StrEnum):
-    """Where a loop summaries asked about stands: its last formula checked, or not."""
+    """What came of the last ask summaries sent about a loop.
+
+    ``CHECKED``: its formula passed the checks. ``FAILED``: its formula failed a check, or the
+    reply held no code block. ``UNANSWERED``: the ask got no answer. ``UNCHECKED``: pyct could
+    not check its formula, since no child could run it or the run's deadline ended the check.
+    """
 
     CHECKED = "checked"
     FAILED = "failed"
+    UNANSWERED = "unanswered"
+    UNCHECKED = "unchecked"
 
 
 @dataclass(frozen=True)
 class LoopSummary:
     """One loop summaries sent an ask for, as the summary line's ``llm.summaries`` lists it: the
     file and the line and column the loop starts at, the names it changes, the last formula a
-    reply held, None when no reply held one, the connection's last try number at its place, and
-    the past runs its formula was checked on, None when none is checked."""
+    reply held, None when no reply held one, what came of its last ask sent, the connection's
+    last try number at its place, and the past runs its formula was checked on, None unless its
+    state is ``CHECKED``."""
 
     file: str
     line: int
     col: int
     changes: tuple[str, ...]
     formula: str | None
+    state: SummaryState
     tries: int
     checked_on: int | None = None
-
-    @property
-    def state(self) -> SummaryState:
-        return SummaryState.FAILED if self.checked_on is None else SummaryState.CHECKED

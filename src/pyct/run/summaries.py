@@ -23,6 +23,12 @@ checked, and that loop is not asked about again. A check whose child could
 not start, or that the run's deadline ended, is no try: the loop is skipped
 at this moment, and said. No input runs and nothing is rebound.
 
+The summary line lists each loop an ask was sent for with what came of its
+last ask sent (``SummaryState``): its formula checked; failed, by a check or
+a reply with no code block; unanswered; or unchecked, when the check could not
+run or the deadline ended it. An ask the token limit refused sent nothing and
+leaves that as it was.
+
 ``SummaryProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.summaries``.
 Decision llm-summary-provider-declared-in-run.
 """
@@ -40,7 +46,7 @@ from pyct.config.llm import SUMMARIES_TOOL
 from pyct.core.foundation.branch import PieceRun, Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
-from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
+from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
 from pyct.results.pieces import FUNCTIONS, Piece, pieces
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
@@ -146,14 +152,17 @@ class Asked(enum.Enum):
 @dataclass
 class LoopState:
     """One loop an ask was sent for, across the run: the names it changes, the connection's last
-    try number, the earlier tries that failed, the last formula the model gave, and, once one is
-    checked, the runs it was checked on."""
+    try number, the earlier tries that failed, the last formula the model gave, the runs a
+    formula was checked on once one is checked, and what came of the last ask sent for it,
+    unanswered until its answer is read. An ask the token limit refused sent nothing and changes
+    none of these."""
 
     changes: tuple[str, ...]
     attempts: int = 0
     tries: list[EarlierFormula] = field(default_factory=list)
     formula: str | None = None
     checked_on: int | None = None
+    last: SummaryState = SummaryState.UNANSWERED
 
 
 class Summaries:
@@ -218,9 +227,14 @@ class Summaries:
             return Asked.NOT_ASKED, True
         self._sent(site, state, answer.cost)
         if answer.ignored is not None:
-            self.told.note(ReplyIgnored(SUMMARIES_TOOL, answer.ignored))
-            return Asked.FAILED, True
+            return self._ignored(state, answer.ignored), True
         return self._tried(loop, state, answer, run), True
+
+    def _ignored(self, state: LoopState, reason: str) -> Asked:
+        """A reply that held nothing the tool could read, said; its loop's ask failed."""
+        state.last = SummaryState.FAILED
+        self.told.note(ReplyIgnored(SUMMARIES_TOOL, reason))
+        return Asked.FAILED
 
     def _skipped(self, site: Site, reason: str) -> None:
         """A loop skipped with no ask, said the first time this run it is skipped for
@@ -232,8 +246,8 @@ class Summaries:
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
         """The reply's formula read, its form checked, then checked on the loop's runs and
         for values pyct follows: kept when it passes, else a failed try, said with its reason.
-        A check that could not run, or that the run's deadline ended, skips the loop at this
-        moment."""
+        A check that could not run, or that the run's deadline ended, leaves the formula
+        unchecked and skips the loop at this moment."""
         state.formula = reply.code
         site, piece = loop.site, loop.piece
         file = f"<summary {self._place(site)}>"
@@ -244,16 +258,18 @@ class Summaries:
         until = run.bounds.until
         failed = check_formula(formula.code, loop.runs, loop.parameters, piece.changed, until)
         if isinstance(failed, Ended):
+            state.last = SummaryState.UNCHECKED
             self.told.note(SummarySkipped(site, failed.reason))
             return Asked.NOT_ASKED
         if failed is not None:
             return self._failed(state, site, failed)
-        state.checked_on = len(loop.runs)
+        state.checked_on, state.last = len(loop.runs), SummaryState.CHECKED
         self.told.note(SummaryChecked(site, len(loop.runs)))
         return Asked.CHECKED
 
     def _failed(self, state: LoopState, site: Site, reason: str) -> Asked:
         """A failed try, said and kept for the loop's later asks."""
+        state.last = SummaryState.FAILED
         self.told.note(SummaryFailed(site, state.attempts, reason))
         state.tries.append(EarlierFormula(state.formula or "", reason))
         return Asked.FAILED
@@ -279,6 +295,7 @@ class Summaries:
             self.limit.reach()
             return
         self._sent(site, state, answer.cost)
+        state.last = SummaryState.UNANSWERED
         self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
 
     def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
@@ -289,7 +306,8 @@ class Summaries:
         self.limit.heard(cost)
 
     def states(self) -> tuple[LoopSummary, ...]:
-        """Each loop an ask was sent for, in code order, as the summary line lists it."""
+        """Each loop an ask was sent for, in code order, as the summary line lists it, with what
+        came of its last ask sent."""
         return tuple(
             LoopSummary(
                 site.file,
@@ -297,6 +315,7 @@ class Summaries:
                 site.col,
                 state.changes,
                 state.formula,
+                state.last,
                 state.attempts,
                 state.checked_on,
             )

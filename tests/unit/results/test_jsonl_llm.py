@@ -6,7 +6,7 @@ import json
 
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render_summary
-from pyct.results.llm_asks import LlmUse, LoopSummary
+from pyct.results.llm_asks import LlmUse, LoopSummary, SummaryState
 from pyct.results.record import InputRecord, RunResult, Stop, StopKind
 from tests.unit.environment import ENVIRONMENT
 
@@ -51,18 +51,28 @@ def test_the_entry_writes_its_seconds_to_the_millisecond() -> None:
 
 # llm-summary-for-a-stuck-loop-state-in-the-summary-line
 def test_the_entry_lists_each_loop_summaries_asked_about_with_its_state() -> None:
-    checked = LoopSummary("m.py", 3, 4, ("t",), "def summary(t):\n    return {}\n", 1, 5)
-    failed = LoopSummary("m.py", 9, 8, ("a", "b"), None, 2)
-    result = dataclasses.replace(RESULT, summaries=(checked, failed))
+    formula = "def summary(t):\n    return {}\n"
+    checked = LoopSummary("m.py", 3, 4, ("t",), formula, SummaryState.CHECKED, 1, 5)
+    failed = LoopSummary("m.py", 9, 8, ("a", "b"), None, SummaryState.FAILED, 2)
+    unanswered = LoopSummary("m.py", 20, 4, ("t",), formula, SummaryState.UNANSWERED, 3)
+    unchecked = LoopSummary("m.py", 30, 4, ("t",), formula, SummaryState.UNCHECKED, 1)
+    loops = (checked, failed, unanswered, unchecked)
+    result = dataclasses.replace(RESULT, summaries=loops)
 
     payload = json.loads(render_summary(result, LlmUse("openai:gpt-6-luna", ("summaries",))))
 
     where = {"kind": "loop", "file": "m.py"}
     assert payload["llm"]["summaries"] == [
         where
-        | {"line": 3, "col": 4, "changes": ["t"], "formula": "def summary(t):\n    return {}\n"}
+        | {"line": 3, "col": 4, "changes": ["t"], "formula": formula}
         | {"condition": None, "state": "checked", "tries": 1, "checked_on": 5},
         where
         | {"line": 9, "col": 8, "changes": ["a", "b"], "formula": None}
         | {"condition": None, "state": "failed", "tries": 2, "checked_on": None},
+        where
+        | {"line": 20, "col": 4, "changes": ["t"], "formula": formula}
+        | {"condition": None, "state": "unanswered", "tries": 3, "checked_on": None},
+        where
+        | {"line": 30, "col": 4, "changes": ["t"], "formula": formula}
+        | {"condition": None, "state": "unchecked", "tries": 1, "checked_on": None},
     ]

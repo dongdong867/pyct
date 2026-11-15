@@ -36,7 +36,7 @@ def summaries_of(stdout: str) -> object:
     return llm["summaries"]
 
 
-def loop_item(formula: str, state: str, checked_on: int | None) -> dict[str, object]:
+def loop_item(formula: str | None, state: str, checked_on: int | None) -> dict[str, object]:
     """``counts``'s loop as ``llm.summaries`` lists it after its one try."""
     return {
         "kind": "loop",
@@ -113,6 +113,28 @@ def test_the_summary_line_lists_a_loop_whose_last_try_failed(stub: Stub, tmp_pat
 
     assert result.returncode == 0, result.stderr
     assert summaries_of(result.stdout) == [loop_item(f"{LENGTH}\n", "failed", None)]
+
+
+# llm-summary-for-a-stuck-loop-state-in-the-summary-line
+def test_the_summary_line_lists_a_loop_whose_reply_held_no_code_block(
+    stub: Stub, tmp_path: Path
+) -> None:
+    stub.reply = "t is the number of z in s"
+
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", *PLATEAU, target=COUNTS)
+
+    assert result.returncode == 0, result.stderr
+    assert summaries_of(result.stdout) == [loop_item(None, "failed", None)]
+
+
+# llm-summary-for-a-stuck-loop-state-in-the-summary-line
+def test_the_summary_line_lists_a_loop_whose_ask_got_no_answer(stub: Stub, tmp_path: Path) -> None:
+    stub.status = 500
+
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", *PLATEAU, target=COUNTS)
+
+    assert result.returncode == 0, result.stderr
+    assert summaries_of(result.stdout) == [loop_item(None, "unanswered", None)]
 
 
 # llm-summary-for-a-stuck-loop-state-in-the-summary-line

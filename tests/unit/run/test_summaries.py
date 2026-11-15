@@ -13,7 +13,7 @@ from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
-from pyct.results.llm_asks import AskCost, LoopSummary, Unanswered, Why
+from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.results.record import Source as RecordSource
 from pyct.run import model_runs, summaries
@@ -216,7 +216,53 @@ def test_a_loop_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
 
     tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
 
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, 2),)
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, SummaryState.UNANSWERED, 2),)
+
+
+def test_a_loop_whose_reply_held_no_code_block_is_listed_as_failed() -> None:
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    tool = Summaries(Fake(), load_target(COUNTS), told)
+
+    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
+
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, SummaryState.FAILED, 1),)
+
+
+WRONG = 'def summary(s, t):\n    return {"t": len(s)}\n'
+
+
+def test_a_loop_whose_try_failed_and_whose_next_ask_got_no_answer_is_listed_unanswered() -> None:
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    tool = Summaries(Fake(SummaryReply(WRONG, AskCost(1))), load_target(COUNTS), told)
+    run = Run([record(counted("ab"))])
+
+    tool.take((entry(LOOPED),), Moment(1, (), run))
+    tool.provider = Fake(Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(2)))
+    tool.take((entry(LOOPED),), Moment(2, (), run))
+
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), WRONG, SummaryState.UNANSWERED, 2),)
+
+
+@pytest.mark.parametrize(
+    ("first", "formula", "state"),
+    [
+        (SummaryReply(WRONG, AskCost(1)), WRONG, "failed"),
+        (Unanswered(Why.PROVIDER, "provider error 500", AskCost(1)), None, "unanswered"),
+    ],
+    ids=["failed", "unanswered"],
+)
+def test_a_listed_loop_s_ask_the_token_limit_refused_leaves_its_state(
+    first: SummaryReply | Unanswered, formula: str | None, state: str
+) -> None:
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    tool = Summaries(Fake(first), load_target(COUNTS), told)
+    run = Run([record(counted("ab"))])
+
+    tool.take((entry(LOOPED),), Moment(1, (), run))
+    tool.provider = Fake(Unanswered(Why.LIMIT, "token limit reached", AskCost(2)))
+    tool.take((entry(LOOPED),), Moment(2, (), run))
+
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), formula, SummaryState(state), 1),)
 
 
 def test_the_token_limit_ends_the_asks_unsaid() -> None:
@@ -320,8 +366,11 @@ def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
         SummaryRead(LOOP, 't = t + s.count("z")'),
         SummaryChecked(LOOP, 2),
     ]
-    assert tool.loops[LOOP] == LoopState(("t",), attempts=1, formula=FORMULA, checked_on=2)
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, 1, 2),)
+    checked = SummaryState.CHECKED
+    assert tool.loops[LOOP] == LoopState(
+        ("t",), attempts=1, formula=FORMULA, checked_on=2, last=checked
+    )
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, checked, 1, 2),)
 
 
 def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
@@ -337,7 +386,7 @@ def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
     assert notes[-1] == SummaryFailed(LOOP, 3, reason)
     assert tool.loops[LOOP].tries == [EarlierFormula(wrong, reason)]
     assert tool.loops[LOOP].checked_on is None
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), wrong, 3),)
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), wrong, SummaryState.FAILED, 3),)
 
 
 def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
@@ -357,6 +406,7 @@ def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
 
     assert handled == Handled((Outcome.SKIPPED,), asked=True)
     assert notes[-1] == SummarySkipped(LOOP, "cannot fork")
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, SummaryState.UNCHECKED, 1),)
 
 
 def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try() -> None:
@@ -371,6 +421,7 @@ def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try(
     assert handled == Handled((Outcome.SKIPPED,), asked=True)
     assert notes[-1] == SummarySkipped(LOOP, "the run's budget ran out")
     assert tool.loops[LOOP].tries == []
+    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), slow, SummaryState.UNCHECKED, 1),)
 
 
 # llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
