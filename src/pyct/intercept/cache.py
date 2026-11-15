@@ -318,7 +318,7 @@ def _write(root: Path, entry: str, data: bytes) -> None:
 
 def _put(root: Path, path: str, data: bytes) -> None:
     """Write a file under ``root`` whole, beside it first and then in its place, or raise the
-    `OSError` that stopped it, leaving no file of its own behind."""
+    `OSError` that stopped it, removing its temporary file when the move fails."""
     folder = os.path.dirname(path)
     os.makedirs(folder, mode=0o700, exist_ok=True)
     ignore = root / ".gitignore"
