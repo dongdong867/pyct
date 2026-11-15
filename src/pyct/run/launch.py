@@ -32,7 +32,9 @@ the watcher went, so a SIGKILL sent to the pid the shell got still ends
 the whole run while the guard runs. When the command's process does not
 end within ``STOP_GRACE`` of the SIGTERM, because target code runs one long
 call in C or catches the stop, or a lock or a slow host holds the process,
-the guard ends it by SIGKILL, and the input's process it runs with it.
+the guard ends it by SIGKILL, and the input's process it runs with it, or
+the process group of the command it runs, as sweep runs the lister and
+each entry's ``pyct run``.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ from typing import NoReturn
 from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
-from pyct.run.process import Child, Stopped, Waited, how, name_inputs_on, stop, stop_asked
+from pyct.run.process import Child, Stopped, Waited, how, name_on, stop, stop_asked
 from pyct.run.threads import running
 from pyct.run.watch_page import WatchPage
 
@@ -201,10 +203,11 @@ def _serve(command: Command, watch: WatchPage | None, held: Iterable[int]) -> in
     need not block SIGTERM, so a SIGTERM before its handler takes the
     default action and ends it, as a stop would.
 
-    Each input's process is named on the watcher's page, so the guard can
-    end it with this process (see ``guard``).
+    Each input's process, and the group of each command sweep runs, is
+    named on the watcher's page, so the guard can end it with this process
+    (see ``guard``).
     """
-    name_inputs_on(watch)
+    name_on(watch)
     try:
         code = _stoppable(command, watch, held)
     except Stopped:
@@ -247,11 +250,11 @@ def _watch(
 
     Once the command's process is gone, this process ends and reaps the
     guard, then closes its end of the lifeline. Past its grace the guard
-    stops the command's process with SIGSTOP, kills the input's process the
-    page names, then kills the command's process (see ``guard``). A guard
-    that has waited out its grace in the moment between the reap and its
-    own end finds the pid free, since no process holds it yet, and signals
-    nothing.
+    stops the command's process with SIGSTOP, kills the input's process and
+    the group the page names, then kills the command's process (see
+    ``guard``). A guard that has waited out its grace in the moment between
+    the reap and its own end finds the pid free, since no process holds it
+    yet, and signals nothing.
     """
     signaled: list[int] = []
     try:
