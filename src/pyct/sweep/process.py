@@ -4,17 +4,18 @@ a limit, and the SIGHUP that must not leave either behind.
 Each process sweep starts leads a session of its own, so its process group
 holds every process it started in turn, and the whole group is killed once
 sweep is done with it, as the compare tool learned. While it runs, its
-group is named on the watcher's page, so the watcher's guard kills that
-group too when it kills sweep's own process past the stop's grace, which
-skips that end (see ``pyct.run.guard``). The signals sweep stops
-on are held from before a process starts until it is recorded, so one that
-comes meanwhile still finds it to stop. ``run_command`` sends a command's
-output to temporary files rather than pipes: a process the command left
-holding a pipe could keep sweep waiting, and a file never fills up and
-blocks the command. The lister's facts come over a pipe instead, which
-``pyct.sweep.listing`` reads with a limit while it watches for the lister's
-end. This code stays in pyct, beside the compare tool's own runner, since
-neither may import the other (sweep-keeps-its-own-process-runner).
+group is named on the watcher's page. When the watcher's guard kills
+sweep's own process past the stop's grace, which skips that end, it kills
+the named group too while sweep has not yet reaped the group's leader (see
+``pyct.run.guard``). The signals sweep stops on are held from before a
+process starts until it is recorded, so one that comes meanwhile still
+finds it to stop. ``run_command`` sends a command's output to temporary
+files rather than pipes: a process the command left holding a pipe could
+keep sweep waiting, and a file never fills up and blocks the command. The
+lister's facts come over a pipe instead, which ``pyct.sweep.listing``
+reads with a limit while it watches for the lister's end. This code stays
+in pyct, beside the compare tool's own runner, since neither may import
+the other (sweep-keeps-its-own-process-runner).
 """
 
 import contextlib

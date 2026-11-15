@@ -24,19 +24,21 @@ SIGKILL skips. So the guard also holds the watcher's page open, on which
 pyct's process names the input's process it runs (see ``watch_page``).
 Sweep ends the command it runs, the lister or an entry's ``pyct run``, on
 its own way out too, and that command leads a session of its own, so
-sweep names that command's process group on the page. In place of
-the bare SIGKILL, the guard sends pyct's process SIGSTOP, which keeps it
-from starting or reaping anything once the stop lands. It then sends
-SIGKILL to the pid the page names while that pid is still a child of the
-pyct process it has just sent SIGSTOP, as the system tells its parent, to
-the group the page names while its leader is still such a child, and
-then to pyct's process. A pid that is pyct's child is one pyct has not
-reaped, so it is still the input's own. A session's leader cannot leave
-its group, and a group's id is not handed out again while its leader is
-unreaped, so that group is still the command's own. So the input's
-process and the command's group get their SIGKILL before the watcher can
-reap pyct's process and end the guard. When the SIGSTOP finds pyct's
-process gone, the guard signals nothing more.
+sweep names that command's process group on the page. In place of the
+bare SIGKILL, the guard sends pyct's process SIGSTOP, which keeps it from
+starting or reaping anything once the stop lands. It then sends SIGKILL
+to the pid the page names, while that pid is still a child of the pyct
+process it has just sent SIGSTOP, as the system tells its parent. Next it
+sends SIGKILL to the group the page names, while that group's leader is
+still such a child. Last it sends SIGKILL to pyct's process. A pid that
+is pyct's child is one pyct has not reaped, so it is still the input's
+own. A session's leader cannot leave its group, and a group's id is not
+handed out again while its leader is unreaped, so a group whose leader
+pyct has not reaped is still the command's own. So the guard kills the
+input's process, and the command's group while sweep has not yet reaped
+its leader, before the watcher can reap pyct's process and end the
+guard. When the SIGSTOP finds pyct's process gone, the guard signals
+nothing more.
 
 The guard signals pyct's process only while that pid names a process. The
 watcher reaps pyct's process, so that pid stays pyct's while the watcher

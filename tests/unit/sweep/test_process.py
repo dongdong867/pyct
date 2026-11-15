@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from pyct.run import process
-from pyct.run.process import Waited, name_on
+import pyct.run.process as run_process
+from pyct.run.process import Waited
 from pyct.run.watch_page import WatchPage
 from pyct.sweep.process import Where, run_command, started, waited_of
 
@@ -176,17 +176,13 @@ def test_a_command_that_cannot_start_raises_and_holds_no_signal_after(tmp_path: 
 def test_a_command_s_group_is_named_on_the_page_while_it_runs(
     raises: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(process, "_page", None)
     with contextlib.closing(WatchPage.for_command_line([])) as page:
-        name_on(page)
-        try:
-            with contextlib.suppress(RuntimeError):
-                null = subprocess.DEVNULL
-                with started(python(SLEEPS), Where(), stdout=null, stderr=null) as child:
-                    assert page.group() == child.pid
-                    if raises:
-                        raise RuntimeError("the block raised")
-            assert child.returncode == -signal.SIGKILL
-            assert page.group() is None
-        finally:
-            name_on(None)
+        monkeypatch.setattr(run_process, "_page", page)
+        with contextlib.suppress(RuntimeError):
+            null = subprocess.DEVNULL
+            with started(python(SLEEPS), Where(), stdout=null, stderr=null) as child:
+                assert page.group() == child.pid
+                if raises:
+                    raise RuntimeError("the block raised")
+        assert child.returncode == -signal.SIGKILL
+        assert page.group() is None

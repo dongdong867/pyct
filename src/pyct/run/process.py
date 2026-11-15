@@ -91,9 +91,10 @@ def name_group(group: int) -> None:
     """Name the process group ``group`` on the page, if there is one; zero names none.
 
     ``group`` is the pid of a child of this process that leads a session of
-    its own, named from its start until a moment after it is reaped, so the
-    watcher's guard kills that group when it kills this process (see
-    ``guard``). The page names one group at a time.
+    its own, named from its start until a moment after it is reaped. When
+    the watcher's guard kills this process, it kills that group too while
+    this process has not yet reaped its leader (see ``guard``). The page
+    names one group at a time.
     """
     if _page is not None:
         _page.name_group(group)
