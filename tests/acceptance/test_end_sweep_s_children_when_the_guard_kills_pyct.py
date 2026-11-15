@@ -82,6 +82,8 @@ def test_a_sigterm_ends_the_lister_of_a_sweep_held_past_the_grace(tmp_path: Path
     with stalled_lister(pids) as process:
         # the lister, the process sweep started, which leads a group of its own, and its child
         lister, started = (int(pid) for pid in pids.read_text().split())
+        # sweep names the lister's group right after it starts, which a loaded machine can delay
+        time.sleep(0.1)
         os.kill(parent_of(lister), signal.SIGSTOP)
         os.kill(process.pid, signal.SIGTERM)
         process.wait(timeout=10)

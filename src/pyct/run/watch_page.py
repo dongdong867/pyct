@@ -5,8 +5,9 @@ process it runs, and the process group of a command it runs, as sweep runs
 each entry's ``pyct run``. The process the shell started reads the module
 once the command's process has ended, to tell an ending during the import
 from any other (see ``launch``). The guard reads the input's process and
-the group when it kills the command's process, and kills them too (see
-``guard``).
+the group when it kills the command's process. It kills the input's
+process too while that process is still the command's process's child,
+and the group while sweep has not yet reaped its leader (see ``guard``).
 """
 
 from __future__ import annotations

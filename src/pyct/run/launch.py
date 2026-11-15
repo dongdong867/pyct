@@ -32,9 +32,10 @@ the watcher went, so a SIGKILL sent to the pid the shell got still ends
 the whole run while the guard runs. When the command's process does not
 end within ``STOP_GRACE`` of the SIGTERM, because target code runs one long
 call in C or catches the stop, or a lock or a slow host holds the process,
-the guard ends it by SIGKILL, and the input's process it runs with it, or
-the process group of the command it runs, as sweep runs the lister and
-each entry's ``pyct run``.
+the guard ends it by SIGKILL. With it the guard kills the input's process
+it runs while that process is still its child, and the process group of
+the command it runs, as sweep runs the lister and each entry's
+``pyct run``, while sweep has not yet reaped the group's leader.
 """
 
 from __future__ import annotations
@@ -250,11 +251,12 @@ def _watch(
 
     Once the command's process is gone, this process ends and reaps the
     guard, then closes its end of the lifeline. Past its grace the guard
-    stops the command's process with SIGSTOP, kills the input's process and
-    the group the page names, then kills the command's process (see
-    ``guard``). A guard that has waited out its grace in the moment between
-    the reap and its own end finds the pid free, since no process holds it
-    yet, and signals nothing.
+    stops the command's process with SIGSTOP. It kills the input's process
+    the page names while that process is still the command's process's
+    child, and the group the page names while sweep has not yet reaped its
+    leader, then kills the command's process (see ``guard``). A guard that
+    has waited out its grace in the moment between the reap and its own end
+    finds the pid free, since no process holds it yet, and signals nothing.
     """
     signaled: list[int] = []
     try:
