@@ -29,10 +29,10 @@ input's process and cvc5 on the way out, then ends by the SIGTERM. The
 watcher's guard, a small process the watcher starts as its own child
 (see ``guard``), sends it that SIGTERM once the watcher is gone, however
 the watcher went, so a SIGKILL sent to the pid the shell got still ends
-the whole run while the guard runs. When target code
-keeps the command's process from acting on a SIGTERM, by one long call in
-C or by catching the stop, the guard ends it by SIGKILL about
-``STOP_GRACE`` later.
+the whole run while the guard runs. When the command's process does not
+end within ``STOP_GRACE`` of the SIGTERM, because target code runs one long
+call in C or catches the stop, or a lock or a slow host holds the process,
+the guard ends it by SIGKILL, and the input's process it runs with it.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ from typing import NoReturn
 from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
-from pyct.run.process import Child, Stopped, Waited, how, stop, stop_asked
+from pyct.run.process import Child, Stopped, Waited, how, name_inputs_on, stop, stop_asked
 from pyct.run.threads import running
 from pyct.run.watch_page import WatchPage
 
@@ -142,7 +142,7 @@ def launch(command: Command, argv: Sequence[str]) -> int:
         os.close(lifeline)
         return _serve(command, watch, held)
     child = Child(pid)
-    watching = _Lifeline(kept=kept, guard=guard(lifeline, pid))
+    watching = _Lifeline(kept=kept, guard=guard(lifeline, pid, watch.fd))
     os.close(lifeline)
     return _watch(child, watch, held, watching, threaded)
 
@@ -200,7 +200,11 @@ def _serve(command: Command, watch: WatchPage | None, held: Iterable[int]) -> in
     lands before its handler. One started fresh starts with ``held``, which
     need not block SIGTERM, so a SIGTERM before its handler takes the
     default action and ends it, as a stop would.
+
+    Each input's process is named on the watcher's page, so the guard can
+    end it with this process (see ``guard``).
     """
+    name_inputs_on(watch)
     try:
         code = _stoppable(command, watch, held)
     except Stopped:

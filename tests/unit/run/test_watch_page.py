@@ -1,4 +1,4 @@
-"""The page on which the command's process names the module it is importing."""
+"""The page on which the command's process names its import and its input's process."""
 
 import pytest
 
@@ -30,3 +30,16 @@ def test_the_page_holds_any_module_the_command_line_gives(module: str) -> None:
 
     with watch.importing(module):
         assert watch.module() == module
+
+
+def test_the_page_names_the_input_s_process_beside_the_import() -> None:
+    watch = WatchPage.for_command_line(ARGV)
+
+    assert watch.input() is None
+    with watch.importing(MODULE):
+        watch.name_input(4321)
+        assert watch.input() == 4321
+        assert watch.module() == MODULE
+    assert watch.input() == 4321
+    watch.name_input(0)
+    assert watch.input() is None

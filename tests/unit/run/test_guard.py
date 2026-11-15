@@ -15,19 +15,24 @@ import pytest
 
 from pyct.run.guard import STOP_GRACE, guard
 from pyct.run.process import Child, Waited
+from pyct.run.watch_page import WatchPage
+from tests.acceptance.test_run_a_target_in_a_throwaway_process import is_running
 
 
-def stand_in(on_sigterm: int | Callable[[int, object], None]) -> int:
+def stand_in(on_sigterm: int | Callable[[int, object], None], page: WatchPage | None = None) -> int:
     """A process that waits, taking a SIGTERM as ``on_sigterm`` says, once it is ready.
 
     At its default action, or ignored, as a process whose handler cannot run
-    takes it.
+    takes it. With ``page``, it first starts an input's process of its own,
+    which waits too, and names it on ``page``, as pyct's process does.
     """
     ready, running = os.pipe()
     pid = os.fork()
     if pid == 0:
         try:
             signal.signal(signal.SIGTERM, on_sigterm)
+            if page is not None:
+                page.name_input(waiting())
             os.write(running, b"!")
             time.sleep(10)
         finally:
@@ -38,11 +43,23 @@ def stand_in(on_sigterm: int | Callable[[int, object], None]) -> int:
     return pid
 
 
+def waiting() -> int:
+    """A child of this process that waits, as an input's process does; its pid."""
+    pid = os.fork()
+    if pid == 0:
+        try:
+            time.sleep(10)
+        finally:
+            os._exit(0)
+    return pid
+
+
 @contextlib.contextmanager
-def guarding(target: int) -> Generator[tuple[Child, int]]:
-    """The guard of ``target``, and the lifeline's write end; both are ended on the way out."""
+def guarding(target: int, page: WatchPage | None = None) -> Generator[tuple[Child, int]]:
+    """The guard of ``target``, reading ``page`` or a page of its own, and the lifeline's write
+    end; both are ended on the way out."""
     lifeline, kept = os.pipe()
-    started = guard(lifeline, target)
+    started = guard(lifeline, target, (page or WatchPage.for_command_line([])).fd)
     os.close(lifeline)
     try:
         assert started is not None
@@ -70,6 +87,29 @@ def test_a_sigterm_the_watcher_passed_on_ends_by_sigkill_after_the_grace() -> No
 
     assert waited.signal == signal.SIGKILL
     assert STOP_GRACE <= took < STOP_GRACE + 1
+
+
+# pyct's process held past the grace, as a lock or a slow host holds it: the guard ends the input
+# its page names too, whether the watcher passed a SIGTERM on or is gone
+@pytest.mark.parametrize("watcher_gone", [False, True], ids=["sigterm-passed-on", "watcher-gone"])
+def test_the_guard_ends_the_input_the_page_names_with_pyct_s_process(watcher_gone: bool) -> None:
+    page = WatchPage.for_command_line([])
+    pid = stand_in(signal.SIG_IGN, page)
+    named = page.input()
+    assert named is not None
+    try:
+        with guarding(pid, page) as (_, kept):
+            if watcher_gone:
+                os.close(kept)
+            else:
+                os.write(kept, b"!")
+            waited, _ = ended(pid)
+
+        assert waited.signal == signal.SIGKILL
+        assert not is_running(named)
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(named, signal.SIGKILL)
 
 
 def test_the_watcher_gone_has_the_guard_send_the_sigterm_itself() -> None:
@@ -123,7 +163,7 @@ def test_a_guard_that_cannot_start_is_none(monkeypatch: pytest.MonkeyPatch) -> N
     monkeypatch.setattr(os, "posix_spawn", refused)
     lifeline, kept = os.pipe()
     try:
-        assert guard(lifeline, os.getpid()) is None
+        assert guard(lifeline, os.getpid(), WatchPage.for_command_line([]).fd) is None
     finally:
         os.close(lifeline)
         os.close(kept)

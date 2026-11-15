@@ -19,6 +19,18 @@ SIGKILL if it still runs, whatever it is doing. So the end comes about
 cannot start leaves the stop to the handler alone, and leaves nothing
 watching for the watcher's loss.
 
+pyct's process ends its input's process on its own way out, which a
+SIGKILL skips. So the guard also holds the watcher's page open, on which
+pyct's process names the input's process it runs (see ``watch_page``).
+In place of the bare SIGKILL, the guard stops pyct's process with
+SIGSTOP, so that process starts and reaps nothing more, then sends
+SIGKILL to the input's process the page names, then to pyct's process.
+So the input's process gets its SIGKILL before the watcher can reap
+pyct's process and end the guard. The input's process is pyct's unreaped
+child then, so its pid is still its own, except in the moment between
+pyct's reap of it and the page's update, when the pid is free. An input's
+process started in the moment before the page names it runs on.
+
 The guard signals pyct's process only while that pid names a process. The
 watcher reaps pyct's process, so that pid stays pyct's while the watcher
 lives; once the watcher is gone, pyct's process is reaped as it ends, and
@@ -45,51 +57,75 @@ STOP_GRACE = 1.0
 # how often the guard looks whether pyct's process still runs while it waits out the grace
 LOOK_EVERY = 0.05
 
-# what the guard runs; its arguments are pyct's process's pid, STOP_GRACE and LOOK_EVERY
+# what the guard runs; its arguments are pyct's process's pid, the page's descriptor, STOP_GRACE
+# and LOOK_EVERY. The page starts with the input's pid, as watch_page writes it
 _GUARD = """
 import os, signal, sys, time
-target, grace, every = int(sys.argv[1]), float(sys.argv[2]), float(sys.argv[3])
+target, page = int(sys.argv[1]), int(sys.argv[2])
+grace, every = float(sys.argv[3]), float(sys.argv[4])
 
 
-def send(number):
+def send(pid, number):
     try:
-        os.kill(target, number)
+        os.kill(pid, number)
     except OSError:
         return False
     return True
 
 
+def named():
+    try:
+        return int.from_bytes(os.pread(page, 4, 0), "little", signed=True)
+    except OSError:
+        return 0
+
+
+def end():
+    send(target, signal.SIGSTOP)
+    pid = named()
+    if pid > 0:
+        send(pid, signal.SIGKILL)
+    send(target, signal.SIGKILL)
+
+
 asked = os.read(0, 1)
 if not asked:
-    send(signal.SIGTERM)
+    send(target, signal.SIGTERM)
 deadline = time.monotonic() + grace
-while send(0):
+while send(target, 0):
     if time.monotonic() >= deadline:
-        send(signal.SIGKILL)
+        end()
         break
     time.sleep(every)
 """
 
 
-def guard(lifeline: int, target: int) -> Child | None:
-    """Start the guard of pyct's process ``target``, reading ``lifeline``, or None.
+def guard(lifeline: int, target: int, page: int) -> Child | None:
+    """Start the guard of pyct's process ``target``, reading ``lifeline`` and ``page``, or None.
 
-    A guard that cannot start leaves a stop to pyct's own handler.
+    ``page`` is the descriptor of the watcher's page. It is open in the guard
+    under the same number, and is not inherited again once the guard has
+    started. A guard that cannot start leaves a stop to pyct's own handler.
     """
     argv = [
         sys.executable,
         *("-I", "-S", "-c", _GUARD),
-        *(str(target), str(STOP_GRACE), str(LOOK_EVERY)),
+        *(str(target), str(page), str(STOP_GRACE), str(LOOK_EVERY)),
     ]
     streams = [
         (os.POSIX_SPAWN_DUP2, lifeline, 0),
         (os.POSIX_SPAWN_OPEN, 1, os.devnull, os.O_WRONLY, 0),
         (os.POSIX_SPAWN_OPEN, 2, os.devnull, os.O_WRONLY, 0),
     ]
+    # the page keeps its own number in the guard, since it may hold any number, and on macOS a
+    # file action that copies a descriptor onto the number it holds leaves it closed on exec
+    os.set_inheritable(page, True)
     try:
         pid = os.posix_spawn(
             sys.executable, argv, os.environ, file_actions=streams, setpgroup=0, setsigmask=()
         )
     except OSError:
         return None
+    finally:
+        os.set_inheritable(page, False)
     return Child(pid)

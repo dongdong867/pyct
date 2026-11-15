@@ -340,7 +340,7 @@ def test_the_watcher_ends_and_reaps_its_guard(monkeypatch: pytest.MonkeyPatch) -
             time.sleep(10)
         finally:
             os._exit(0)
-    monkeypatch.setattr(launch_module, "guard", lambda lifeline, target: Child(stand_in))
+    monkeypatch.setattr(launch_module, "guard", lambda lifeline, target, page: Child(stand_in))
 
     def returns(watch: WatchPage | None) -> None:
         os._exit(0)
