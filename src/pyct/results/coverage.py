@@ -37,7 +37,7 @@ def no_gain(covered: Sequence[frozenset[int]], n: int) -> bool:
     """True when the last ``n`` inputs each covered no line an earlier input had.
 
     ``covered`` is one set per input that ran, in run order: an input that
-    raised is in it; a solver miss produced no input and is not. Fewer than
+    raised is in it; a miss produced no input and is not. Fewer than
     ``n`` inputs is False. A walk over the list rather than a counter kept
     beside it, so there is nothing to keep in step with the records.
     """

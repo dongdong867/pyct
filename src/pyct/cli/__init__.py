@@ -136,7 +136,7 @@ def main(argv: Sequence[str] | None = None, watch: WatchPage | None = None) -> i
     from the LLM. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, and each
-    fork the solver could not flip, through ``_missed``, so a second input
+    fork a pass's ask gave no input for, through ``_missed``, so a second input
     that hangs never hides the first one's line. Why the run stopped is a
     fact about the whole run, so it ends stderr, and the summary line ends
     stdout after it: the readable text comes first, as it does for every
@@ -337,7 +337,7 @@ def _report(record: InputRecord, coverage: Coverage, label: str | None = None) -
 
 
 def _missed(miss: Miss) -> None:
-    """The fork the solver gave no input for, printed where its answer came in."""
+    """The fork a pass's ask gave no input for, printed where its answer came in."""
     print(render_miss(miss), end="", file=sys.stderr, flush=True)
 
 

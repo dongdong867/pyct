@@ -9,7 +9,7 @@ put in its place, keeps its own fork in that ask.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pyct.binding.bind import Seed
@@ -17,8 +17,8 @@ from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
-from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, takes
-from pyct.rewrite.condition import Rewrite, holds_object
+from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, run_on, takes
+from pyct.rewrite.condition import Rewrite
 
 
 @dataclass(frozen=True)
@@ -45,9 +45,11 @@ class Kept:
         asked = plan.asked
         used: list[Condition] = []
         for condition, rewrite in self.rewrites.items():
-            if not holding(plan, condition) or not _readable(origin.args, rewrite.reads):
+            if not holding(plan, condition):
                 continue
-            ran = run(rewrite.code, {name: origin.args[name] for name in rewrite.reads})
+            ran = run_on(rewrite, origin.args, run)
+            if ran is None:
+                continue
             items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
             if items is None or isinstance(items, str):
                 continue
@@ -62,8 +64,3 @@ class Kept:
         for condition in dropped:
             self.rewrites.pop(condition, None)
         return dropped
-
-
-def _readable(args: Mapping[str, object], names: Sequence[str]) -> bool:
-    """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
-    return all(name in args and not holds_object(args[name]) for name in names)

@@ -56,7 +56,7 @@ class Attempt:
 
     ``unrun`` is the site of a fork the pass picked and then stopped before it
     ran an input for: the pick spends the fork, so only the pass knows it.
-    ``asked`` is the pass's ask of the solver, numbered by the loop.
+    ``asked`` is the pass's ask, numbered by the loop.
     """
 
     stop: Stop | None = None
@@ -104,7 +104,8 @@ class Ways:
 
 @dataclass(frozen=True)
 class Looped:
-    """The inputs that ran, the seeds' first, what the solver missed, and why they stopped.
+    """The inputs that ran, the seeds' first, the forks the passes' asks gave no input for, and
+    why they stopped.
 
     ``untried`` counts the forks the run never tried at each site.
     """
@@ -159,8 +160,8 @@ class Loop:
         self._stuck = Stuck(()) if stuck is None else stuck
 
     def go(self, starts: Sequence[Start]) -> Looped:
-        """Run each seed, the first before any check, then pick a fork and run what the solver
-        answers for it, until a pass says to stop.
+        """Run each seed, the first before any check, then pick a fork and run the input its ask
+        gives, until a pass says to stop.
 
         A first seed whose process cannot start stops the run before any input.
         Each seed is copied, and its leaves noted, before the first seed runs.

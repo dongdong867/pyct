@@ -23,7 +23,7 @@ from __future__ import annotations
 import ast
 import math
 import types
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from pyct.binding.builds import object_form
@@ -113,6 +113,10 @@ class Rewrite:
     code: types.CodeType
     reads: tuple[str, ...]
 
+    def handed(self, args: Mapping[str, object]) -> dict[str, object]:
+        """The arguments the rewrite reads, taken from ``args``, which holds each of them."""
+        return {name: args[name] for name in self.reads}
+
 
 def rewrite_code(
     expression: str, parameters: Sequence[str], file: str, objects: Sequence[str] = ()
@@ -152,6 +156,11 @@ def _reads(expression: str, parameters: Sequence[str]) -> tuple[str, ...]:
 def _names(tree: ast.AST) -> set[str]:
     """Each name the tree reads or writes."""
     return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
+
+
+def holds_each_without_object(args: Mapping[str, object], names: Sequence[str]) -> bool:
+    """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
+    return all(name in args and not holds_object(args[name]) for name in names)
 
 
 def holds_object(value: object) -> bool:

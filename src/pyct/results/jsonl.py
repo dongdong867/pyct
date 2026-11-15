@@ -109,7 +109,7 @@ def _numbers(by_file: Mapping[str, frozenset[int]]) -> dict[str, list[int]]:
 
 
 def _counts(counts: SolverCounts) -> dict[str, int]:
-    """What the solver answered, one key per kind of answer."""
+    """The answers the passes' asks ended in, one key per kind of answer."""
     return {
         "sat": counts.sat,
         "unsat": counts.unsat,
@@ -144,7 +144,7 @@ def _environment(environment: Environment) -> dict[str, object]:
 
 
 def _miss(miss: Miss) -> dict[str, object]:
-    """One fork the solver gave no input for: where it is, and what it answered."""
+    """One fork a pass's ask gave no input for: where it is, and the answer its ask ended in."""
     return {
         "file": miss.site.file,
         "line": miss.site.line,

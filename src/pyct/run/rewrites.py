@@ -1,6 +1,9 @@
 """The rewrites tool in a run: the stuck moment's rewrites slot, and the loop's asker, which keeps
-the first plan whose ask ran out at each condition and puts a kept rewrite first in each later
-ask that holds its condition.
+the first plans whose asks ran out at each condition, up to ``VISITS``, in the order they gave
+up, and puts a kept rewrite first in each later ask that holds its condition. A plan whose path
+already holds its aimed fork's check on the other side is answered ``unsat`` before any ask, so
+it is never kept. A request is about a condition's first kept plan, and a rewrite is tried on
+each later one in turn while the solver gives no input for it (``pyct.rewrite.tries``).
 
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
 ``timeout`` or an ``unknown``, in line order, one condition at a time, and
@@ -37,7 +40,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition, WhyEntry
 from pyct.results.llm_asks import Why
 from pyct.results.record import InputRecord, MissWhy, Source, Stop
-from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.ask import GivenUp, Visit, holds_its_own_check
 from pyct.rewrite.condition import FUNCTION
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteDropped, RewriteNote
@@ -53,12 +56,12 @@ from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
 from pyct.run.token_limit import TokenLimit
-from pyct.solver.answer import Answer, Sat, Timeout, Unknown
+from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.given import Given
 
 
 class Rewrites(Asker):
-    """The rewrites tool for one run: what the solver gave up on, by condition, the rewrites
+    """The rewrites tool for one run: the picks whose asks gave up, by condition, the rewrites
     kept, and the conditions the last pass's kept rewrites stood in for."""
 
     kind = Kind.REWRITES
@@ -102,10 +105,14 @@ class Rewrites(Asker):
         """The ask with each kept rewrite the plan holds in its condition's place first; then,
         when it gives no input, the plan's own, each within what is left of ``limit``. When
         the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
-        and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
-        whose ask ended in ``timeout`` or ``unknown`` is kept."""
-        started = time.monotonic()
+        and the pick ends as a ``timeout``, its limit run out. The first ``VISITS`` plans at a
+        condition whose asks ended in ``timeout`` or ``unknown`` are kept. A plan whose path
+        already holds its aimed fork's check on the other side, which no input meets, is
+        answered ``unsat`` before any ask or kept rewrite runs, so it is never kept."""
         self._used = ()
+        if holds_its_own_check(wanted):
+            return _unasked(wanted, Unsat())
+        started = time.monotonic()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
         programs: tuple[Given, ...] = ()
         left = _left(started, limit)
@@ -116,7 +123,7 @@ class Rewrites(Asker):
                 return dataclasses.replace(rewritten, source=Source.REWRITE)
             programs = rewritten.asked.programs
         rest = _left(started, limit)
-        solved = super().solved(wanted, origin, rest) if rest > 0 else _out_of_time(wanted)
+        solved = super().solved(wanted, origin, rest) if rest > 0 else _unasked(wanted, Timeout())
         self._keep(wanted, origin, solved)
         asked = dataclasses.replace(solved.asked, programs=(*programs, *solved.asked.programs))
         return Solved(solved.answer, time.monotonic() - started, asked)
@@ -129,14 +136,19 @@ class Rewrites(Asker):
         self._used = ()
 
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
-        """Keep the plan when it is the first at its condition whose ask ran out."""
+        """Keep the plan when it is among the first ``VISITS`` at its condition whose ask ran
+        out, after the ones kept before it."""
         answer = solved.answer
         aimed = wanted.prefix[-1]
         if aimed.raising or not isinstance(answer, Timeout | Unknown):
             return
         condition = Condition(aimed.site, aimed.taken)
         why = MissWhy.TIMEOUT if isinstance(answer, Timeout) else MissWhy.UNKNOWN
-        self.given_up.setdefault(condition, GivenUp(condition, wanted, origin, why))
+        kept = self.given_up.get(condition)
+        if kept is None:
+            self.given_up[condition] = GivenUp(condition, wanted, origin, why)
+        else:
+            self.given_up[condition] = kept.joined(Visit(wanted, origin))
 
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
@@ -229,10 +241,11 @@ class _Child:
         return CANNOT_FORK if isinstance(ran, CannotFork) else ran.result
 
 
-def _out_of_time(wanted: Plan) -> Solved:
-    """The answer for a plan whose limit a kept rewrite used up, in its run or its ask: a
-    ``timeout``, since the pick's limit ran out before the plan's own ask could run."""
-    return Solved(Timeout(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
+def _unasked(wanted: Plan, answer: Answer) -> Solved:
+    """The answer for a plan the solver was not asked about: ``unsat`` for one whose path holds
+    its aimed fork's check on the other side, or ``timeout`` for one whose limit a kept rewrite
+    used up, in its run or its ask, before the plan's own ask could run."""
+    return Solved(answer, 0.0, Ask(0, wanted.aim, wanted.path, ()))
 
 
 def _left(started: float, limit: float) -> float:
