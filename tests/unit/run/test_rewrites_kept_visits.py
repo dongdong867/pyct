@@ -187,3 +187,26 @@ def test_a_visit_pyct_cannot_compare_within_the_limit_is_asked_and_kept(asks: li
 
     assert asks == [wanted]
     assert tool.given_up[Condition(site, True)].plan is wanted
+
+
+# llm-rewrite-visit-an-input-can-meet-keeps-three-visits-at-most
+def test_a_condition_keeps_the_first_three_visits_that_gave_up_and_asks_about_the_first() -> None:
+    provider = FakeRewrites(["I cannot rewrite it."])
+    tool, file = tool_for(CHANGING, provider)
+    site = Site(file, 10, 11)
+    gave_up: list[tuple[Plan, list[str]]] = []
+    for count in range(1, 5):
+        checks: list[tuple[Expression, bool]] = [
+            (["==", ["float", ["[]", "items", at]], 1e-30], False) for at in range(count)
+        ]
+        wanted = visits(site, *checks)
+        items = ["0"] * count
+        picked(tool, wanted, {"items": items})
+        gave_up.append((wanted, items))
+    entry, moment = moment_at(site, True)
+
+    tool.take((entry,), moment)
+
+    given = tool.given_up[Condition(site, True)]
+    assert [(visit.plan, visit.origin.args["items"]) for visit in given.visits] == gave_up[:3]
+    assert provider.requests[0].args == (("items", '["0"]'),)

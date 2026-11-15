@@ -41,11 +41,25 @@ type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResu
 type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
 
 
+# the visits kept for one condition: the first plans aimed at it whose asks gave up, a request
+# is about the first, and a rewrite the solver gives no input for on one is tried on the next
+VISITS = 3
+
+
+@dataclass(frozen=True)
+class Visit:
+    """One plan aimed at a condition, and the input whose path that plan extends."""
+
+    plan: Plan
+    origin: Seed
+
+
 @dataclass(frozen=True)
 class GivenUp:
     """A condition the solver gave up on: the first plan aimed at it whose ask ended in
     ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, the input whose
-    path that plan extends, and the answer. A plan whose path holds its own check on the other
+    path that plan extends, and the answer; and ``later``, the next such plans, in the order
+    they gave up, up to ``VISITS`` in all. A plan whose path holds its own check on the other
     side (``holds_its_own_check``) is answered ``unsat`` before any ask in a run with rewrites,
     so it is never kept."""
 
@@ -53,6 +67,18 @@ class GivenUp:
     plan: Plan
     origin: Seed
     answer: MissWhy
+    later: tuple[Visit, ...] = ()
+
+    @property
+    def visits(self) -> tuple[Visit, ...]:
+        """Each kept plan with its input, in the order they gave up."""
+        return (Visit(self.plan, self.origin), *self.later)
+
+    def joined(self, visit: Visit) -> GivenUp:
+        """This condition with ``visit`` kept last, while fewer than ``VISITS`` are kept."""
+        if len(self.visits) >= VISITS:
+            return self
+        return dataclasses.replace(self, later=(*self.later, visit))
 
 
 @dataclass(frozen=True)
