@@ -22,14 +22,15 @@ watching for the watcher's loss.
 pyct's process ends its input's process on its own way out, which a
 SIGKILL skips. So the guard also holds the watcher's page open, on which
 pyct's process names the input's process it runs (see ``watch_page``).
-In place of the bare SIGKILL, the guard stops pyct's process with
-SIGSTOP, so that process starts and reaps nothing more, then sends
-SIGKILL to the pid the page names while that pid is still a child of the
-stopped pyct process, as the system tells its parent, then to pyct's
-process. A pid that is pyct's child is one pyct has not reaped, so it is
-still the input's own. So the input's process gets its SIGKILL before the
-watcher can reap pyct's process and end the guard. When the SIGSTOP
-finds pyct's process gone, the guard signals nothing more.
+In place of the bare SIGKILL, the guard sends pyct's process SIGSTOP,
+which keeps it from starting or reaping anything once the stop lands. It
+then sends SIGKILL to the pid the page names while that pid is still a
+child of the pyct process it has just sent SIGSTOP, as the system tells
+its parent, and then to pyct's process. A pid that is pyct's child is
+one pyct has not reaped, so it is still the input's own. So the input's
+process gets its SIGKILL before the watcher can reap pyct's process and
+end the guard. When the SIGSTOP finds pyct's process gone, the guard
+signals nothing more.
 
 The guard signals pyct's process only while that pid names a process. The
 watcher reaps pyct's process, so that pid stays pyct's while the watcher
