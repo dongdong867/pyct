@@ -1,4 +1,4 @@
-"""What one input did, as its record, and what the solver said of a fork it gave no input for."""
+"""What one input did, as its record, and the answer a fork's ask ended in when it gave no input."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from pyct.solver.answer import Timeout, Unknown, Unsat
 
 
 def miss_why(answer: Unsat | Unknown | Timeout) -> MissWhy:
-    """What the solver said about a fork it gave no input for, in the run's own words.
+    """The answer a fork's ask ended in when it gave no input, in the run's own words.
 
     A match rather than a table, so a new answer fails the type check
     instead of a run.

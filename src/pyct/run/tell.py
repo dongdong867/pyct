@@ -13,7 +13,7 @@ from pyct.solver.given import Given
 # what a caller does with an input the moment it is finished
 type Report = Callable[[InputRecord, Coverage], None]
 
-# what a caller does with a fork the solver could not flip, the moment the answer comes in
+# what a caller does with a fork a pass's ask gave no input for, the moment the answer comes in
 type Missed = Callable[[Miss], None]
 
 
@@ -41,8 +41,9 @@ class Tell:
     """What a caller does with each fact of the run the moment it happens.
 
     ``report`` takes each finished input with the lines that input alone
-    covered; ``missed`` takes each fork the solver gave no input for;
-    ``asked`` takes each ask with the programs pyct gave cvc5; ``noted``
+    covered; ``missed`` takes each fork a pass's ask gave no input for;
+    ``asked`` takes each ask with the programs pyct gave cvc5, none for an
+    answer the run's asker gave without sending one; ``noted``
     takes each note about the LLM tools (``pyct.run.notes``). One object
     rather than a keyword per kind of fact, so ``run()`` and the loop keep
     to five parameters: a later kind of fact widens this instead of their
@@ -70,7 +71,7 @@ class Told:
             self.tell.report(record, Coverage.of(self.scope, record.covered_lines))
 
     def miss(self, miss: Miss) -> None:
-        """Hand out a fork the solver gave no input for."""
+        """Hand out a fork a pass's ask gave no input for."""
         if self.tell.missed is not None:
             self.tell.missed(miss)
 

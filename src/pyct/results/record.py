@@ -155,7 +155,8 @@ class Miss:
 
     ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
     ``solver_seconds`` is how long the ask took, from the start of writing it to its answer,
-    a measurement two misses compare without.
+    a measurement two misses compare without; for an answer given without sending an ask, the
+    seconds ``SolverSeconds`` says it adds.
     """
 
     site: Site
@@ -194,7 +195,9 @@ class SolverCounts:
 @dataclass(frozen=True)
 class SolverSeconds:
     """How many seconds the passes' asks took, summed by the answer each ended in. An answer
-    the run's asker gave without sending an ask adds the seconds the asker took to give it."""
+    the run's asker gave without sending an ask adds 0.0 for an ``unsat`` given before any ask,
+    and, for a ``timeout`` given once a kept rewrite's run and ask used up the pick's limit, the
+    seconds those took."""
 
     sat: float
     unsat: float
@@ -206,7 +209,7 @@ class SolverSeconds:
 class RunResult:
     """One run of one function: its records, the coverage they add up to, and how it ended.
 
-    ``misses`` are the forks the solver gave no input for. A miss is never
+    ``misses`` are the forks the passes' asks gave no input for. A miss is never
     why the run stopped; ``stopped`` carries the loop's own reason.
     ``untried`` counts the forks the run never tried at each site: still open
     when it stopped, or picked and then left by the stop.

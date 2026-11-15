@@ -144,7 +144,7 @@ def _environment(environment: Environment) -> dict[str, object]:
 
 
 def _miss(miss: Miss) -> dict[str, object]:
-    """One fork the solver gave no input for: where it is, and what it answered."""
+    """One fork a pass's ask gave no input for: where it is, and the answer its ask ended in."""
     return {
         "file": miss.site.file,
         "line": miss.site.line,

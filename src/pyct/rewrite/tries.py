@@ -18,10 +18,11 @@ already meets it, the solver failed or gave no input for it on any kept
 visit, each answer said in the order asked, or its input took the other
 side. A reply that got no answer ends the condition's tries at this
 moment, and so does a rewrite pyct cannot run, found before an ask or after
-it on any kept visit, a spent budget, checked before each visit, and an
-input that met the run's stop. When no parameter is left that a rewrite may
-read, each holding an object or the method taking only ``self``, the
-condition is given up before the first ask.
+it on any kept visit, a spent budget, checked before each visit and after
+the rewrite runs on a later one, and an input that met the run's stop.
+When no parameter is left that a rewrite may read, each holding an object
+or the method taking only ``self``, the condition is given up before the
+first ask.
 Decision llm-rewrites-retry-three-times-after-the-first-ask.
 """
 
@@ -43,7 +44,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.intercept.model_code import Refused
 from pyct.results.llm_asks import Unanswered
 from pyct.results.record import InputRecord, Stop
-from pyct.rewrite.ask import GivenUp, Recorded, Visit, in_place, recorded, takes
+from pyct.rewrite.ask import GivenUp, Recorded, Visit, in_place, recorded, run_on, takes
 from pyct.rewrite.condition import (
     NO_EXPRESSION,
     Rewrite,
@@ -51,7 +52,7 @@ from pyct.rewrite.condition import (
     holds_object,
     rewrite_code,
 )
-from pyct.rewrite.kept import Kept, readable
+from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import (
     RewriteFailed,
     RewriteGivenUp,
@@ -212,8 +213,7 @@ class Asking:
         rewrite = rewrite_code(expression, self.parameters, file, self.objects)
         if isinstance(rewrite, Refused):
             return EarlierTry(expression, rewrite.reason)
-        args = self.given.origin.args
-        ran = around.run_rewrite(rewrite.code, {name: args[name] for name in rewrite.reads})
+        ran = around.run_rewrite(rewrite.code, rewrite.handed(self.given.origin.args))
         if isinstance(ran, str):
             around.note(RewriteSkipped(site, ran))
             return _Ended(ran)
@@ -265,14 +265,16 @@ class Asking:
         """What the rewrite, run on a later visit's input, puts in that visit's ask. None passes
         the visit over: the rewrite reads a name the input lacks or holds an object in, raised
         or did not finish on it, records nothing to put in the condition's place, or the input
-        already meets it. A rewrite pyct cannot run ends the tries, said, as on the first."""
-        args = visit.origin.args
-        if not readable(args, rewrite.reads):
+        already meets it. A rewrite pyct cannot run ends the tries, said, as on the first, and
+        a run after which the run can no longer go on ends them unsaid."""
+        ran = run_on(rewrite, visit.origin.args, around.run_rewrite)
+        if ran is None:
             return None
-        ran = around.run_rewrite(rewrite.code, {name: args[name] for name in rewrite.reads})
         if isinstance(ran, str):
             around.note(RewriteSkipped(self.given.condition.site, ran))
             return _Ended(ran)
+        if not around.going():
+            return _Ended(BUDGET_SPENT)
         items = recorded(ran, rewrite.code.co_filename)
         return None if isinstance(items, str) or items.met else items
 

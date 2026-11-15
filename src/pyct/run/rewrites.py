@@ -61,7 +61,7 @@ from pyct.solver.given import Given
 
 
 class Rewrites(Asker):
-    """The rewrites tool for one run: what the solver gave up on, by condition, the rewrites
+    """The rewrites tool for one run: the picks whose asks gave up, by condition, the rewrites
     kept, and the conditions the last pass's kept rewrites stood in for."""
 
     kind = Kind.REWRITES

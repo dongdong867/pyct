@@ -1,7 +1,9 @@
 """A condition's try on its kept visits: when the solver gives no input for the rewrite on one
 visit, the same rewrite is tried on the next, with no new ask of the model; any other end of the
-try tries no other visit, a visit the rewrite cannot run on is passed over, and the try fails
-once, with each answer."""
+try tries no other visit. A later visit whose input the rewrite cannot be read on, raised or did
+not finish on, records nothing for, or already meets is passed over; a rewrite pyct cannot run
+there, or a budget spent as it ran, ends the tries. A try that gets no input fails once, with
+each answer."""
 
 import types
 from collections.abc import Mapping
@@ -15,7 +17,7 @@ from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionResult
 from pyct.llm.rewrites import EXACT_VALUE, request_text
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import InputRecord, MissWhy
+from pyct.results.record import DowngradeCount, InputRecord, MissWhy
 from pyct.rewrite.ask import GivenUp, Visit
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteSkipped, RewriteTook
@@ -183,12 +185,23 @@ def test_a_solver_failure_on_a_later_visit_tries_no_other_visit() -> None:
         visit_on("1", {"t": "1"}),
         visit_on("1", {"s": {"__class__": "m::Order"}}),
         visit_on("1", {"s": "raises"}),
+        visit_on("1", {"s": "unfinished"}),
+        visit_on("1", {"s": "downgraded"}),
+        visit_on("1", {"s": "reads no argument"}),
         visit_on("1", {"s": "met"}),
     ],
 )
 def test_a_visit_the_rewrite_cannot_run_on_is_passed_over(second: Visit) -> None:
     raised = ExecutionResult(frozenset(), (), failure=Failure(FailureKind.TARGET_RAISED, "x"))
-    rans: dict[object, ExecutionResult | str] = {"raises": raised, "met": met_by_its_input()}
+    unfinished = ExecutionResult(frozenset(), (), failure=Failure(FailureKind.TIMEOUT, "y"))
+    lost = DowngradeCount("__float__", 1, Site("<rewrite m:2:7>", 3, 4))
+    rans: dict[object, ExecutionResult | str] = {
+        "raises": raised,
+        "unfinished": unfinished,
+        "downgraded": ExecutionResult(frozenset(), (), downgrades=(lost,)),
+        "reads no argument": ExecutionResult(frozenset(), ()),
+        "met": met_by_its_input(),
+    }
     fake = Visits(answers=[Unsat(), Sat({"s": "1e-30"})], rans=rans)
 
     assert tried_on(fake, FIRST, second, THIRD) == Tried(True, True)
@@ -197,7 +210,8 @@ def test_a_visit_the_rewrite_cannot_run_on_is_passed_over(second: Visit) -> None
     assert not any(isinstance(note, RewriteSkipped) for note in fake.notes)
 
 
-# llm-rewrite-visit-an-input-can-meet-passes-over-a-visit-it-cannot-run-on
+# a rewrite pyct cannot run ends the condition's tries on any visit, said as skipped
+# (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all)
 @pytest.mark.parametrize("reason", ["cannot fork", "cannot start a child: no memory"])
 def test_a_rewrite_pyct_cannot_run_on_a_later_visit_ends_the_tries_said(reason: str) -> None:
     fake = Visits(answers=[Unsat(), Sat({"s": "1e-30"})], rans={"1": reason})
@@ -217,4 +231,36 @@ def test_a_budget_spent_during_one_visit_s_ask_asks_nothing_on_the_next() -> Non
     assert tried_on(fake, FIRST, SECOND) == Tried(False, True, ended="budget spent")
     assert asked_visits(fake) == [FIRST]
     assert handed_s(fake) == ["2"]
+    assert failed(fake) == []
+
+
+@dataclass
+class SpentAsItRuns(Visits):
+    """The run around the tries, whose budget runs out while the rewrite runs on ``spent_on``,
+    which then does not finish."""
+
+    spent_on: object = "1"
+    spent: bool = False
+
+    def going(self) -> bool:
+        return not self.spent and super().going()
+
+    def run_rewrite(
+        self, code: types.CodeType, args: Mapping[str, object]
+    ) -> ExecutionResult | str:
+        if args.get("s") != self.spent_on:
+            return super().run_rewrite(code, args)
+        self.spent = True
+        self.handed.append(dict(args))
+        return ExecutionResult(frozenset(), (), failure=Failure(FailureKind.TIMEOUT, "deadline"))
+
+
+# llm-rewrite-visit-an-input-can-meet-ends-at-the-budget
+def test_a_budget_spent_while_a_later_visit_s_rewrite_runs_ends_the_tries_unsaid() -> None:
+    fake = SpentAsItRuns(answers=[Unsat(), Sat({"s": "1e-30"})])
+
+    # the second visit is the last, so no visit after it checks the budget
+    assert tried_on(fake, FIRST, SECOND) == Tried(False, True, ended="budget spent")
+    assert asked_visits(fake) == [FIRST]
+    assert handed_s(fake) == ["2", "1"]
     assert failed(fake) == []

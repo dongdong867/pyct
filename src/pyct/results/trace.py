@@ -67,7 +67,7 @@ def render_start(spec: str, fn: object) -> str:
 
 
 def render_miss(miss: Miss) -> str:
-    """The fork the solver was asked about, and the answer that gave no input.
+    """The fork a pass's ask gave no input for, and the answer that ask ended in.
 
     Its own line rather than part of the summary, so a caller can print it
     the moment the answer comes in, before the next input's trace.
@@ -122,7 +122,7 @@ def _solver(counts: SolverCounts) -> str:
 
 
 def _solver_seconds(seconds: SolverSeconds) -> str:
-    """How long the solver's asks took over the run, summed by what each answered."""
+    """How long the passes' asks took over the run, summed by the answer each ended in."""
     return (
         f"solver seconds: {_seconds(seconds.sat)} sat, {_seconds(seconds.unsat)} unsat, "
         f"{_seconds(seconds.unknown)} unknown, {_seconds(seconds.timeout)} timeout"

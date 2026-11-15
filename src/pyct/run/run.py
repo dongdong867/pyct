@@ -76,7 +76,7 @@ def run(
     caller's process (see ``Isolation``). Each input goes to
     ``tell.report`` as it finishes, with the coverage of that input alone, so
     an input that hangs never hides the lines of the ones before it. Each
-    fork the solver could not flip goes to ``tell.missed`` the same way, so a
+    fork a pass's ask gave no input for goes to ``tell.missed`` the same way, so a
     reader sees it when its answer comes in, before the next input's trace.
 
     The run's coverage adds the lines the target's import ran

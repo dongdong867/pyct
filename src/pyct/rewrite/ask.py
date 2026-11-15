@@ -24,7 +24,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition
 from pyct.results.failure import FailureKind
 from pyct.results.record import Aim, InputRecord, MissWhy, Stop
-from pyct.rewrite.condition import HELD_COL, HELD_LINE
+from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, holds_each_without_object
 
 # why a rewrite that records no fork of its own and no downgrade is refused
 READS_NO_ARGUMENT = "it reads no argument"
@@ -130,6 +130,16 @@ def holds_its_own_check(plan: Plan) -> bool:
         if same:
             return True
     return False
+
+
+def run_on(
+    rewrite: Rewrite, args: Mapping[str, object], run: RunRewrite
+) -> ExecutionResult | str | None:
+    """The rewrite run on an input's ``args``: what the call recorded, or why it did not run;
+    None, with nothing run, when the input lacks a name it reads or holds an object there."""
+    if not holds_each_without_object(args, rewrite.reads):
+        return None
+    return run(rewrite.code, rewrite.handed(args))
 
 
 def holding(plan: Plan, condition: Condition) -> bool:
