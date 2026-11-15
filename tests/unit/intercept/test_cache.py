@@ -125,9 +125,8 @@ def test_an_entry_kept_with_no_variant_is_where_it_always_was(tmp_path: Path) ->
         )
     )
     name = hashlib.sha256(key).hexdigest()[:32]
-    assert entries(tmp_path / "cache") == [
-        tmp_path / "cache" / "substituted" / cache._version() / name
-    ]
+    version = cache._digest(cache._version_files())
+    assert entries(tmp_path / "cache") == [tmp_path / "cache" / "substituted" / version / name]
 
 
 @pytest.mark.usefixtures("settled")
@@ -278,24 +277,12 @@ def test_a_folder_that_fails_each_write_is_named_once(
     assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1
 
 
-def test_the_transform_s_version_reads_each_rule_the_transform_imports(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    read: list[str] = []
-    real = Path.read_bytes
-
-    def reads(path: Path) -> bytes:
-        read.append(str(path))
-        return real(path)
-
-    monkeypatch.setattr(Path, "read_bytes", reads)
-    cache._version.__wrapped__()
-
+def test_the_transform_s_version_reads_each_rule_the_transform_imports() -> None:
     # a rule changed alone makes a new version, so no older rule's code is read again: each module
     # of the transform, and each module of pyct's one of them imports from
     files = _transform_files()
     assert {substitute.__file__, watch.__file__, sources.__file__} <= set(files)
-    assert set(files) <= set(read)
+    assert set(files) <= set(cache._version_files())
 
 
 # the modules the transform imports that decide nothing an entry holds: `own` runs the parse and

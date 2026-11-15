@@ -127,24 +127,34 @@ def cached(
 @functools.cache
 def _entries(root: Path) -> str | None:
     """The folder of this transform's entries under ``root``, or None when ``root`` keeps none."""
-    return os.path.join(root, "substituted", _version()) if _usable(root) else None
+    return os.path.join(root, "substituted", _version(root)) if _usable(root) else None
 
 
-@functools.cache
-def _version() -> str:
-    """A digest of the code that decides what an entry holds: the transform and each of its
-    rules, the `math`, `builtins` and `operator` names and the range and view method names it
-    takes, each other module of pyct's a rule takes a name, a size, a text or a piece from, its
-    compile, and this module's format."""
-    digest = hashlib.sha256()
+def _version(root: Path) -> str:
+    """The transform's version: the digest of `_version_files`."""
+    return _digest(_version_files())
+
+
+def _version_files() -> tuple[str, ...]:
+    """The files of the code that decides what an entry holds, in the order they are digested:
+    the transform and each of its rules, the `math`, `builtins` and `operator` names and the range
+    and view method names it takes, each other module of pyct's a rule takes a name, a size, a
+    text or a piece from, its compile, and this module's format."""
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
     rules += (unpacks.__file__, percents.__file__, bool_returns.__file__, watch.__file__)
     rules += (loops.__file__,)
     # what the rules take from outside the transform: a size, the callee's text, and a piece
     rules += (hashed.__file__, sources.__file__, pieces.__file__)
-    for file in (*rules, compiled.__file__, __file__):
-        digest.update(Path(str(file)).read_bytes())
+    return tuple(str(file) for file in (*rules, compiled.__file__, __file__))
+
+
+def _digest(files: tuple[str, ...]) -> str:
+    """The version the files make: the first 16 hex digits of the SHA-256 of their contents, read
+    in order."""
+    digest = hashlib.sha256()
+    for file in files:
+        digest.update(Path(file).read_bytes())
     return digest.hexdigest()[:16]
 
 
