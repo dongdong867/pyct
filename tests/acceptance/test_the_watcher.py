@@ -98,6 +98,58 @@ def test_a_sigkill_to_pyct_ends_the_run_and_its_input(tmp_path: Path) -> None:
         assert group_ended(process.pid)
 
 
+def parent_of(pid: int) -> int:
+    """The pid of the process that started ``pid``, as ``ps`` tells it."""
+    told = subprocess.run(
+        ["ps", "-o", "ppid=", "-p", str(pid)], capture_output=True, text=True, check=True
+    )
+    return int(told.stdout)
+
+
+# pyct's process held past the stop's grace, as a lock, a slow host or target code can hold it:
+# the guard kills it, and the input it ran is gone by the time the watcher exits; forked or
+# started fresh, pyct's process names its input on the same page
+@pytest.mark.parametrize("thread", [False, True], ids=["forked", "fresh"])
+def test_a_sigterm_ends_the_input_of_a_pyct_process_held_past_the_grace(
+    thread: bool, tmp_path: Path
+) -> None:
+    pid_file = tmp_path / "pid"
+    env = site_in(tmp_path / "site", thread=thread)
+    with pyct_in_a_session(C_HANG, pid_file, env=env) as process:
+        child = pid_written_to(pid_file, process)
+        # pyct's process names its input on the page right after the fork, which a loaded
+        # machine can delay past the input's own write
+        time.sleep(0.1)
+        os.kill(parent_of(child), signal.SIGSTOP)
+        sent = time.monotonic()
+        os.kill(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)
+        took = time.monotonic() - sent
+
+        assert process.returncode == -signal.SIGTERM
+        assert took < SWALLOWED_ENDED_WITHIN, took
+        assert not is_running(child)
+        assert group_ended(process.pid)
+
+
+# the same with the watcher gone: its guard sends the SIGTERM, then ends pyct's process and input
+def test_a_sigkill_to_pyct_ends_the_input_of_a_pyct_process_held_past_the_grace(
+    tmp_path: Path,
+) -> None:
+    pid_file = tmp_path / "pid"
+    with pyct_in_a_session(C_HANG, pid_file) as process:
+        child = pid_written_to(pid_file, process)
+        # pyct's process names its input on the page right after the fork, which a loaded
+        # machine can delay past the input's own write
+        time.sleep(0.1)
+        os.kill(parent_of(child), signal.SIGSTOP)
+        os.kill(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+
+        assert group_ended(process.pid, within=SWALLOWED_ENDED_WITHIN)
+        assert not is_running(child)
+
+
 def notes_in(path: Path) -> int:
     """How many inputs have noted their start in ``path``."""
     try:

@@ -29,10 +29,10 @@ input's process and cvc5 on the way out, then ends by the SIGTERM. The
 watcher's guard, a small process the watcher starts as its own child
 (see ``guard``), sends it that SIGTERM once the watcher is gone, however
 the watcher went, so a SIGKILL sent to the pid the shell got still ends
-the whole run while the guard runs. When target code
-keeps the command's process from acting on a SIGTERM, by one long call in
-C or by catching the stop, the guard ends it by SIGKILL about
-``STOP_GRACE`` later.
+the whole run while the guard runs. When the command's process does not
+end within ``STOP_GRACE`` of the SIGTERM, because target code runs one long
+call in C or catches the stop, or a lock or a slow host holds the process,
+the guard ends it by SIGKILL, and the input's process it runs with it.
 """
 
 from __future__ import annotations
@@ -51,9 +51,9 @@ from typing import NoReturn
 from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
-from pyct.run.import_watch import ImportWatch
-from pyct.run.process import Child, Stopped, Waited, how, stop, stop_asked
+from pyct.run.process import Child, Stopped, Waited, how, name_inputs_on, stop, stop_asked
 from pyct.run.threads import running
+from pyct.run.watch_page import WatchPage
 
 # the signals the watcher passes on to the command's process as soon as it gets them: those
 # whose default action ends a process and that one process sends another to end it
@@ -104,7 +104,7 @@ _WRITES_A_CORE = frozenset(
 _LOOK_EVERY = 0.05
 
 # the command line's work, given the page when a watcher reads it; returns the exit code
-type Command = Callable[[ImportWatch | None], int]
+type Command = Callable[[WatchPage | None], int]
 
 
 def launch(command: Command, argv: Sequence[str]) -> int:
@@ -129,7 +129,7 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     flush_streams()
     held = signal.pthread_sigmask(signal.SIG_BLOCK, _NOTED)
     try:
-        watch = ImportWatch.for_command_line(argv)
+        watch = WatchPage.for_command_line(argv)
         lifeline, kept = os.pipe()
         pid = _spawned(watch, argv, held) if threaded else os.fork()
     except OSError:
@@ -142,7 +142,7 @@ def launch(command: Command, argv: Sequence[str]) -> int:
         os.close(lifeline)
         return _serve(command, watch, held)
     child = Child(pid)
-    watching = _Lifeline(kept=kept, guard=guard(lifeline, pid))
+    watching = _Lifeline(kept=kept, guard=guard(lifeline, pid, watch.fd))
     os.close(lifeline)
     return _watch(child, watch, held, watching, threaded)
 
@@ -155,7 +155,7 @@ class _Lifeline:
     guard: Child | None
 
 
-def _spawned(watch: ImportWatch, argv: Sequence[str], held: Iterable[int]) -> int:
+def _spawned(watch: WatchPage, argv: Sequence[str], held: Iterable[int]) -> int:
     """Start the command's process as a fresh interpreter, and return its pid.
 
     It runs with this interpreter's flags. It imports the pyct this process
@@ -184,10 +184,10 @@ def _serve_handed(command: Command, handed: str) -> int:
     page = int(handed)
     os.set_inheritable(page, False)
     held = signal.pthread_sigmask(signal.SIG_BLOCK, ())
-    return _serve(command, ImportWatch(page), held)
+    return _serve(command, WatchPage(page), held)
 
 
-def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int:
+def _serve(command: Command, watch: WatchPage | None, held: Iterable[int]) -> int:
     """Run ``command`` as the command's process, which stops on a SIGTERM.
 
     The SIGTERM raises ``Stopped`` wherever the process is, as a Ctrl-C
@@ -200,7 +200,11 @@ def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> 
     lands before its handler. One started fresh starts with ``held``, which
     need not block SIGTERM, so a SIGTERM before its handler takes the
     default action and ends it, as a stop would.
+
+    Each input's process is named on the watcher's page, so the guard can
+    end it with this process (see ``guard``).
     """
+    name_inputs_on(watch)
     try:
         code = _stoppable(command, watch, held)
     except Stopped:
@@ -209,7 +213,7 @@ def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> 
     return _end_by(signal.SIGTERM) if code is None else code
 
 
-def _stoppable(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int | None:
+def _stoppable(command: Command, watch: WatchPage | None, held: Iterable[int]) -> int | None:
     """What ``command`` returns, or None when a SIGTERM stopped it.
 
     A stop that target code caught, which let ``command`` return, stopped it
@@ -237,14 +241,17 @@ def _stop(_number: int, _frame: object) -> NoReturn:
 
 
 def _watch(
-    child: Child, watch: ImportWatch, held: Iterable[int], lifeline: _Lifeline, threaded: bool
+    child: Child, watch: WatchPage, held: Iterable[int], lifeline: _Lifeline, threaded: bool
 ) -> int:
     """Wait for the command's process to end, then end as it did or say which import ended it.
 
     Once the command's process is gone, this process ends and reaps the
-    guard, then closes its end of the lifeline. A guard that has waited out
-    its grace in the moment between the reap and its own end sends its
-    SIGKILL to a pid no process holds yet.
+    guard, then closes its end of the lifeline. Past its grace the guard
+    stops the command's process with SIGSTOP, kills the input's process the
+    page names, then kills the command's process (see ``guard``). A guard
+    that has waited out its grace in the moment between the reap and its
+    own end finds the pid free, since no process holds it yet, and signals
+    nothing.
     """
     signaled: list[int] = []
     try:
