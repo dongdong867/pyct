@@ -170,6 +170,35 @@ def test_a_loop_with_no_complete_run_is_skipped_and_said() -> None:
     assert notes == [SummarySkipped(LOOP, "no recorded run")]
 
 
+def test_a_loop_skipped_at_each_moment_is_said_once() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    tool = Summaries(fake := Fake(), load_target(COUNTS), told)
+    run = Run([record(counted("a", changed=False))])
+
+    handled = [tool.take((entry(LOOPED),), Moment(at, (), run)) for at in (1, 2, 3)]
+
+    assert fake.requests == []
+    assert handled == [Handled((Outcome.SKIPPED,), asked=False)] * 3
+    assert notes == [SummarySkipped(LOOP, "no recorded run")]
+
+
+def test_a_loop_skipped_for_another_reason_says_each_reason_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    tool = Summaries(fake := Fake(), load_target(COUNTS), told)
+    unfinished, finished = Run([record(counted("a", changed=False))]), Run([record(counted("a"))])
+    monkeypatch.setattr(model_runs, "running", lambda: 2)
+
+    for at, run in enumerate((unfinished, finished, unfinished, finished), start=1):
+        assert tool.take((entry(LOOPED),), Moment(at, (), run)).outcomes == (Outcome.SKIPPED,)
+
+    assert fake.requests == []
+    assert notes == [SummarySkipped(LOOP, "no recorded run"), SummarySkipped(LOOP, "cannot fork")]
+
+
 def test_a_failed_ask_is_said_and_skips_the_entry() -> None:
     failed = Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(1))
 

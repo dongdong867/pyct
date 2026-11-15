@@ -7,12 +7,13 @@ A loop is asked about with its function's code, the loop marked, and its
 complete runs: the runs of it the inputs so far recorded that hold every
 name it changes, up to 3 per input. A loop with no complete run, and one
 asked about while pyct's process runs a second thread, so that no formula
-could run, is skipped at this moment with no ask, and said. An ask that got
-no answer is said and ends that loop's tries at this moment; once an
-answer leaves no token under the limit no summary is asked for again this
-run, the tool says it can ask no more, and the connection has said so. A
-reply with no code block is said and ends them too. The wait for the model
-pauses the run's clock. A call a cause names gets no ask.
+could run, is skipped at this moment with no ask, and said the first time
+this run it is skipped for that reason. An ask that got no answer is said
+and ends that loop's tries at this moment; once an answer leaves no token
+under the limit no summary is asked for again this run, the tool says it
+can ask no more, and the connection has said so. A reply with no code block
+is said and ends them too. The wait for the model pauses the run's clock. A
+call a cause names gets no ask.
 
 A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
@@ -172,6 +173,8 @@ class Summaries:
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
         self.loops: dict[Site, LoopState] = {}
+        # each loop skipped with no ask, with each reason it was skipped for, said once a run
+        self.skipped: set[tuple[Site, str]] = set()
 
     @property
     def can_ask(self) -> bool:
@@ -203,7 +206,7 @@ class Summaries:
             return Asked.CHECKED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
-            self.told.note(SummarySkipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK))
+            self._skipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK)
             return Asked.NOT_ASKED, False
         state = state or LoopState(loop.piece.changed)
         request = self._request(loop, state)
@@ -218,6 +221,13 @@ class Summaries:
             self.told.note(ReplyIgnored(SUMMARIES_TOOL, answer.ignored))
             return Asked.FAILED, True
         return self._tried(loop, state, answer, run), True
+
+    def _skipped(self, site: Site, reason: str) -> None:
+        """A loop skipped with no ask, said the first time this run it is skipped for
+        ``reason``."""
+        if (site, reason) not in self.skipped:
+            self.skipped.add((site, reason))
+            self.told.note(SummarySkipped(site, reason))
 
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
         """The reply's formula read, its form checked, then checked on the loop's runs and
