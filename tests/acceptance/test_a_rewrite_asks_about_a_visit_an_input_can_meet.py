@@ -5,11 +5,12 @@ the same check on the other side, and the rewrite's input covers the line.
 It runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text.
 """
 
+import dataclasses
+
 from pyct.config.budget import Budget
-from pyct.config.limits import Limits
-from pyct.config.solver_timeout import SolverTimeout
 from pyct.results.record import Source
 from tests.acceptance.llm_rewrites import (
+    SHORT,
     FakeRewrites,
     file_of,
     llm_said,
@@ -22,11 +23,9 @@ from tests.acceptance.llm_rewrites import (
 EACH = "targets.rewrites.visits::each"
 AT = f"llm: rewrite for {file_of('visits')}:3:21"
 WANTED = 's == "1e-30"'
-# the loop takes a longer list on each input, so a run that covers no line 4 ends at its budget.
-# The solver says unknown on the third and second visits' asks within 5 seconds, about 3 each,
-# where a 1-second limit ends the third's as a timeout: then every fork at the check's site waits
-# until each fork elsewhere was aimed at, and the loop's guards can keep the first visit waiting
-LOOPED = Limits(budget=Budget(30), solver_timeout=SolverTimeout(5.0))
+# SHORT's solver limit, with a budget: the loop takes a longer list on each input, so a run that
+# covers no line 4 ends at its budget
+LOOPED = dataclasses.replace(SHORT, budget=Budget(30))
 
 
 # llm-rewrite-visit-an-input-can-meet-covers-the-loop-s-line

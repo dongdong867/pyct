@@ -1,7 +1,7 @@
 """The rewrites tool in a run: the stuck moment's rewrites slot, and the loop's asker, which keeps
-the first plan whose ask ran out at each condition, of those whose path does not already hold the
-same check on the other side, and puts a kept rewrite first in each later ask that holds its
-condition.
+the first plan whose ask ran out at each condition and puts a kept rewrite first in each later
+ask that holds its condition. A plan whose path already holds its aimed fork's check on the other
+side is answered ``unsat`` before any ask, so it is never kept.
 
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
 ``timeout`` or an ``unknown``, in line order, one condition at a time, and
@@ -54,7 +54,7 @@ from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running
 from pyct.run.target import Target
 from pyct.run.tell import Ask, Told
-from pyct.solver.answer import Answer, Sat, Timeout, Unknown
+from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.given import Given
 
 # why a rewrite does not run beside a second thread of pyct's process
@@ -95,10 +95,13 @@ class Rewrites(Asker):
         when it gives no input, the plan's own, each within what is left of ``limit``. When
         the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
         and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
-        whose ask ended in ``timeout`` or ``unknown``, and whose path does not already hold the
-        same check on the other side, is kept."""
-        started = time.monotonic()
+        whose ask ended in ``timeout`` or ``unknown`` is kept. A plan whose path already holds
+        its aimed fork's check on the other side, which no input meets, is answered ``unsat``
+        before any ask or kept rewrite runs, so it is never kept."""
         self._used = ()
+        if holds_its_own_check(wanted):
+            return _unasked(wanted, Unsat())
+        started = time.monotonic()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
         programs: tuple[Given, ...] = ()
         left = _left(started, limit)
@@ -109,7 +112,7 @@ class Rewrites(Asker):
                 return dataclasses.replace(rewritten, source=Source.REWRITE)
             programs = rewritten.asked.programs
         rest = _left(started, limit)
-        solved = super().solved(wanted, origin, rest) if rest > 0 else _out_of_time(wanted)
+        solved = super().solved(wanted, origin, rest) if rest > 0 else _unasked(wanted, Timeout())
         self._keep(wanted, origin, solved)
         asked = dataclasses.replace(solved.asked, programs=(*programs, *solved.asked.programs))
         return Solved(solved.answer, time.monotonic() - started, asked)
@@ -122,13 +125,10 @@ class Rewrites(Asker):
         self._used = ()
 
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
-        """Keep the plan when it is the first at its condition whose ask ran out, of those whose
-        path does not already hold the same check on the other side, which no input meets."""
+        """Keep the plan when it is the first at its condition whose ask ran out."""
         answer = solved.answer
         aimed = wanted.prefix[-1]
         if aimed.raising or not isinstance(answer, Timeout | Unknown):
-            return
-        if holds_its_own_check(wanted):
             return
         condition = Condition(aimed.site, aimed.taken)
         why = MissWhy.TIMEOUT if isinstance(answer, Timeout) else MissWhy.UNKNOWN
@@ -223,10 +223,11 @@ class _Child:
         return CANNOT_FORK if isinstance(ran, CannotFork) else ran.result
 
 
-def _out_of_time(wanted: Plan) -> Solved:
-    """The answer for a plan whose limit a kept rewrite used up, in its run or its ask: a
-    ``timeout``, since the pick's limit ran out before the plan's own ask could run."""
-    return Solved(Timeout(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
+def _unasked(wanted: Plan, answer: Answer) -> Solved:
+    """The answer for a plan the solver was not asked about: ``unsat`` for one whose path holds
+    its aimed fork's check on the other side, or ``timeout`` for one whose limit a kept rewrite
+    used up, in its run or its ask, before the plan's own ask could run."""
+    return Solved(answer, 0.0, Ask(0, wanted.aim, wanted.path, ()))
 
 
 def _left(started: float, limit: float) -> float:
