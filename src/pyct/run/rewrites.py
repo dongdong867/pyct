@@ -1,6 +1,7 @@
 """The rewrites tool in a run: the stuck moment's rewrites slot, and the loop's asker, which keeps
-the first plan whose ask ran out at each condition and puts a kept rewrite first in each later
-ask that holds its condition.
+the first plan whose ask ran out at each condition, of those whose path does not already hold the
+same check on the other side, and puts a kept rewrite first in each later ask that holds its
+condition.
 
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
 ``timeout`` or an ``unknown``, in line order, one condition at a time, and
@@ -38,7 +39,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition, WhyEntry
 from pyct.results.llm_asks import Why
 from pyct.results.record import InputRecord, MissWhy, Source, Stop
-from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.ask import GivenUp, holds_its_own_check
 from pyct.rewrite.condition import FUNCTION
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteDropped, RewriteNote
@@ -94,7 +95,8 @@ class Rewrites(Asker):
         when it gives no input, the plan's own, each within what is left of ``limit``. When
         the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
         and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
-        whose ask ended in ``timeout`` or ``unknown`` is kept."""
+        whose ask ended in ``timeout`` or ``unknown``, and whose path does not already hold the
+        same check on the other side, is kept."""
         started = time.monotonic()
         self._used = ()
         reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
@@ -120,10 +122,13 @@ class Rewrites(Asker):
         self._used = ()
 
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
-        """Keep the plan when it is the first at its condition whose ask ran out."""
+        """Keep the plan when it is the first at its condition whose ask ran out, of those whose
+        path does not already hold the same check on the other side, which no input meets."""
         answer = solved.answer
         aimed = wanted.prefix[-1]
         if aimed.raising or not isinstance(answer, Timeout | Unknown):
+            return
+        if holds_its_own_check(wanted):
             return
         condition = Condition(aimed.site, aimed.taken)
         why = MissWhy.TIMEOUT if isinstance(answer, Timeout) else MissWhy.UNKNOWN

@@ -705,6 +705,8 @@
     {"set": "v2", "target": "targets.rewrites.path::negative", "seed": {"s": "-1"}},
     {"set": "v2", "target": "targets.rewrites.plain::sign", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.rewrites.text::exponent", "seed": {"s": "0"}},
+    {"set": "v2", "target": "targets.rewrites.visits::each", "seed": {"s": "0", "items": [1, 2, 3]}},
+    {"set": "v2", "target": "targets.rewrites.visits::changing", "seed": {"items": ["0", "0"]}},
     {"set": "v2", "module": "targets.scope.helper", "left_out": "a module beside shop under targets/scope, not a target"},
     {"set": "v2", "module": "targets.scope.measure.classes", "left_out": "a package beside shop under targets/scope, not a target"},
     {"set": "v2", "module": "targets.scope.measure.flip", "left_out": "a package beside shop under targets/scope, not a target"},

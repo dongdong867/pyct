@@ -17,6 +17,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import Seed
+from pyct.branches.compare import Parts, same_expression
 from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
@@ -27,6 +28,10 @@ from pyct.rewrite.condition import HELD_COL, HELD_LINE
 
 # why a rewrite that records no fork of its own and no downgrade is refused
 READS_NO_ARGUMENT = "it reads no argument"
+
+# the parts of expressions one plan's path may compare, over all its earlier forks, to tell
+# whether it holds its aimed fork's check on the other side
+PLAN_PARTS = 100_000
 
 # runs a rewrite's code in a child of pyct's process on an input's arguments: what the call
 # recorded, or why it did not run
@@ -39,8 +44,9 @@ type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
 @dataclass(frozen=True)
 class GivenUp:
     """A condition the solver gave up on: the first plan aimed at it whose ask ended in
-    ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, the input whose
-    path that plan extends, and the answer."""
+    ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, and whose path
+    does not already hold the same check on the other side (``holds_its_own_check``), the
+    input whose path that plan extends, and the answer."""
 
     condition: Condition
     plan: Plan
@@ -79,6 +85,24 @@ def recorded(result: ExecutionResult, file: str) -> Recorded | str:
     # a plan only to merge the facts in among the forks; nothing aims at its aim
     aim = Aim(last.site, len(forks) - 1)
     return Recorded(Plan(forks, aim, facts=result.facts).asked, last.taken)
+
+
+def holds_its_own_check(plan: Plan) -> bool:
+    """Whether the path before the plan's aimed fork holds the same check on the other side: a
+    fork at the aimed fork's site, of the same kind, taken the other way, whose expression is
+    the same (``same_expression``). No input takes one check both ways on one path. False when
+    the comparisons cannot tell within ``PLAN_PARTS`` compared parts."""
+    aimed = plan.prefix[-1]
+    parts = Parts(PLAN_PARTS)
+    for fork in plan.prefix[:-1]:
+        if fork.where != aimed.where or fork.taken == aimed.taken:
+            continue
+        same = same_expression(fork.expression, aimed.expression, parts)
+        if same is None:
+            return False
+        if same:
+            return True
+    return False
 
 
 def holding(plan: Plan, condition: Condition) -> bool:
