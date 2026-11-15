@@ -23,6 +23,7 @@ from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
+from pyct.run.namespaces import file_of
 from pyct.run.own_imports import keep_own_imports
 from pyct.run.watch_page import WatchPage
 
@@ -91,12 +92,12 @@ class Target:
 
     def module_of(self, file: str) -> str:
         """The dotted name of the module ``file`` holds, as an LLM ask's place names it: the
-        target's own, or a loaded module's whose file it is, or the file's stem when no module
-        is."""
+        target's own, or the name of an entry of ``sys.modules`` whose file it is, each entry's
+        file read by its type alone (``file_of``), or the file's stem when no entry's is."""
         if file == self.file:
             return self.spec.partition("::")[0]
         for name, module in list(sys.modules.items()):
-            if getattr(module, "__file__", None) == file:
+            if file_of(module) == file:
                 return name
         return os.path.splitext(os.path.basename(file))[0]
 

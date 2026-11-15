@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator, Mapping
 from typing import TypeGuard
 
 from pyct.intercept.hook import in_package
+from pyct.run.namespaces import file_of, namespace
 from pyct.run.target import Target
 
 # the characters of code a request holds at most
@@ -29,10 +30,6 @@ AROUND_LINES = 200
 
 type Code = Callable[..., object]
 
-# the descriptors that hold a class's and a module's own namespace, read by ``type`` and
-# ``types.ModuleType`` themselves, whatever the class of the value they read
-_CLASS_NAMES = vars(type)["__dict__"]
-_MODULE_NAMES = vars(types.ModuleType)["__dict__"]
 # the members that hold the function a static and a class method wrap, read by ``staticmethod``
 # and ``classmethod`` themselves, whatever the subclass of the wrapper they read
 _STATIC_FUNC = vars(staticmethod)["__func__"]
@@ -147,10 +144,10 @@ def _function_at(file: str, first: int) -> Code | None:
     loaded module whose file it is or in a class there, read without running code; None when
     no module of that file is loaded or none holds it there."""
     for module in list(sys.modules.values()):
-        if _file_of(module) != file:
+        if file_of(module) != file:
             continue
-        held = list(_namespace(module).values())
-        held += [each for owner in held if _is_class(owner) for each in _namespace(owner).values()]
+        held = list(namespace(module).values())
+        held += [each for owner in held if _is_class(owner) for each in namespace(owner).values()]
         for each in held:
             found = _unwrapped(each)
             if not _is_function(found):
@@ -180,25 +177,6 @@ def _unwrapped(value: object) -> object:
     if issubclass(type(value), classmethod):
         return _CLASS_FUNC.__get__(value)
     return value
-
-
-def _file_of(module: object) -> object:
-    """The file an entry of ``sys.modules`` names in its namespace, read by its type alone, so
-    that no attribute hook of a lazy module runs; None for an entry that is not a module."""
-    if not issubclass(type(module), types.ModuleType):
-        return None
-    return _namespace(module).get("__file__")
-
-
-def _namespace(value: object) -> Mapping[str, object]:
-    """The names a class or a module holds in its own namespace, read through the descriptor
-    ``type`` or ``types.ModuleType`` defines, so that no attribute hook of the value's own class
-    runs; empty for any other value."""
-    if issubclass(type(value), type):
-        return _CLASS_NAMES.__get__(value)
-    if issubclass(type(value), types.ModuleType):
-        return _MODULE_NAMES.__get__(value)
-    return {}
 
 
 def _starts(target: Target) -> list[Code]:
@@ -258,7 +236,7 @@ def _resolved(expression: ast.expr, function: Code) -> object:
     if isinstance(expression, ast.Name):
         if expression.id in ("self", "cls"):
             return _owner(function)
-        return _namespace(_module(function)).get(expression.id)
+        return namespace(_module(function)).get(expression.id)
     if isinstance(expression, ast.Attribute):
         base = _resolved(expression.value, function)
         if base is None:
@@ -280,11 +258,11 @@ def _owner(function: Code) -> object:
     """The class a method was written in, read from its module by its qualified name."""
     owner: object = _module(function)
     for name in getattr(function, "__qualname__", "").split(".")[:-1]:
-        owner = _namespace(owner).get(name)
+        owner = namespace(owner).get(name)
     return owner if _is_class(owner) else None
 
 
 def _function(cls: type, name: str) -> Code | None:
     """The Python function the class itself defines under ``name``, or None."""
-    found = _namespace(cls).get(name)
+    found = namespace(cls).get(name)
     return found if _is_function(found) else None
