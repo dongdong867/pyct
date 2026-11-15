@@ -17,9 +17,9 @@ import pytest
 
 from pyct.run import launch as launch_module
 from pyct.run import process
-from pyct.run.import_watch import ImportWatch
 from pyct.run.launch import CTRL_C_GRACE, _ending, launch
 from pyct.run.process import Child, Stopped, Waited
+from pyct.run.watch_page import WatchPage
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -78,7 +78,7 @@ def raised(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return signals
 
 
-def ending_in(command: Callable[[ImportWatch | None], None]) -> Callable[[ImportWatch | None], int]:
+def ending_in(command: Callable[[WatchPage | None], None]) -> Callable[[WatchPage | None], int]:
     """``command`` in the command's process, which then exits 0 if the command did not end it.
 
     A raise must not unwind into the test runner's frames this process
@@ -86,7 +86,7 @@ def ending_in(command: Callable[[ImportWatch | None], None]) -> Callable[[Import
     ends by SIGTERM.
     """
 
-    def run(watch: ImportWatch | None) -> NoReturn:
+    def run(watch: WatchPage | None) -> NoReturn:
         try:
             command(watch)
         except Stopped:
@@ -98,26 +98,26 @@ def ending_in(command: Callable[[ImportWatch | None], None]) -> Callable[[Import
     return run
 
 
-def exits_while_importing(watch: ImportWatch | None) -> None:
+def exits_while_importing(watch: WatchPage | None) -> None:
     assert watch is not None
     with watch.importing(MODULE):
         os._exit(3)
 
 
-def is_killed_while_importing(watch: ImportWatch | None) -> None:
+def is_killed_while_importing(watch: WatchPage | None) -> None:
     assert watch is not None
     with watch.importing(MODULE):
         os.kill(os.getpid(), signal.SIGKILL)
 
 
-def exits_after_importing(watch: ImportWatch | None) -> None:
+def exits_after_importing(watch: WatchPage | None) -> None:
     assert watch is not None
     with watch.importing(MODULE):
         pass
     os._exit(5)
 
 
-def is_signaled_after_importing(watch: ImportWatch | None) -> None:
+def is_signaled_after_importing(watch: WatchPage | None) -> None:
     assert watch is not None
     with watch.importing(MODULE):
         pass
@@ -152,7 +152,7 @@ def test_an_exit_after_the_import_is_the_command_s_own(
 
 
 def test_a_command_that_never_imports_ends_with_its_own_code() -> None:
-    def leaves(watch: ImportWatch | None) -> None:
+    def leaves(watch: WatchPage | None) -> None:
         os._exit(2)
 
     assert launch(ending_in(leaves), ARGV) == 2
@@ -181,7 +181,7 @@ def signal_once_ready(ready: int, go: int, number: int) -> None:
     os.write(go, b"!")
 
 
-type Signaled = Callable[[int, Callable[[], None]], Callable[[ImportWatch | None], int]]
+type Signaled = Callable[[int, Callable[[], None]], Callable[[WatchPage | None], int]]
 
 
 @pytest.fixture
@@ -196,7 +196,7 @@ def signaled_while_importing() -> Generator[Signaled]:
     pipes: list[tuple[int, int]] = []
     senders: list[threading.Thread] = []
 
-    def command_for(number: int, ending: Callable[[], None]) -> Callable[[ImportWatch | None], int]:
+    def command_for(number: int, ending: Callable[[], None]) -> Callable[[WatchPage | None], int]:
         ready, running = os.pipe()
         waiting, go = os.pipe()
         pipes.extend([(ready, running), (waiting, go)])
@@ -204,7 +204,7 @@ def signaled_while_importing() -> Generator[Signaled]:
         sender.start()
         senders.append(sender)
 
-        def command(watch: ImportWatch | None) -> None:
+        def command(watch: WatchPage | None) -> None:
             assert watch is not None
             with watch.importing(MODULE):
                 os.write(running, b"!")
@@ -287,7 +287,7 @@ def test_a_sigterm_ends_the_command_by_sigterm(
     # with no process of its own, the command's process is this one, so its end is recorded
     no_process_starts(monkeypatch)
 
-    def stopped(watch: ImportWatch | None) -> int:
+    def stopped(watch: WatchPage | None) -> int:
         os.kill(os.getpid(), signal.SIGTERM)
         time.sleep(5)
         return 0
@@ -303,7 +303,7 @@ def test_a_command_that_catches_the_stop_and_returns_still_ends_by_sigterm(
 ) -> None:
     no_process_starts(monkeypatch)
 
-    def catches(watch: ImportWatch | None) -> int:
+    def catches(watch: WatchPage | None) -> int:
         # the handler runs as os.kill returns, so the signal goes inside the catch
         with contextlib.suppress(Stopped):
             os.kill(os.getpid(), signal.SIGTERM)
@@ -342,7 +342,7 @@ def test_the_watcher_ends_and_reaps_its_guard(monkeypatch: pytest.MonkeyPatch) -
             os._exit(0)
     monkeypatch.setattr(launch_module, "guard", lambda lifeline, target: Child(stand_in))
 
-    def returns(watch: ImportWatch | None) -> None:
+    def returns(watch: WatchPage | None) -> None:
         os._exit(0)
 
     try:

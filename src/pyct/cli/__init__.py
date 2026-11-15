@@ -51,7 +51,6 @@ from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, Source, StopKind
 from pyct.results.trace import render_miss, render_start, render_stop, render_trace
 from pyct.run.helpers import Helpers
-from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.llm_seeds import NoSeedError
@@ -62,6 +61,7 @@ from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_f
 from pyct.run.setup import Setup
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
+from pyct.run.watch_page import WatchPage
 from pyct.solver.given import write
 from pyct.solver.locate import SolverMissingError, locate
 from pyct.sweep.listing import PackageImportError
@@ -127,7 +127,7 @@ def entry() -> int:
     return launch(functools.partial(main, argv), argv)
 
 
-def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) -> int:
+def main(argv: Sequence[str] | None = None, watch: WatchPage | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
@@ -184,7 +184,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     return _exit_code(result)
 
 
-def _run(command: RunCommand, watch: ImportWatch | None) -> tuple[RunResult, Started | None]:
+def _run(command: RunCommand, watch: WatchPage | None) -> tuple[RunResult, Started | None]:
     """The checks, the LLM's start, then the run, inside the block that substitutes the
     target's package. It gives the run's result and the LLM's start, None for a plain run.
     The LLM's line follows the class line and the skipped seeds."""
@@ -220,7 +220,7 @@ class _Checked:
     llm: LlmSettings | None
 
 
-def _checked(command: RunCommand, watch: ImportWatch | None) -> _Checked:
+def _checked(command: RunCommand, watch: WatchPage | None) -> _Checked:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports.
 
     The Tell prints each input, miss and LLM note, and writes each ask's programs to the dump

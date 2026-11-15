@@ -17,7 +17,7 @@ from collections.abc import Generator, Sequence
 _LENGTH = struct.Struct("<I")
 
 
-class ImportWatch:
+class WatchPage:
     """The page on which the command's process names the module it is importing."""
 
     def __init__(self, fd: int) -> None:
@@ -26,7 +26,7 @@ class ImportWatch:
         self._page = mmap.mmap(fd, os.fstat(fd).st_size)
 
     @classmethod
-    def for_command_line(cls, argv: Sequence[str]) -> ImportWatch:
+    def for_command_line(cls, argv: Sequence[str]) -> WatchPage:
         """A new page, in an unlinked file, with room for the whole ``argv``.
 
         A module name is part of one argument, so any name the command line

@@ -23,8 +23,8 @@ from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
-from pyct.run.import_watch import ImportWatch
 from pyct.run.own_imports import keep_own_imports
+from pyct.run.watch_page import WatchPage
 
 # the two exceptions inspect raises when it cannot read a signature; one of exactly these types
 # reads by its message alone
@@ -91,7 +91,7 @@ class Target:
 
 
 def load_target(
-    spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
+    spec: str, watch: WatchPage | None = None, *, keep_import_lines: bool = True
 ) -> Target:
     """Import ``module`` from the current directory and follow ``name`` from it.
 
@@ -250,7 +250,7 @@ def _bound_to(fn: object, owner: type) -> bool:
     return method and getattr(fn, "__self__", None) is owner
 
 
-def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
+def _imported(module_name: str, watch: WatchPage | None) -> ModuleType:
     """The module, imported. A raise or a ``SystemExit`` at its import is a ``TargetError``.
 
     Either reads by its repr. A KeyboardInterrupt goes on to end pyct, as a
