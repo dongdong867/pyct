@@ -45,7 +45,9 @@ class Kept:
         asked = plan.asked
         used: list[Condition] = []
         for condition, rewrite in self.rewrites.items():
-            ran = run_on(rewrite, origin.args, run) if holding(plan, condition) else None
+            if not holding(plan, condition):
+                continue
+            ran = run_on(rewrite, origin.args, run)
             if ran is None:
                 continue
             items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
