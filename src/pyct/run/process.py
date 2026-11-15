@@ -27,7 +27,10 @@ read by the time it ends.
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
 also holds pyct's process-wide stop: raising ``Stopped`` for a SIGTERM, and
-the mark that refuses every input after it. ``Stopped`` itself lives in
+the mark that refuses every input after it. When a watcher watches pyct's
+process, ``watched`` names the input's process on the watcher's page while
+pyct holds it (see ``watch_page``), so the watcher's guard can kill that
+process when it kills pyct's. ``Stopped`` itself lives in
 ``pyct.execution.stops``, so the deadline below can tell it from a raise of
 the target's own.
 """
@@ -47,6 +50,7 @@ from pyct.execution.stops import Stopped
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.exits import ends_by
 from pyct.run.journal_reader import Reading
+from pyct.run.watch_page import WatchPage
 
 # the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
 # SIGINT, and SIGTERM, which the command's process stops on (see ``launch``)
@@ -69,6 +73,15 @@ KILL_GRACE = 0.5
 
 # whether this process was told to stop; once it was, no input starts
 _stop_asked = False
+
+# the page on which this process names the input's process it runs, when a watcher reads one
+_page: WatchPage | None = None
+
+
+def name_inputs_on(page: WatchPage | None) -> None:
+    """Name each input's process on ``page`` from now on, or on no page for None."""
+    global _page
+    _page = page
 
 
 def stop() -> NoReturn:
@@ -129,16 +142,38 @@ def watched(
     the way out, so none lands between the two and leaves the process
     running. It then goes on, as KeyboardInterrupt for a Ctrl-C, once the
     process is ended and reaped.
+
+    The page, when there is one (see ``name_inputs_on``), names the process
+    from the moment pyct holds its pid until a moment after the reap.
     """
     child: Child | None = None
     try:
         # a signal held here goes on as the block ends, with the process in the guard's hands
         with _stops_held():
             child = Child(start())
+            _name_input(child.pid)
         return child.wait(None if until is None else until + KILL_GRACE, look)
     finally:
         if child is not None:
-            child.end()
+            _end_named(child)
+
+
+def _end_named(child: Child) -> None:
+    """End and reap ``child``, then name no input's process on the page, however the end goes.
+
+    A Ctrl-C or a stop held while ``child`` is reaped goes on from ``end``, and
+    the page names no reaped pid after it.
+    """
+    try:
+        child.end()
+    finally:
+        _name_input(0)
+
+
+def _name_input(pid: int) -> None:
+    """Name the input's process ``pid`` on the page, if there is one; zero names none."""
+    if _page is not None:
+        _page.name_input(pid)
 
 
 @contextlib.contextmanager
