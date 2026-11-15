@@ -56,7 +56,7 @@ class Attempt:
 
     ``unrun`` is the site of a fork the pass picked and then stopped before it
     ran an input for: the pick spends the fork, so only the pass knows it.
-    ``asked`` is the pass's ask of the solver, numbered by the loop.
+    ``asked`` is the pass's ask, numbered by the loop.
     """
 
     stop: Stop | None = None

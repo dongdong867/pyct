@@ -141,7 +141,7 @@ class Stop:
 
 class MissWhy(StrEnum):
     """The answer a fork's ask ended in when it gave no input, which the run's asker may give
-    without sending an ask. The words on the line."""
+    in the solver's place. The words on the line."""
 
     UNSAT = "unsat"
     UNKNOWN = "unknown"
@@ -151,12 +151,12 @@ class MissWhy(StrEnum):
 @dataclass(frozen=True)
 class Miss:
     """A fork the run asked for and got no input to: where it is, and the answer its ask ended
-    in, from the solver or from the run's asker without sending an ask.
+    in, from the solver or from the run's asker in the solver's place.
 
     ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
     ``solver_seconds`` is how long the ask took, from the start of writing it to its answer,
-    a measurement two misses compare without; for an answer given without sending an ask, the
-    seconds ``SolverSeconds`` says it adds.
+    a measurement two misses compare without; for an answer the asker gave in the solver's
+    place, the seconds ``SolverSeconds`` says it adds.
     """
 
     site: Site
@@ -183,8 +183,8 @@ class Environment:
 
 @dataclass(frozen=True)
 class SolverCounts:
-    """How many of the passes' asks ended in each answer. An answer the run's asker gave
-    without sending an ask counts under that answer."""
+    """How many of the passes' asks ended in each answer. An answer the run's asker gave in
+    the solver's place counts under that answer."""
 
     sat: int
     unsat: int
@@ -195,7 +195,7 @@ class SolverCounts:
 @dataclass(frozen=True)
 class SolverSeconds:
     """How many seconds the passes' asks took, summed by the answer each ended in. An answer
-    the run's asker gave without sending an ask adds 0.0 for an ``unsat`` given before any ask,
+    the run's asker gave in the solver's place adds 0.0 for an ``unsat`` given before any ask,
     and, for a ``timeout`` given once a kept rewrite's run and ask used up the pick's limit, the
     seconds those took."""
 
@@ -237,7 +237,7 @@ class RunResult:
     @property
     def solver(self) -> SolverCounts:
         """The answers the passes' asks ended in, derived so the counts can never disagree
-        with the misses. An answer the run's asker gave without sending an ask counts under
+        with the misses. An answer the run's asker gave in the solver's place counts under
         that answer.
 
         An input a pass's sat ask gave is its one ``sat``, whether the solver

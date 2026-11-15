@@ -19,9 +19,10 @@ type Missed = Callable[[Miss], None]
 
 @dataclass(frozen=True)
 class Ask:
-    """One ask of the solver: its number among the run's asks, from 1, the fork aimed at, the
-    input whose path it extends by that input's place among the run's inputs, the first seed's
-    0, and each program pyct gave cvc5 for it, in order."""
+    """One of the run's asks: its number among them, from 1, the fork aimed at, the input whose
+    path it extends by that input's place among the run's inputs, the first seed's 0, and each
+    program pyct gave cvc5 for it, in order, none when the run's asker answered before any went
+    to cvc5."""
 
     number: int
     aim: Aim
@@ -42,8 +43,8 @@ class Tell:
 
     ``report`` takes each finished input with the lines that input alone
     covered; ``missed`` takes each fork a pass's ask gave no input for;
-    ``asked`` takes each ask with the programs pyct gave cvc5, none for an
-    answer the run's asker gave without sending one; ``noted``
+    ``asked`` takes each ask with the programs pyct gave cvc5 for it, none
+    when the run's asker answered before any went to cvc5; ``noted``
     takes each note about the LLM tools (``pyct.run.notes``). One object
     rather than a keyword per kind of fact, so ``run()`` and the loop keep
     to five parameters: a later kind of fact widens this instead of their

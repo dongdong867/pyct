@@ -266,7 +266,7 @@ class Asking:
         the visit over: the rewrite reads a name the input lacks or holds an object in, raised
         or did not finish on it, records nothing to put in the condition's place, or the input
         already meets it. A rewrite pyct cannot run ends the tries, said, as on the first, and
-        a run after which the run can no longer go on ends them unsaid."""
+        a spent budget, found once the rewrite has run, ends them unsaid."""
         ran = run_on(rewrite, visit.origin.args, around.run_rewrite)
         if ran is None:
             return None
