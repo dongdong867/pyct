@@ -15,9 +15,9 @@ def page(monkeypatch: pytest.MonkeyPatch) -> Generator[WatchPage]:
     """A page pyct's process names its inputs on, then none again, and closed, after the test."""
     monkeypatch.setattr(process, "_page", None)
     named = WatchPage.for_command_line([])
-    process.name_inputs_on(named)
+    process.name_on(named)
     yield named
-    process.name_inputs_on(None)
+    process.name_on(None)
     named.close()
 
 

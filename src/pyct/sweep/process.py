@@ -3,15 +3,19 @@ a limit, and the SIGHUP that must not leave either behind.
 
 Each process sweep starts leads a session of its own, so its process group
 holds every process it started in turn, and the whole group is killed once
-sweep is done with it, as the compare tool learned. The signals sweep stops
-on are held from before a process starts until it is recorded, so one that
-comes meanwhile still finds it to stop. ``run_command`` sends a command's
-output to temporary files rather than pipes: a process the command left
-holding a pipe could keep sweep waiting, and a file never fills up and
-blocks the command. The lister's facts come over a pipe instead, which
-``pyct.sweep.listing`` reads with a limit while it watches for the lister's
-end. This code stays in pyct, beside the compare tool's own runner, since
-neither may import the other (sweep-keeps-its-own-process-runner).
+sweep is done with it, as the compare tool learned. While it runs, its
+group is named on the watcher's page. When the watcher's guard kills
+sweep's own process past the stop's grace, which skips that end, it kills
+the named group too while sweep has not yet reaped the group's leader (see
+``pyct.run.guard``). The signals sweep stops on are held from before a
+process starts until it is recorded, so one that comes meanwhile still
+finds it to stop. ``run_command`` sends a command's output to temporary
+files rather than pipes: a process the command left holding a pipe could
+keep sweep waiting, and a file never fills up and blocks the command. The
+lister's facts come over a pipe instead, which ``pyct.sweep.listing``
+reads with a limit while it watches for the lister's end. This code stays
+in pyct, beside the compare tool's own runner, since neither may import
+the other (sweep-keeps-its-own-process-runner).
 """
 
 import contextlib
@@ -25,7 +29,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import IO
 
-from pyct.run.process import Waited
+from pyct.run.process import Waited, name_group
 
 
 @dataclass(frozen=True)
@@ -81,7 +85,8 @@ def started(
     Each signal in ``HELD`` is held from before the start until the process
     is recorded here, and one that came meanwhile raises only then, so it
     still finds the process to stop. The process starts with the mask sweep
-    had, not the one that holds them.
+    had, not the one that holds them. The page names its group from then
+    until the process is reaped.
     """
     held = signal.pthread_sigmask(signal.SIG_BLOCK, HELD)
     unheld = functools.partial(signal.pthread_sigmask, signal.SIG_SETMASK, held)
@@ -100,10 +105,14 @@ def started(
         unheld()
         raise
     try:
+        name_group(process.pid)
         unheld()
         yield process
     finally:
-        stop_group(process)
+        try:
+            stop_group(process)
+        finally:
+            name_group(0)
 
 
 def _waited(process: subprocess.Popen[bytes], limit: float | None) -> Waited | None:
