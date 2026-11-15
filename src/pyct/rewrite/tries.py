@@ -6,9 +6,9 @@ condition's first kept visit (``unsat``, ``unknown`` or ``timeout``), the
 same try goes on to each later kept visit in turn: the rewrite runs on that
 visit's input, is asked on that visit's path, and its input runs aimed at
 that visit's plan. A later visit is passed over, unsaid, when the rewrite
-reads a name its input lacks or holds an object in, does not run on it,
-records nothing to put in the condition's place, or the input already
-meets it.
+reads a name its input lacks or holds an object in, raised or did not
+finish on it, records nothing to put in the condition's place, or the input
+already meets it.
 
 A try fails, and the next ask carries it with its reason, when the reply
 holds no expression, the rewrite breaks the form or reads a parameter that
@@ -18,10 +18,10 @@ already meets it, the solver failed or gave no input for it on any kept
 visit, each answer said in the order asked, or its input took the other
 side. A reply that got no answer ends the condition's tries at this
 moment, and so does a rewrite pyct cannot run, found before an ask or after
-it, a spent budget, checked before each visit, and an input that met the
-run's stop. When no parameter
-is left that a rewrite may read, each holding an object or the method
-taking only ``self``, the condition is given up before the first ask.
+it on any kept visit, a spent budget, checked before each visit, and an
+input that met the run's stop. When no parameter is left that a rewrite may
+read, each holding an object or the method taking only ``self``, the
+condition is given up before the first ask.
 Decision llm-rewrites-retry-three-times-after-the-first-ask.
 """
 
@@ -31,7 +31,7 @@ import functools
 import json
 import time
 import types
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -51,7 +51,7 @@ from pyct.rewrite.condition import (
     holds_object,
     rewrite_code,
 )
-from pyct.rewrite.kept import Kept, recorded_on
+from pyct.rewrite.kept import Kept, readable
 from pyct.rewrite.notes import (
     RewriteFailed,
     RewriteGivenUp,
@@ -123,6 +123,14 @@ class _Ended:
     """A try that ends the condition's tries at this moment, and why."""
 
     reason: str
+
+
+@dataclass(frozen=True)
+class _NoInput:
+    """A visit on whose path the solver gave no input for the rewrite, so the try goes on to the
+    next kept visit, and what it answered."""
+
+    answer: Unsat | Unknown | Timeout
 
 
 @dataclass(frozen=True)
@@ -229,40 +237,51 @@ class Asking:
             written = _written(given.origin.args)
             met = f"the input {written} already meets it, yet took the other side"
             return EarlierTry(expression, met)
-        outcome = self._on_visits(rewrite, items, around)
-        if isinstance(outcome, str):
-            return EarlierTry(expression, outcome)
-        if isinstance(outcome, tuple):
-            return _no_input(expression, outcome)
-        return outcome
+        return self._on_visits(expression, rewrite, items, around)
 
     def _on_visits(
-        self, rewrite: Rewrite, first: Recorded, around: Around
-    ) -> tuple[Answer, ...] | str | _Ended | None:
-        """The rewrite's ask on each kept visit's path in turn, the first with what its run
-        recorded there, each later one run on its own input and passed over when it does not
-        run there, records nothing, or that input already meets it. The answers that gave no
-        input when no visit is left; else None when an input took the wanted side, why the try
-        failed, or why the tries end."""
-        answers: list[Answer] = []
+        self, expression: str, rewrite: Rewrite, first: Recorded, around: Around
+    ) -> EarlierTry | _Ended | None:
+        """The rewrite's ask on each kept visit's path in turn while the solver gives no input,
+        the first with what its run recorded there, each later one run on its own input
+        (``_later``): None when an input took the wanted side, else how the try failed, with
+        each answer when no visit gave an input, or why the tries end."""
+        answers: list[Unsat | Unknown | Timeout] = []
         for at, visit in enumerate(self.given.visits):
             if not around.going():
                 return _Ended(BUDGET_SPENT)
-            items = first if at == 0 else recorded_on(rewrite, visit.origin, around.run_rewrite)
-            if items is None or (at > 0 and items.met):
+            items = first if at == 0 else self._later(rewrite, visit, around)
+            if isinstance(items, _Ended):
+                return items
+            if items is None:
                 continue
-            outcome = self._on(visit, items, around)
-            if not isinstance(outcome, Unsat | Unknown | Timeout):
+            outcome = self._on(expression, visit, items, around)
+            if not isinstance(outcome, _NoInput):
                 return outcome
-            answers.append(outcome)
-        return tuple(answers)
+            answers.append(outcome.answer)
+        return _no_input(expression, answers)
+
+    def _later(self, rewrite: Rewrite, visit: Visit, around: Around) -> Recorded | _Ended | None:
+        """What the rewrite, run on a later visit's input, puts in that visit's ask. None passes
+        the visit over: the rewrite reads a name the input lacks or holds an object in, raised
+        or did not finish on it, records nothing to put in the condition's place, or the input
+        already meets it. A rewrite pyct cannot run ends the tries, said, as on the first."""
+        args = visit.origin.args
+        if not readable(args, rewrite.reads):
+            return None
+        ran = around.run_rewrite(rewrite.code, {name: args[name] for name in rewrite.reads})
+        if isinstance(ran, str):
+            around.note(RewriteSkipped(self.given.condition.site, ran))
+            return _Ended(ran)
+        items = recorded(ran, rewrite.code.co_filename)
+        return None if isinstance(items, str) or items.met else items
 
     def _on(
-        self, visit: Visit, items: Recorded, around: Around
-    ) -> Unsat | Unknown | Timeout | str | _Ended | None:
+        self, expression: str, visit: Visit, items: Recorded, around: Around
+    ) -> EarlierTry | _Ended | _NoInput | None:
         """The rewrite's ask on one visit's path, each kept rewrite in its own condition's
         place, and its input run on the real code: None when the input took the wanted side,
-        the answer when the solver gave no input, else why the try failed or why it ended."""
+        ``_NoInput`` when the solver gave none, else how the try failed or why it ended."""
         condition = self.given.condition
         reused = self.kept.reused(visit.plan, visit.origin, around.run_rewrite)
         held = visit.plan.asked if reused is None else reused.asked
@@ -270,18 +289,18 @@ class Asking:
         if answer is None:
             return _Ended(BUDGET_SPENT)
         if isinstance(answer, Error):
-            return f"the solver failed: {answer.detail}"
+            return EarlierTry(expression, f"the solver failed: {answer.detail}")
         if not isinstance(answer, Sat):
-            return answer
+            return _NoInput(answer)
         record = around.run_input(apply(visit.origin, answer.model), visit.plan)
         if isinstance(record, Stop):
             return _Ended(record.reason)
         if takes(record, condition):
             return None
-        return f"the input {_written(record.args)} took the other side"
+        return EarlierTry(expression, f"the input {_written(record.args)} took the other side")
 
 
-def _no_input(expression: str, answers: tuple[Answer, ...]) -> EarlierTry:
+def _no_input(expression: str, answers: Sequence[Unsat | Unknown | Timeout]) -> EarlierTry:
     """The failed try for a rewrite the solver gave no input for on any kept visit: each answer
     in the order asked, and whether any was ``timeout`` or ``unknown``."""
     said = ", then ".join(type(answer).__name__.lower() for answer in answers)

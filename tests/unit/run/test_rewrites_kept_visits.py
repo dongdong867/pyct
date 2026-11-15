@@ -2,7 +2,6 @@
 run with rewrites answers it unsat without the solver and keeps no plan for it, a run without
 rewrites asks as before, and any other visit the solver gives up on is kept and asked about."""
 
-import time
 import types
 
 import pytest
@@ -23,7 +22,7 @@ from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver.answer import Timeout, Unsat
 from tests.acceptance.llm_rewrites import FakeRewrites
-from tests.unit.rewrite.test_ask import chain
+from tests.unit.rewrite.test_ask import numbered_sum
 
 EACH = "targets.rewrites.visits::each"
 CHANGING = "targets.rewrites.visits::changing"
@@ -83,12 +82,11 @@ def test_a_visit_whose_path_took_its_check_the_other_way_is_unsat_unasked(
     tool, file = tool_for(EACH, FakeRewrites([]))
     site = Site(file, 3, 21)
     again: Expression = ["==", ["float", "s"], 1e-30]
-    started = time.monotonic()
 
     solved = picked(tool, visits(site, (FLOAT_S, taken), (again, taken)), {"s": "0", "items": [1]})
 
     assert isinstance(solved.answer, Unsat)
-    assert solved.seconds < 0.1 and time.monotonic() - started < 0.1
+    assert solved.seconds == 0.0
     assert solved.asked.programs == ()
     assert asks == []
     assert tool.given_up == {}
@@ -181,7 +179,7 @@ def test_a_visit_pyct_cannot_compare_within_the_limit_is_asked_and_kept(asks: li
     tool, file = tool_for(EACH, FakeRewrites([]))
     site = Site(file, 3, 21)
     # each pass of the chain is 3 parts, so 40,000 passes are past the 100,000 a plan compares
-    wanted = visits(site, (chain(40_000), False), (chain(40_000), False))
+    wanted = visits(site, (numbered_sum(40_000), False), (numbered_sum(40_000), False))
 
     picked(tool, wanted, {"s": "0", "items": [1, 2]})
 

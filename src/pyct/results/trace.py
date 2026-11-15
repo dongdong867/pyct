@@ -96,7 +96,8 @@ def _written(lines: list[str]) -> str:
 
 
 def _summary(result: RunResult) -> list[str]:
-    """What the whole run covered, what the solver answered, and what it left behind."""
+    """What the whole run covered, the answers its passes' asks ended in, and what it left
+    behind."""
     coverage = result.coverage
     lines = [*_coverage(coverage), _solver(result.solver), _solver_seconds(result.solver_seconds)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
@@ -113,7 +114,7 @@ def _coverage(coverage: Coverage) -> list[str]:
 
 
 def _solver(counts: SolverCounts) -> str:
-    """What the solver answered over the run, one count per kind of answer."""
+    """The answers the passes' asks ended in over the run, one count per kind of answer."""
     return (
         f"solver: {counts.sat} sat, {counts.unsat} unsat, "
         f"{counts.unknown} unknown, {counts.timeout} timeout"

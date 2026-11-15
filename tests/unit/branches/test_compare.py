@@ -1,5 +1,4 @@
 import struct
-import time
 
 import pytest
 
@@ -48,8 +47,9 @@ def test_a_fork_at_another_site_is_the_mismatch() -> None:
     assert compare(planned, actual) == 0
 
 
-def chain(depth: int) -> Expression:
-    """A sum one term longer on each pass, as `total = total + items[i]` builds one."""
+def item_sum(depth: int) -> Expression:
+    """A sum of list items one term longer on each pass, as `total = total + items[i]` builds
+    one."""
     built: Expression = "total"
     for at in range(depth):
         built = ["+", built, ["[]", "items", at]]
@@ -120,25 +120,22 @@ def test_a_nan_is_the_same_as_a_nan_of_the_same_bits() -> None:
 
 
 def test_a_chain_ten_thousand_deep_is_compared_without_recursion() -> None:
-    assert same_expression(chain(10_000), chain(10_000), Parts(100_000)) is True
-    assert same_expression(chain(10_000), chain(10_001), Parts(100_000)) is False
+    assert same_expression(item_sum(10_000), item_sum(10_000), Parts(100_000)) is True
+    assert same_expression(item_sum(10_000), item_sum(10_001), Parts(100_000)) is False
 
 
 def test_an_expression_whose_parts_are_shared_compares_each_shared_part_once() -> None:
-    started = time.monotonic()
-
-    same = same_expression(rebuilt(40), rebuilt(40), Parts(100_000))
-
-    assert same is True
-    assert time.monotonic() - started < 1.0
+    # with each pair of shared parts compared at every place it is shared, 40 passes would
+    # compare about 3 ** 40 parts, past the limit, so the answer would be None
+    assert same_expression(rebuilt(40), rebuilt(40), Parts(100_000)) is True
 
 
 def test_a_comparison_past_its_parts_cannot_tell() -> None:
-    assert same_expression(chain(10), chain(10), Parts(5)) is None
+    assert same_expression(item_sum(10), item_sum(10), Parts(5)) is None
 
 
 def test_the_parts_one_comparison_spent_are_gone_for_the_next() -> None:
     parts = Parts(40)
 
-    assert same_expression(chain(5), chain(5), parts) is True
-    assert same_expression(chain(5), chain(5), parts) is None
+    assert same_expression(item_sum(5), item_sum(5), parts) is True
+    assert same_expression(item_sum(5), item_sum(5), parts) is None

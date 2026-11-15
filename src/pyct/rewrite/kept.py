@@ -17,7 +17,7 @@ from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
-from pyct.rewrite.ask import Recorded, RunRewrite, holding, in_place, recorded, takes
+from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, takes
 from pyct.rewrite.condition import Rewrite, holds_object
 
 
@@ -45,8 +45,11 @@ class Kept:
         asked = plan.asked
         used: list[Condition] = []
         for condition, rewrite in self.rewrites.items():
-            items = recorded_on(rewrite, origin, run) if holding(plan, condition) else None
-            if items is None:
+            if not holding(plan, condition) or not readable(origin.args, rewrite.reads):
+                continue
+            ran = run(rewrite.code, {name: origin.args[name] for name in rewrite.reads})
+            items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
+            if items is None or isinstance(items, str):
                 continue
             asked = in_place(asked, condition, items.items)
             used.append(condition)
@@ -61,16 +64,6 @@ class Kept:
         return dropped
 
 
-def recorded_on(rewrite: Rewrite, origin: Seed, run: RunRewrite) -> Recorded | None:
-    """What the rewrite, run on ``origin``, puts in an ask; None when it reads a name the input
-    does not hold or holds an object in, does not run, or records nothing to put there."""
-    if not _readable(origin.args, rewrite.reads):
-        return None
-    ran = run(rewrite.code, {name: origin.args[name] for name in rewrite.reads})
-    items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
-    return None if items is None or isinstance(items, str) else items
-
-
-def _readable(args: Mapping[str, object], names: Sequence[str]) -> bool:
+def readable(args: Mapping[str, object], names: Sequence[str]) -> bool:
     """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
     return all(name in args and not holds_object(args[name]) for name in names)

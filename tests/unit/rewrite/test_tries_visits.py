@@ -184,22 +184,29 @@ def test_a_solver_failure_on_a_later_visit_tries_no_other_visit() -> None:
         visit_on("1", {"s": {"__class__": "m::Order"}}),
         visit_on("1", {"s": "raises"}),
         visit_on("1", {"s": "met"}),
-        visit_on("1", {"s": "cannot run"}),
     ],
 )
 def test_a_visit_the_rewrite_cannot_run_on_is_passed_over(second: Visit) -> None:
     raised = ExecutionResult(frozenset(), (), failure=Failure(FailureKind.TARGET_RAISED, "x"))
-    rans: dict[object, ExecutionResult | str] = {
-        "raises": raised,
-        "met": met_by_its_input(),
-        "cannot run": "cannot fork",
-    }
+    rans: dict[object, ExecutionResult | str] = {"raises": raised, "met": met_by_its_input()}
     fake = Visits(answers=[Unsat(), Sat({"s": "1e-30"})], rans=rans)
 
     assert tried_on(fake, FIRST, second, THIRD) == Tried(True, True)
     assert asked_visits(fake) == [FIRST, THIRD]
     assert failed(fake) == []
     assert not any(isinstance(note, RewriteSkipped) for note in fake.notes)
+
+
+# llm-rewrite-visit-an-input-can-meet-passes-over-a-visit-it-cannot-run-on
+@pytest.mark.parametrize("reason", ["cannot fork", "cannot start a child: no memory"])
+def test_a_rewrite_pyct_cannot_run_on_a_later_visit_ends_the_tries_said(reason: str) -> None:
+    fake = Visits(answers=[Unsat(), Sat({"s": "1e-30"})], rans={"1": reason})
+
+    assert tried_on(fake, FIRST, SECOND, THIRD) == Tried(False, True, ended=reason)
+    assert RewriteSkipped(SITE, reason) in fake.notes
+    assert asked_visits(fake) == [FIRST]
+    assert failed(fake) == []
+    assert fake.asked == 1
 
 
 # llm-rewrite-visit-an-input-can-meet-ends-at-the-budget
