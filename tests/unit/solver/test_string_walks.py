@@ -91,9 +91,10 @@ def test_cvc5_answers_two_reads_far_apart_inside_a_second() -> None:
     assert isinstance(s, str) and s[0] == "a" and s[far] == "b"
 
 
-def cpu_seconds() -> float:
-    """The CPU seconds this process and its finished children have used: pyct writing a
-    program, and each cvc5 that answered it."""
+def _cpu_seconds() -> float:
+    """The CPU seconds of this process, and of every child it reaped: pyct writing a program,
+    and each cvc5 that answered it. A child an earlier test left, reaped meanwhile, counts too,
+    so the error can only make a solve look slower."""
     children = resource.getrusage(resource.RUSAGE_CHILDREN)
     return time.process_time() + children.ru_utime + children.ru_stime
 
@@ -106,17 +107,18 @@ def test_cvc5_answers_a_walk_then_a_read_far_past_it_inside_a_second(passes: int
     # a walk, then `s[far]`: the far read sits in the rest the walk's letters leave, so it adds
     # no letter and no second look at the whole string. The second is CPU time: a loaded machine
     # stretches the 0.5 s the 400-pass walk takes past a second of wall time, so the solve gets
-    # the 10 s limit its neighbors get, and pyct writes the same program under either limit
+    # the 10 s limit the walk tests above get, and pyct writes the same program under either.
+    # Under --cov and 30 busy loops beside four workers, the most it used was 0.83 s
     walked = flipped_path("ab" * (passes // 2), _walk(passes), PYTHON_HEADS)
     read = (
         _fork([">", ["len", "s"], far], taken=True),
         _fork(["==", ["[]", "s", far], "'b'"], taken=True),
     )
-    before = cpu_seconds()
+    before = _cpu_seconds()
 
     answer = solve((*walked, *read), {"s": str}, 10.0)
 
-    used = cpu_seconds() - before
+    used = _cpu_seconds() - before
     assert isinstance(answer, Sat), answer
     assert used < 1.0, used
     s = answer.model["s"]
