@@ -156,14 +156,15 @@ def test_code_compiled_with_the_pieces_switch_on_is_kept_apart(package: Path) ->
     assert plain.pieces is False
     with intercepting(plain):
         importlib.import_module("pkghook.helper")
-    before = sorted(path.name for path in kept.rglob("*") if path.is_file())
+    before = sorted(path.name for path in kept.glob("*/*") if path.is_file())
     for name in ("pkghook", "pkghook.helper"):
         del sys.modules[name]
     with intercepting(switched):
         importlib.import_module("pkghook.helper")
-    after = sorted(path.name for path in kept.rglob("*") if path.is_file())
+    after = sorted(path.name for path in kept.glob("*/*") if path.is_file())
 
-    # the package and the helper, each once with the switch off and once with it on
+    # the entries, in the version's folder: the package and the helper, each once with the
+    # switch off and once with it on
     assert len(before) == 2 and len(after) == 4
     assert set(before) < set(after)
 
