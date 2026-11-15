@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 from pyct.run.guard import STOP_GRACE
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
+from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
     is_running,
     pid_written_to,
@@ -66,10 +66,14 @@ def group_ended(group: int, within: float = 1.0) -> bool:
     return False
 
 
-# a SIGTERM ends the run, and the input's process with it, as a Ctrl-C does
+# a SIGTERM ends the run, and the input's process with it, as a Ctrl-C does. coverage.py stays
+# out of the run: pyct's handler can raise inside the tracer's callback and leave coverage's lock
+# held (tests/unit/deadline_fires.py), and pyct's process then waits on it until the guard kills
+# it, before it ends its input
 def test_a_sigterm_ends_the_run_and_its_input(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
-    with pyct_in_a_session(C_HANG, pid_file) as process:
+    env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", *COVERAGE_STARTUP)}
+    with pyct_in_a_session(C_HANG, pid_file, env=env) as process:
         child = pid_written_to(pid_file, process)
         sent = time.monotonic()
         os.kill(process.pid, signal.SIGTERM)
