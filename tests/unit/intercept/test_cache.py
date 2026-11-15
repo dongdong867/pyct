@@ -39,7 +39,8 @@ class Module:
 
 
 def entries(root: Path) -> list[Path]:
-    return [path for path in root.rglob("*") if path.is_file() and path.name != ".gitignore"]
+    """The entries under ``root``: each file in a version's folder."""
+    return [path for path in root.glob("substituted/*/*") if path.is_file()]
 
 
 @pytest.fixture

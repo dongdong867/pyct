@@ -20,6 +20,12 @@ time, so it never goes unseen. A folder or file that cannot be read or
 written is only a miss: the module is substituted again, and nothing is
 kept, which pyct says once as a warning.
 
+The version is a digest of pyct's own files that decide what an entry
+holds. Reading them costs more than a warm import of a small package, so
+the folder keeps the version beside those files' paths and stats, under the
+same rule: it is used while every stat is the one recorded, and kept only
+when every file had settled. Any other version is digested again.
+
 An entry is code that runs, so only this user's own entries are read, in a
 folder that is this user's alone: made with mode 0700, and never one that
 another user owns or may write to.
@@ -79,6 +85,12 @@ _HEAD = struct.Struct("<32s5q?")
 # how long after a file's last change its stat is trusted: FAT's two seconds, the coarsest clock
 _SETTLED_NS = 2_000_000_000
 
+# the file under the cache folder that keeps the transform's version: a digest of the paths and
+# stats of the files the version was made from, then the version, 16 hex digits
+_VERSION_FILE = os.path.join("substituted", "version")
+_VERSION = struct.Struct("<32s16s")
+_HEX = frozenset(b"0123456789abcdef")
+
 # a file's stat as an entry records it: when its content and its inode last changed, its size,
 # and which file it is
 type Stat = tuple[int, int, int, int, int]
@@ -131,8 +143,29 @@ def _entries(root: Path) -> str | None:
 
 
 def _version(root: Path) -> str:
-    """The transform's version: the digest of `_version_files`."""
-    return _digest(_version_files())
+    """The transform's version: the digest of `_version_files`, as kept under ``root``.
+
+    The kept one is used while every file has the stat it had when the
+    version was kept; any other is a digest made again, kept when every
+    file has settled.
+    """
+    files = _version_files()
+    stats = [_stat(file) for file in files]
+    key = hashlib.sha256(repr((files, stats)).encode()).digest()
+    held = _held(os.path.join(root, _VERSION_FILE))
+    if held is not None and len(held) == _VERSION.size:
+        recorded, version = _VERSION.unpack(held)
+        if recorded == key and set(version) <= _HEX:
+            return version.decode()
+    made = _digest(files)
+    if all(_long_settled(stat) for stat in stats):
+        _write(root, os.path.join(root, _VERSION_FILE), _VERSION.pack(key, made.encode()))
+    return made
+
+
+def _long_settled(stat: Stat | None) -> bool:
+    """Whether a file was last changed more than 2 s ago, so its stat is trusted."""
+    return stat is not None and time.time_ns() - stat[1] > _SETTLED_NS
 
 
 def _version_files() -> tuple[str, ...]:
@@ -154,8 +187,20 @@ def _digest(files: tuple[str, ...]) -> str:
     in order."""
     digest = hashlib.sha256()
     for file in files:
-        digest.update(Path(file).read_bytes())
+        digest.update(_whole(file))
     return digest.hexdigest()[:16]
+
+
+def _whole(file: str) -> bytes:
+    """A file's contents, read with the operating system's calls alone."""
+    handle = os.open(file, os.O_RDONLY)
+    try:
+        chunks: list[bytes] = []
+        while chunk := os.read(handle, 1 << 20):
+            chunks.append(chunk)
+        return b"".join(chunks)
+    finally:
+        os.close(handle)
 
 
 def _name(path: str, variant: str) -> str:
@@ -247,8 +292,7 @@ def _code(held: bytes) -> types.CodeType | None:
 def _head(digest: bytes, stat: Stat | None) -> bytes:
     """An entry's head: the source's digest, and its stat, trusted once the file has settled."""
     recorded = stat or (0, 0, 0, 0, 0)
-    trusted = stat is not None and time.time_ns() - stat[1] > _SETTLED_NS
-    return _HEAD.pack(digest, *recorded, trusted)
+    return _HEAD.pack(digest, *recorded, _long_settled(stat))
 
 
 def _write(root: Path, entry: str, data: bytes) -> None:
