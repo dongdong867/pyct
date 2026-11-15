@@ -30,7 +30,8 @@ also holds pyct's process-wide stop: raising ``Stopped`` for a SIGTERM, and
 the mark that refuses every input after it. When a watcher watches pyct's
 process, ``watched`` names the input's process on the watcher's page while
 pyct holds it (see ``watch_page``), so the watcher's guard can kill that
-process when it kills pyct's. ``Stopped`` itself lives in
+process when it kills pyct's, and ``name_group`` names a command's process
+group there the same way. ``Stopped`` itself lives in
 ``pyct.execution.stops``, so the deadline below can tell it from a raise of
 the target's own.
 """
@@ -74,14 +75,29 @@ KILL_GRACE = 0.5
 # whether this process was told to stop; once it was, no input starts
 _stop_asked = False
 
-# the page on which this process names the input's process it runs, when a watcher reads one
+# the page on which this process names the input's process it runs, and the group of a command
+# it runs, when a watcher reads one
 _page: WatchPage | None = None
 
 
-def name_inputs_on(page: WatchPage | None) -> None:
-    """Name each input's process on ``page`` from now on, or on no page for None."""
+def name_on(page: WatchPage | None) -> None:
+    """Name each input's process, and each group ``name_group`` names, on ``page`` from now on,
+    or on no page for None."""
     global _page
     _page = page
+
+
+def name_group(group: int) -> None:
+    """Name the process group ``group`` on the page, if there is one; zero names none.
+
+    ``group`` is the pid of a child of this process that leads a session of
+    its own, named from its start until a moment after it is reaped. When
+    the watcher's guard kills this process, it kills that group too while
+    this process has not yet reaped its leader (see ``guard``). The page
+    names one group at a time.
+    """
+    if _page is not None:
+        _page.name_group(group)
 
 
 def stop() -> NoReturn:
@@ -143,7 +159,7 @@ def watched(
     running. It then goes on, as KeyboardInterrupt for a Ctrl-C, once the
     process is ended and reaped.
 
-    The page, when there is one (see ``name_inputs_on``), names the process
+    The page, when there is one (see ``name_on``), names the process
     from the moment pyct holds its pid until a moment after the reap.
     """
     child: Child | None = None

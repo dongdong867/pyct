@@ -22,15 +22,23 @@ watching for the watcher's loss.
 pyct's process ends its input's process on its own way out, which a
 SIGKILL skips. So the guard also holds the watcher's page open, on which
 pyct's process names the input's process it runs (see ``watch_page``).
-In place of the bare SIGKILL, the guard sends pyct's process SIGSTOP,
-which keeps it from starting or reaping anything once the stop lands. It
-then sends SIGKILL to the pid the page names while that pid is still a
-child of the pyct process it has just sent SIGSTOP, as the system tells
-its parent, and then to pyct's process. A pid that is pyct's child is
-one pyct has not reaped, so it is still the input's own. So the input's
-process gets its SIGKILL before the watcher can reap pyct's process and
-end the guard. When the SIGSTOP finds pyct's process gone, the guard
-signals nothing more.
+Sweep ends the command it runs, the lister or an entry's ``pyct run``, on
+its own way out too, and that command leads a session of its own, so
+sweep names that command's process group on the page. In place of the
+bare SIGKILL, the guard sends pyct's process SIGSTOP, which keeps it from
+starting or reaping anything once the stop lands. It then sends SIGKILL
+to the pid the page names, while that pid is still a child of the pyct
+process it has just sent SIGSTOP, as the system tells its parent. Next it
+sends SIGKILL to the group the page names, while that group's leader is
+still such a child. Last it sends SIGKILL to pyct's process. A pid that
+is pyct's child is one pyct has not reaped, so it is still the input's
+own. A session's leader cannot leave its group, and a group's id is not
+handed out again while its leader is unreaped, so a group whose leader
+pyct has not reaped is still the command's own. So the guard kills the
+input's process, and the command's group while sweep has not yet reaped
+its leader, before the watcher can reap pyct's process and end the
+guard. When the SIGSTOP finds pyct's process gone, the guard signals
+nothing more.
 
 The guard signals pyct's process only while that pid names a process. The
 watcher reaps pyct's process, so that pid stays pyct's while the watcher
@@ -51,6 +59,7 @@ import os
 import sys
 
 from pyct.run.process import Child
+from pyct.run.watch_page import GROUP_AT, INPUT_AT
 
 # how long pyct's process has to end by its own handler once it is told to stop; target code
 # that catches BaseException, or runs one long call in C, makes the guard end it then
@@ -58,13 +67,15 @@ STOP_GRACE = 1.0
 # how often the guard looks whether pyct's process still runs while it waits out the grace
 LOOK_EVERY = 0.05
 
-# what the guard runs; its arguments are pyct's process's pid, the page's descriptor, STOP_GRACE
-# and LOOK_EVERY. The page starts with the input's pid, a C int in the machine's byte order, as
-# watch_page writes it. A process's parent comes from /proc on Linux and from ps elsewhere
+# what the guard runs; its arguments are pyct's process's pid, the page's descriptor, where the
+# page holds the input's pid and the group's id, each a C int in the machine's byte order, as
+# watch_page writes them, then STOP_GRACE and LOOK_EVERY. A process's parent comes from /proc on
+# Linux and from ps elsewhere
 _GUARD = """
 import os, signal, sys, time
 target, page = int(sys.argv[1]), int(sys.argv[2])
-grace, every = float(sys.argv[3]), float(sys.argv[4])
+input_at, group_at = int(sys.argv[3]), int(sys.argv[4])
+grace, every = float(sys.argv[5]), float(sys.argv[6])
 
 
 def send(pid, number):
@@ -75,9 +86,9 @@ def send(pid, number):
     return True
 
 
-def named():
+def named(at):
     try:
-        return int.from_bytes(os.pread(page, 4, 0), sys.byteorder, signed=True)
+        return int.from_bytes(os.pread(page, 4, at), sys.byteorder, signed=True)
     except OSError:
         return 0
 
@@ -98,9 +109,12 @@ def parent(pid):
 def end():
     if not send(target, signal.SIGSTOP):
         return
-    pid = named()
+    pid, group = named(input_at), named(group_at)
     if pid > 0 and parent(pid) == target:
         send(pid, signal.SIGKILL)
+    if group > 0 and parent(group) == target:
+        # a negative pid names the group with that id, as killpg does
+        send(-group, signal.SIGKILL)
     send(target, signal.SIGKILL)
 
 
@@ -126,7 +140,7 @@ def guard(lifeline: int, target: int, page: int) -> Child | None:
     argv = [
         sys.executable,
         *("-I", "-S", "-c", _GUARD),
-        *(str(target), str(page), str(STOP_GRACE), str(LOOK_EVERY)),
+        *(str(target), str(page), str(INPUT_AT), str(GROUP_AT), str(STOP_GRACE), str(LOOK_EVERY)),
     ]
     streams = [
         (os.POSIX_SPAWN_DUP2, lifeline, 0),
