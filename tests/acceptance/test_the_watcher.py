@@ -117,6 +117,9 @@ def test_a_sigterm_ends_the_input_of_a_pyct_process_held_past_the_grace(
     env = site_in(tmp_path / "site", thread=thread)
     with pyct_in_a_session(C_HANG, pid_file, env=env) as process:
         child = pid_written_to(pid_file, process)
+        # pyct's process names its input on the page right after the fork, which a loaded
+        # machine can delay past the input's own write
+        time.sleep(0.1)
         os.kill(parent_of(child), signal.SIGSTOP)
         sent = time.monotonic()
         os.kill(process.pid, signal.SIGTERM)
@@ -136,6 +139,9 @@ def test_a_sigkill_to_pyct_ends_the_input_of_a_pyct_process_held_past_the_grace(
     pid_file = tmp_path / "pid"
     with pyct_in_a_session(C_HANG, pid_file) as process:
         child = pid_written_to(pid_file, process)
+        # pyct's process names its input on the page right after the fork, which a loaded
+        # machine can delay past the input's own write
+        time.sleep(0.1)
         os.kill(parent_of(child), signal.SIGSTOP)
         os.kill(process.pid, signal.SIGKILL)
         process.wait(timeout=10)

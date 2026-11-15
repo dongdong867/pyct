@@ -54,12 +54,24 @@ def waiting() -> int:
     return pid
 
 
+@pytest.fixture
+def page() -> Generator[WatchPage]:
+    """A watcher's page, closed once the test ends."""
+    made = WatchPage.for_command_line([])
+    yield made
+    made.close()
+
+
 @contextlib.contextmanager
 def guarding(target: int, page: WatchPage | None = None) -> Generator[tuple[Child, int]]:
     """The guard of ``target``, reading ``page`` or a page of its own, and the lifeline's write
-    end; both are ended on the way out."""
+    end. On the way out the write end is closed, the guard ended and reaped, and a page of its
+    own closed."""
+    own = WatchPage.for_command_line([]) if page is None else None
+    read = page or own
+    assert read is not None
     lifeline, kept = os.pipe()
-    started = guard(lifeline, target, (page or WatchPage.for_command_line([])).fd)
+    started = guard(lifeline, target, read.fd)
     os.close(lifeline)
     try:
         assert started is not None
@@ -69,6 +81,8 @@ def guarding(target: int, page: WatchPage | None = None) -> Generator[tuple[Chil
             os.close(kept)
         if started is not None:
             started.end()
+        if own is not None:
+            own.close()
 
 
 def ended(pid: int) -> tuple[Waited, float]:
@@ -92,8 +106,9 @@ def test_a_sigterm_the_watcher_passed_on_ends_by_sigkill_after_the_grace() -> No
 # pyct's process held past the grace, as a lock or a slow host holds it: the guard ends the input
 # its page names too, whether the watcher passed a SIGTERM on or is gone
 @pytest.mark.parametrize("watcher_gone", [False, True], ids=["sigterm-passed-on", "watcher-gone"])
-def test_the_guard_ends_the_input_the_page_names_with_pyct_s_process(watcher_gone: bool) -> None:
-    page = WatchPage.for_command_line([])
+def test_the_guard_ends_the_input_the_page_names_with_pyct_s_process(
+    watcher_gone: bool, page: WatchPage
+) -> None:
     pid = stand_in(signal.SIG_IGN, page)
     named = page.input()
     assert named is not None
@@ -110,6 +125,23 @@ def test_the_guard_ends_the_input_the_page_names_with_pyct_s_process(watcher_gon
     finally:
         with contextlib.suppress(ProcessLookupError):
             os.kill(named, signal.SIGKILL)
+
+
+# a pid the page names that is not pyct's child, as one pyct reaped and the system handed out
+# again, or one the system reaped for a target that ignores SIGCHLD, gets no signal
+def test_the_guard_leaves_a_named_pid_that_is_not_pyct_s_child_alone(page: WatchPage) -> None:
+    sibling = waiting()
+    page.name_input(sibling)
+    pid = stand_in(signal.SIG_IGN)
+    try:
+        with guarding(pid, page) as (_, kept):
+            os.write(kept, b"!")
+            waited, _ = ended(pid)
+
+        assert waited.signal == signal.SIGKILL
+        assert os.waitpid(sibling, os.WNOHANG) == (0, 0)
+    finally:
+        Child(sibling).end()
 
 
 def test_the_watcher_gone_has_the_guard_send_the_sigterm_itself() -> None:
@@ -156,14 +188,16 @@ def test_the_guard_runs_in_a_process_group_of_its_own() -> None:
         assert os.getpgid(started.pid) != os.getpgrp()
 
 
-def test_a_guard_that_cannot_start_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_guard_that_cannot_start_is_none(
+    monkeypatch: pytest.MonkeyPatch, page: WatchPage
+) -> None:
     def refused(*args: object, **kwargs: object) -> int:
         raise BlockingIOError(35, "Resource temporarily unavailable")
 
     monkeypatch.setattr(os, "posix_spawn", refused)
     lifeline, kept = os.pipe()
     try:
-        assert guard(lifeline, os.getpid(), WatchPage.for_command_line([]).fd) is None
+        assert guard(lifeline, os.getpid(), page.fd) is None
     finally:
         os.close(lifeline)
         os.close(kept)

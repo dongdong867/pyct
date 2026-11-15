@@ -1,6 +1,6 @@
 """pyct's process names the input's process it runs on the watcher's page, for the guard."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 
 import pytest
 
@@ -11,12 +11,14 @@ from tests.unit.run.test_process import sleeper
 
 
 @pytest.fixture
-def page(monkeypatch: pytest.MonkeyPatch) -> WatchPage:
-    """A page pyct's process names its inputs on, and none again after the test."""
+def page(monkeypatch: pytest.MonkeyPatch) -> Generator[WatchPage]:
+    """A page pyct's process names its inputs on, then none again, and closed, after the test."""
     monkeypatch.setattr(process, "_page", None)
     named = WatchPage.for_command_line([])
     process.name_inputs_on(named)
-    return named
+    yield named
+    process.name_inputs_on(None)
+    named.close()
 
 
 def reading(page: WatchPage, seen: list[int | None]) -> Callable[[], bool]:

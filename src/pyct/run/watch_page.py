@@ -16,9 +16,10 @@ import struct
 import tempfile
 from collections.abc import Generator, Sequence
 
-# the page starts with the pid of the input's process it names, zero when it names none, as a
-# 32-bit signed integer, little-endian, the way the guard reads it
-_INPUT = struct.Struct("<i")
+# the page starts with the pid of the input's process it names, zero when it names none, as a C
+# int in the machine's byte order, the way the guard reads it. The page's start is aligned, so
+# the pid is written in one store, and a reader never sees half of one
+_INPUT = struct.Struct("=i")
 # then the length of the module name it holds, zero when it names none, then the name
 _LENGTH = struct.Struct("<I")
 _NAME_AT = _INPUT.size + _LENGTH.size
@@ -65,12 +66,18 @@ class WatchPage:
 
     def name_input(self, pid: int) -> None:
         """Name the input's process ``pid`` on the page; zero names none."""
-        _INPUT.pack_into(self._page, 0, pid)
+        with memoryview(self._page) as page, page[: _INPUT.size].cast("i") as word:
+            word[0] = pid
 
     def input(self) -> int | None:
         """The pid of the input's process the page names, or None."""
-        (pid,) = _INPUT.unpack_from(self._page)
-        return pid or None
+        with memoryview(self._page) as page, page[: _INPUT.size].cast("i") as word:
+            return word[0] or None
+
+    def close(self) -> None:
+        """Unmap the page and close its file, in this process."""
+        self._page.close()
+        os.close(self.fd)
 
     def _write(self, name: bytes) -> None:
         self._page[_NAME_AT : _NAME_AT + len(name)] = name

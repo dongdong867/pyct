@@ -246,9 +246,12 @@ def _watch(
     """Wait for the command's process to end, then end as it did or say which import ended it.
 
     Once the command's process is gone, this process ends and reaps the
-    guard, then closes its end of the lifeline. A guard that has waited out
-    its grace in the moment between the reap and its own end sends its
-    SIGKILL to a pid no process holds yet.
+    guard, then closes its end of the lifeline. Past its grace the guard
+    stops the command's process with SIGSTOP, kills the input's process the
+    page names, then kills the command's process (see ``guard``). A guard
+    that has waited out its grace in the moment between the reap and its
+    own end finds the pid free, since no process holds it yet, and signals
+    nothing.
     """
     signaled: list[int] = []
     try:

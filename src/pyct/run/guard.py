@@ -24,12 +24,12 @@ SIGKILL skips. So the guard also holds the watcher's page open, on which
 pyct's process names the input's process it runs (see ``watch_page``).
 In place of the bare SIGKILL, the guard stops pyct's process with
 SIGSTOP, so that process starts and reaps nothing more, then sends
-SIGKILL to the input's process the page names, then to pyct's process.
-So the input's process gets its SIGKILL before the watcher can reap
-pyct's process and end the guard. The input's process is pyct's unreaped
-child then, so its pid is still its own, except in the moment between
-pyct's reap of it and the page's update, when the pid is free. An input's
-process started in the moment before the page names it runs on.
+SIGKILL to the pid the page names while that pid is still a child of the
+stopped pyct process, as the system tells its parent, then to pyct's
+process. A pid that is pyct's child is one pyct has not reaped, so it is
+still the input's own. So the input's process gets its SIGKILL before the
+watcher can reap pyct's process and end the guard. When the SIGSTOP
+finds pyct's process gone, the guard signals nothing more.
 
 The guard signals pyct's process only while that pid names a process. The
 watcher reaps pyct's process, so that pid stays pyct's while the watcher
@@ -58,7 +58,8 @@ STOP_GRACE = 1.0
 LOOK_EVERY = 0.05
 
 # what the guard runs; its arguments are pyct's process's pid, the page's descriptor, STOP_GRACE
-# and LOOK_EVERY. The page starts with the input's pid, as watch_page writes it
+# and LOOK_EVERY. The page starts with the input's pid, a C int in the machine's byte order, as
+# watch_page writes it. A process's parent comes from /proc on Linux and from ps elsewhere
 _GUARD = """
 import os, signal, sys, time
 target, page = int(sys.argv[1]), int(sys.argv[2])
@@ -75,15 +76,29 @@ def send(pid, number):
 
 def named():
     try:
-        return int.from_bytes(os.pread(page, 4, 0), "little", signed=True)
+        return int.from_bytes(os.pread(page, 4, 0), sys.byteorder, signed=True)
     except OSError:
         return 0
 
 
+def parent(pid):
+    try:
+        if sys.platform == "linux":
+            with open(f"/proc/{pid}/stat") as stat:
+                return int(stat.read().rpartition(")")[2].split()[1])
+        import subprocess
+
+        told = subprocess.run(["/bin/ps", "-o", "ppid=", "-p", str(pid)], capture_output=True)
+        return int(told.stdout)
+    except (OSError, ValueError, IndexError):
+        return 0
+
+
 def end():
-    send(target, signal.SIGSTOP)
+    if not send(target, signal.SIGSTOP):
+        return
     pid = named()
-    if pid > 0:
+    if pid > 0 and parent(pid) == target:
         send(pid, signal.SIGKILL)
     send(target, signal.SIGKILL)
 
