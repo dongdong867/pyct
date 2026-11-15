@@ -89,12 +89,14 @@ class Tried:
     """How one condition's tries at a moment ended: whether a rewrite took the wanted side,
     whether the model was asked, and, when the tries ended early, the ask that got no answer
     or why no try could go on. With neither, and nothing taken, the condition is given up at
-    this moment, one with no parameter a rewrite may read included."""
+    this moment, one with no parameter a rewrite may read included. ``spent`` says the last
+    reply left no token under the limit."""
 
     took: bool
     asked: bool
     unanswered: Unanswered | None = None
     ended: str | None = None
+    spent: bool = False
 
 
 @dataclass(frozen=True)
@@ -139,23 +141,24 @@ class Asking:
     def _tries(self, around: Around) -> Tried:
         """The asks, each carrying the earlier tries."""
         earlier: list[EarlierTry] = []
-        asked = False
+        asked = spent = False
         while len(earlier) < ASKS and around.going():
             answer = self._ask(tuple(earlier), around)
             if isinstance(answer, _Ended):
-                return Tried(False, asked, ended=answer.reason)
+                return Tried(False, asked, ended=answer.reason, spent=spent)
             asked = True
             if isinstance(answer, Unanswered):
                 return Tried(False, asked, unanswered=answer)
+            spent = answer.cost.tokens_left == 0
             outcome = self._try(answer, around)
             if outcome is None:
-                return Tried(True, asked)
+                return Tried(True, asked, spent=spent)
             if isinstance(outcome, _Ended):
-                return Tried(False, asked, ended=outcome.reason)
+                return Tried(False, asked, ended=outcome.reason, spent=spent)
             site = self.given.condition.site
             around.note(RewriteFailed(site, answer.cost.attempt, outcome.reason))
             earlier.append(outcome)
-        return Tried(False, asked)
+        return Tried(False, asked, spent=spent)
 
     def _ask(
         self, earlier: tuple[EarlierTry, ...], around: Around
@@ -165,8 +168,9 @@ class Asking:
         if blocked is not None:
             around.note(RewriteSkipped(self.given.condition.site, blocked))
             return _Ended(blocked)
+        request = request_for(self.given, self.about, earlier, self.objects)
         started = time.monotonic()
-        answer = self.provider.rewrite(request_for(self.given, self.about, earlier, self.objects))
+        answer = self.provider.rewrite(request)
         around.pause(time.monotonic() - started)
         return answer
 

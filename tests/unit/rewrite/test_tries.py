@@ -4,6 +4,7 @@ budget or an input that met the run's stop, and fail with a reason for each othe
 import types
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
@@ -64,6 +65,8 @@ class Fake:
     asks: list[tuple[object, ...]] = field(default_factory=list)
     notes: list[RewriteNote] = field(default_factory=list)
     asked: int = 0
+    # the tokens each reply leaves under the limit, None when unknown
+    left: int | None = None
     requests: list[RewriteRequest] = field(default_factory=list)
     # the arguments each rewrite's run was handed
     handed: list[Mapping[str, object]] = field(default_factory=list)
@@ -73,7 +76,7 @@ class Fake:
         self.requests.append(request)
         if isinstance(self.reply, Unanswered):
             return self.reply
-        return RewriteReply(self.reply, AskCost(self.asked))
+        return RewriteReply(self.reply, AskCost(self.asked, tokens_left=self.left))
 
     def going(self) -> bool:
         return self.goes.pop(0)
@@ -121,11 +124,47 @@ def test_an_input_that_takes_the_side_ends_the_tries_with_the_rewrite_kept() -> 
     assert fake.asked == 1
 
 
+def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = [0.0]
+    monkeypatch.setattr(tries, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
+    built = tries.request_for
+
+    def building(*args: Any) -> RewriteRequest:
+        now[0] += 10.0
+        return built(*args)
+
+    @dataclass
+    class Waits(Fake):
+        paused: list[float] = field(default_factory=list)
+
+        def rewrite(self, request: RewriteRequest) -> RewriteReply | Unanswered:
+            now[0] += 3.0
+            return super().rewrite(request)
+
+        def pause(self, seconds: float) -> None:
+            self.paused.append(seconds)
+
+    monkeypatch.setattr(tries, "request_for", building)
+    fake = Waits(reply=Unanswered(Why.TIMED_OUT, "timed out", AskCost(1)))
+
+    tried(fake)
+
+    assert fake.paused == [3.0]
+
+
 def test_an_ask_with_no_answer_ends_the_tries() -> None:
     skipped = Unanswered(Why.TIMED_OUT, "timed out", AskCost(1))
     fake = Fake(reply=skipped)
 
     assert tried(fake) == Tried(False, True, unanswered=skipped)
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_the_tries_say_when_the_last_reply_left_no_token() -> None:
+    assert tried(Fake(left=0)) == Tried(True, True, spent=True)
+    assert tried(Fake(left=5)).spent is False
+    # a provider that does not say what is left leaves the limit unreached
+    assert tried(Fake()).spent is False
 
 
 def test_no_try_starts_once_the_run_stops_going() -> None:

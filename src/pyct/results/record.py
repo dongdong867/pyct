@@ -13,6 +13,7 @@ from pyct.core.foundation.branch import Branch, Fact, ForkSite, PieceRun, Site
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
+from pyct.results.llm_asks import LoopSummary
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
 
 # how long past a run's deadline pyct goes on working out why lines were missed
@@ -207,6 +208,7 @@ class RunResult:
     when it stopped, or picked and then left by the stop.
     ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
     ``goal`` is what the run was for.
+    ``summaries`` is each loop the summaries tool sent an ask for, in code order.
     """
 
     entry: str
@@ -218,6 +220,7 @@ class RunResult:
     untried: Mapping[ForkSite, int] = field(default_factory=dict)
     deadline: float | None = None
     goal: Goal = Goal.COVERAGE
+    summaries: tuple[LoopSummary, ...] = ()
 
     @property
     def inputs(self) -> int:

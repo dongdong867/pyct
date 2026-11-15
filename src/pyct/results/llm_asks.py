@@ -35,7 +35,8 @@ class AskCost:
 
     A replayed reply's tokens are the ones its recording holds until the connection hands the
     reply to its tool, which then reads 0: a replay spends no tokens. The connection fills
-    ``tokens_left`` as it hands the answer on.
+    ``tokens_left`` as it hands the answer on; None says it is not known, as from a provider
+    built outside the connection, and a tool stops asking only on a known 0.
     """
 
     attempt: int
@@ -43,7 +44,7 @@ class AskCost:
     tokens_out: int = 0
     seconds: float = 0.0
     replayed: bool = False
-    tokens_left: int = 0
+    tokens_left: int | None = None
 
 
 @dataclass(frozen=True)
@@ -82,3 +83,35 @@ class LlmUse:
     tokens_in: int = 0
     tokens_out: int = 0
     seconds: float = 0.0
+
+
+class SummaryState(StrEnum):
+    """What came of the last ask summaries sent about a loop.
+
+    ``CHECKED``: its formula passed the checks. ``FAILED``: its formula failed a check, or the
+    reply held no code block. ``UNANSWERED``: the ask got no answer. ``UNCHECKED``: pyct could
+    not check its formula, since no child could run it or the run's deadline ended the check.
+    """
+
+    CHECKED = "checked"
+    FAILED = "failed"
+    UNANSWERED = "unanswered"
+    UNCHECKED = "unchecked"
+
+
+@dataclass(frozen=True)
+class LoopSummary:
+    """One loop summaries sent an ask for, as the summary line's ``llm.summaries`` lists it: the
+    file and the line and column the loop starts at, the names it changes, the last formula a
+    reply held, None when no reply held one, what came of its last ask sent, the connection's
+    last try number at its place, and the past runs its formula was checked on, None unless its
+    state is ``CHECKED``."""
+
+    file: str
+    line: int
+    col: int
+    changes: tuple[str, ...]
+    formula: str | None
+    state: SummaryState
+    tries: int
+    checked_on: int | None = None

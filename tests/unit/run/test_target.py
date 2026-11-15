@@ -423,6 +423,17 @@ def test_the_interception_of_a_spec_substitutes_its_module_s_package_into_the_ca
     assert current() is None
 
 
+def test_the_interception_of_a_spec_records_the_pieces_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
+
+    with interception("shop.cart::total", pieces=True):
+        held = current()
+
+    assert held == Interception(module="shop.cart", cache=tmp_path, pieces=True)
+
+
 @pytest.mark.parametrize("alone", [True, False])
 def test_an_execution_context_calls_the_target_as_its_signature_says(alone: bool) -> None:
     target = load_target("targets.sweep.defaults::g")
