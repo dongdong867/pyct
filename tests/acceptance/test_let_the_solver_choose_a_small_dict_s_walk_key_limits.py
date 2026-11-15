@@ -162,24 +162,20 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
         assert line in covered(lines, WF)
 
 
-# a run's seconds where 5 are too few on a loaded machine: max-of-the-keys covers line 188 only
-# once the dict holds a key above 100, one more key an input, about 2.5 s on a quiet machine.
-# The run stops once every line and branch is covered, so a quiet run leaves the rest unused
-ESCAPE_BUDGETS = {"most": "20"}
-
-
 # let-the-solver-choose-a-small-dict-s-walk-key-keeps-v2-s-answers-past-an-escape
 @pytest.mark.parametrize(
-    ("function", "seed", "v2_covers"),
+    ("function", "seed", "v2_covers", "budget"),
     [
-        ("hashed_after", '{"d": {"a": 0, "b": 0}}', {193, 194, 196, 197}),
-        ("seen_first", '{"d": {"a": 9}}', {201, 202, 203, 204, 206}),
-        ("keyed_set", '{"d": {"a": 1}}', {172, 173, 174, 175}),
-        ("copied_out", '{"d": {"a": 9}}', {143, 144, 145, 146}),
-        ("in_names", '{"d": {"x": 1}, "names": ["a"]}', {157, 158, 159, 160}),
-        ("most", '{"d": {"1": 0}}', {186, 187, 188, 189}),
-        ("pickled_key", '{"d": {"a": 0}}', {210, 212, 213, 215, 217}),
-        ("hex_key", '{"d": {"a": 0}}', {221, 222, 223, 224, 225, 226, 228}),
+        ("hashed_after", '{"d": {"a": 0, "b": 0}}', {193, 194, 196, 197}, "5"),
+        ("seen_first", '{"d": {"a": 9}}', {201, 202, 203, 204, 206}, "5"),
+        ("keyed_set", '{"d": {"a": 1}}', {172, 173, 174, 175}, "5"),
+        ("copied_out", '{"d": {"a": 9}}', {143, 144, 145, 146}, "5"),
+        ("in_names", '{"d": {"x": 1}, "names": ["a"]}', {157, 158, 159, 160}, "5"),
+        # line 188 needs a key above 100, one more key an input: about 2.5 s on a quiet machine,
+        # past 5 on a loaded one. The run stops once every line and branch is covered
+        ("most", '{"d": {"1": 0}}', {186, 187, 188, 189}, "20"),
+        ("pickled_key", '{"d": {"a": 0}}', {210, 212, 213, 215, 217}, "5"),
+        ("hex_key", '{"d": {"a": 0}}', {221, 222, 223, 224, 225, 226, 228}, "5"),
     ],
     ids=[
         "a-hash-after-a-compare",
@@ -192,9 +188,11 @@ ESCAPE_BUDGETS = {"most": "20"}
         "a-hex-int",
     ],
 )
-def test_keeps_v2_s_answers_past_an_escape(function: str, seed: str, v2_covers: set[int]) -> None:
+def test_keeps_v2_s_answers_past_an_escape(
+    function: str, seed: str, v2_covers: set[int], budget: str
+) -> None:
     # v2's lines for each target are the ones its run at the base covers from the same seed
-    result = run_pyct(f"{W}::{function}", seed, "--budget", ESCAPE_BUDGETS.get(function, "5"))
+    result = run_pyct(f"{W}::{function}", seed, "--budget", budget)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
