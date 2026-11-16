@@ -46,6 +46,34 @@ def test_a_run_open_in_an_outer_frame_does_not_call_a_formula_an_inner_frame_dro
     assert (type(t), t) == (int, 2)
 
 
+RECURSIVE_ASSIGNMENT = """\
+def f(s, depth):
+    t = sum(1 for c in s if c == "z" and (not depth or f(s, 0) >= 0))
+    return t
+"""
+
+
+def test_an_assignment_open_in_an_outer_frame_does_not_call_a_dropped_formula() -> None:
+    calls: list[Mapping[str, object]] = []
+
+    def wrong_at_first(values: Mapping[str, object]) -> Mapping[str, object]:
+        calls.append(values)
+        s = values["s"]
+        assert isinstance(s, str)
+        return {"t": 99} if len(calls) == 1 else {"t": s.count("z")}
+
+    f = hooked(RECURSIVE_ASSIGNMENT)
+
+    # the piece is the generator, at its parenthesis
+    with using({(2, 11): LoopInUse(("s",), ("t",), wrong_at_first)}) as sink:
+        t = f(tracked("zz", "s", sink), 1)
+
+    # the first inner call drops it; the outer run's end stores the loop's own value
+    assert len(calls) == 1
+    assert len(drops(sink)) == 1
+    assert (type(t), t) == (int, 2)
+
+
 CHANGED = """\
 def f(s, n):
     t = 0
