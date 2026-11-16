@@ -18,16 +18,18 @@ call a cause names gets no ask.
 A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
 A formula that fails a check is a failed try, said with its reason and kept
-for the loop's later asks; one that passes both is kept for its loop as
-checked, and that loop is not asked about again. A check whose child could
-not start, or that the run's deadline ended, is no try: the loop is skipped
-at this moment, and said. No input runs and nothing is rebound.
+for the loop's later asks; one that passes both is kept for its loop, and
+that loop is not asked about again. It comes into use from the next input
+on, for the rest of the run, when it can (``pyct.run.loops_in_use``); else
+it is kept as checked. A check whose child could not start, or that the
+run's deadline ended, is no try: the loop is skipped at this moment, and
+said. No input runs.
 
 The summary line lists each loop an ask was sent for with what came of its
-last ask sent (``SummaryState``): its formula checked; failed, by a check or
-a reply with no code block; unanswered; or unchecked, when the check could not
-run or the deadline ended it. An ask the token limit refused sent nothing and
-leaves that as it was.
+last ask sent (``SummaryState``): its formula in use, or checked and not
+used; failed, by a check or a reply with no code block; unanswered; or
+unchecked, when the check could not run or the deadline ended it. An ask the
+token limit refused sent nothing and leaves that as it was.
 
 ``SummaryProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.summaries``.
 Decision llm-summary-provider-declared-in-run.
@@ -35,10 +37,10 @@ Decision llm-summary-provider-declared-in-run.
 
 from __future__ import annotations
 
-import ast
 import enum
 import time
-from collections.abc import Sequence
+import types
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -47,9 +49,10 @@ from pyct.core.foundation.branch import PieceRun, Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
-from pyct.results.pieces import FUNCTIONS, Piece, pieces
+from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
+from pyct.run.loops_in_use import FormulaInUse, LoopsInUse, statement_at, unused_because
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import (
     AskSkipped,
@@ -176,12 +179,16 @@ class Summaries:
         target: Target,
         told: Told,
         limit: TokenLimit | None = None,
+        isolated: Callable[[], bool] = lambda: False,
     ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
+        # whether the run's inputs run in a process of their own: none do, unless the run says
+        self.isolated = isolated
         self.loops: dict[Site, LoopState] = {}
+        self.in_use = LoopsInUse()
         # each loop skipped with no ask, with each reason it was skipped for, already said this run
         self.said_skips: set[tuple[Site, str]] = set()
 
@@ -263,9 +270,23 @@ class Summaries:
             return Asked.NOT_ASKED
         if failed is not None:
             return self._failed(state, site, failed)
-        state.checked_on, state.last = len(loop.runs), SummaryState.CHECKED
+        state.checked_on = len(loop.runs)
+        state.last = self._used(loop, reply.code, file, formula.code)
         self.told.note(SummaryChecked(site, len(loop.runs)))
         return Asked.CHECKED
+
+    def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
+        """A formula that passed both checks, from its text, its code objects' file name and its
+        code: in use when it can be, else kept as checked."""
+        changed = loop.piece.changed
+        if unused_because(loop.site, loop.runs, changed, self.isolated()) is not None:
+            return SummaryState.CHECKED
+        self.in_use.use(FormulaInUse(text, loop.parameters, changed, loop.site, file, code))
+        return SummaryState.IN_USE
+
+    def close(self) -> None:
+        """The run ends: no loop of its is in use any more."""
+        self.in_use.close()
 
     def _failed(self, state: LoopState, site: Site, reason: str) -> Asked:
         """A failed try, said and kept for the loop's later asks."""
@@ -373,17 +394,8 @@ def _shown(run: PieceRun, loop: AskedLoop) -> ShownRun:
 def piece_at(site: Site) -> Piece | None:
     """The piece of a function in ``site``'s file at its line and column, as the file reads now;
     None when it does not read or parse, or holds none there."""
-    try:
-        with open(site.file, encoding="utf-8") as opened:
-            tree = ast.parse(opened.read(), filename=site.file)
-    except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
-        return None
-    for node in ast.walk(tree):
-        if isinstance(node, FUNCTIONS):
-            for _, piece in pieces(node):
-                if (piece.line, piece.col) == (site.line, site.col):
-                    return piece
-    return None
+    found = statement_at(site)
+    return None if found is None else found[1]
 
 
 def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:

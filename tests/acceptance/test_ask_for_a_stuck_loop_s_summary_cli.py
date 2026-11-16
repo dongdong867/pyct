@@ -91,7 +91,7 @@ def test_the_recording_summaries_switches_on_changes_no_input(tmp_path: Path) ->
 
 
 # llm-summary-for-a-stuck-loop-state-in-the-summary-line
-def test_the_summary_line_lists_a_checked_loop_with_its_formula(stub: Stub, tmp_path: Path) -> None:
+def test_the_summary_line_lists_a_loop_in_use_with_its_formula(stub: Stub, tmp_path: Path) -> None:
     stub.reply = COUNT
 
     result = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", *PLATEAU, target=COUNTS)
@@ -99,7 +99,8 @@ def test_the_summary_line_lists_a_checked_loop_with_its_formula(stub: Stub, tmp_
     assert result.returncode == 0, result.stderr
     [checked] = [line for line in llm_lines(result.stderr) if "checked on" in line]
     runs = int(checked.split("checked on ")[1].split()[0])
-    assert summaries_of(result.stdout) == [loop_item(FORMULA, "checked", runs)]
+    # a formula in use since track-a-value-through-a-loop-summary, which amended this criterion
+    assert summaries_of(result.stdout) == [loop_item(FORMULA, "in use", runs)]
     # the file as the coverage map names it
     covered = summary_line(result.stdout)["covered"]
     assert isinstance(covered, dict) and F in covered

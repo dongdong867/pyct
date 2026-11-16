@@ -28,6 +28,7 @@ import types
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 
+from pyct.core.entry.in_use import IN_USE
 from pyct.core.entry.plain_json import plain_json
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.wrap import bound_builtins
@@ -113,7 +114,9 @@ def can_fork() -> bool:
 def _serve(
     call: ModelCall, until: float, answers: mmap.mmap, watch: JournalWriter
 ) -> Failure | None:
-    """In the child: call the function under the time limit, then write its answer."""
+    """In the child: call the function under the time limit, then write its answer. The child
+    meets no loop in use: its call is no input's."""
+    IN_USE.clear()
     returned: list[object] = []
     context = ExecutionContext(fn=_calling(call, returned), file=call.code.co_filename, alone=True)
     failure = execute(context, call.args, until, watch=watch).failure

@@ -119,7 +119,8 @@ def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[
 def test_no_moment_comes_once_the_first_moment_s_ask_reached_the_token_limit(
     causes: list[int],
 ) -> None:
-    provider = FakeSummaries([COUNT], limit=sum(TOKENS))
+    # a formula that fails its check, so that none comes into use
+    provider = FakeSummaries([code_reply(LENGTH)], limit=sum(TOKENS))
 
     done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS)
 

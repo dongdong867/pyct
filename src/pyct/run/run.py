@@ -16,7 +16,7 @@ from pyct.run.defaults import with_defaults
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Inputs
 from pyct.run.llm_seeds import SeedProvider, ask_seeds
-from pyct.run.loop import Loop, Start
+from pyct.run.loop import Loop, Looped, Start
 from pyct.run.rewrites import Rewrites
 from pyct.run.setup import Setup
 from pyct.run.stuck import Stuck, StuckTool
@@ -98,9 +98,9 @@ def run(
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
     limit = TokenLimit()
     starts, bounds = _starts(target, seeds, heard_seeds(setup.helpers.seeds, limit), bounds, told)
-    summaries, rewrites = _tools(setup.helpers, target, told, limit)
+    summaries, rewrites = _tools(setup.helpers, target, told, limit, inputs)
     loop = _loop(inputs, bounds, told, summaries, rewrites)
-    looped = loop.go(starts)
+    looped = _went(loop, starts, summaries)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -118,15 +118,27 @@ def run(
     )
 
 
+def _went(loop: Loop, starts: Sequence[Start], summaries: Summaries | None) -> Looped:
+    """The run's loop gone through from its starts; as it ends, however it ends, no loop of the
+    run is in use any more."""
+    try:
+        return loop.go(starts)
+    finally:
+        if summaries is not None:
+            summaries.close()
+
+
 def _tools(
-    helpers: Helpers, target: Target, told: Told, limit: TokenLimit
+    helpers: Helpers, target: Target, told: Told, limit: TokenLimit, inputs: Inputs
 ) -> tuple[Summaries | None, Rewrites | None]:
     """The LLM tools that take missed lines, each that is switched on, sharing the run's token
-    limit."""
+    limit; summaries learn from ``inputs`` whether each input runs in a process of its own."""
     summaries = helpers.summaries
     rewrites = helpers.rewrites
     return (
-        None if summaries is None else Summaries(summaries, target, told, limit),
+        None
+        if summaries is None
+        else Summaries(summaries, target, told, limit, lambda: inputs.isolated),
         None if rewrites is None else Rewrites(rewrites, target, told, limit),
     )
 

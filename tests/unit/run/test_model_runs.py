@@ -10,6 +10,8 @@ import types
 
 import pytest
 
+from pyct.core.entry import in_use
+from pyct.core.entry.in_use import LoopInUse
 from pyct.core.foundation.branch import Changed
 from pyct.intercept.compiled import substituted_code
 from pyct.intercept.model_code import compile_model_code
@@ -159,3 +161,14 @@ def test_a_recorded_run_of_a_piece_in_the_child_s_journal_passes_through() -> No
     assert isinstance(done, ModelRun)
     assert done.answer == "2"
     assert [run.changed for run in done.result.pieces] == [(Changed("i", "2"),)]
+
+
+def test_a_child_meets_no_loop_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    loop = LoopInUse(("s",), ("t",), lambda values: values)
+    monkeypatch.setitem(in_use.IN_USE, (FILE, 2, 4), loop)
+
+    done = ran("def f():\n    return in_use()\n", {}, in_use=lambda: len(in_use.IN_USE))
+
+    assert done.answer == "0"
+    # the table in pyct's process is as it was
+    assert in_use.IN_USE[(FILE, 2, 4)] is loop
