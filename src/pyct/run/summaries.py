@@ -30,9 +30,11 @@ runs.
 The tool hears each input the run keeps. A loop in use that an input's
 record says was dropped goes out of use from the next input on, and its
 drop is said with the input's number and why. The loop is asked about
-again at a later moment while a line it was asked for is still missed,
-whether or not an entry names it, its dropped formula among the earlier
-tries with why, and the run it failed on first among the runs shown. Once
+again at each later moment while a line it was asked for is still missed
+and no formula of its is in use or checked since, whether or not an entry
+names it and whatever came of an ask since, its dropped formula among the
+earlier tries with why, and the run it failed on first among the runs
+shown. Once
 the run's inputs run in pyct's own process, each loop in use goes out of use
 and is kept as checked, said once for each loop.
 
@@ -90,6 +92,8 @@ from pyct.run.token_limit import TokenLimit
 # why a loop is not asked about: no run of it holds every name it changes; or, as
 # ``CANNOT_FORK`` says, no formula could run beside a second thread of pyct's process
 NO_RECORDED_RUN = "no recorded run"
+# the states of a loop whose formula is kept: no ask is sent for it
+_KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
 
 
 @dataclass(frozen=True)
@@ -149,9 +153,9 @@ class LoopState:
     """One loop an ask was sent for, across the run: the names it changes, the connection's last
     try number, the earlier tries that failed or were dropped, the last formula the model gave,
     the runs a formula was checked on once one is checked, what came of the last ask sent for
-    it, unanswered until its answer is read, the run its last formula was dropped on, and the
-    lines it was asked for. An ask the token limit refused sent nothing and changes none of
-    these."""
+    it, unanswered until its answer is read, the run its last formula was dropped on, whether a
+    formula of its was ever dropped, and the lines it was asked for. An ask the token limit
+    refused sent nothing and changes none of these."""
 
     changes: tuple[str, ...]
     attempts: int = 0
@@ -160,6 +164,7 @@ class LoopState:
     checked_on: int | None = None
     last: SummaryState = SummaryState.UNANSWERED
     failed_on: CompleteRun | None = None
+    dropped: bool = False
     # the missed lines, by file, of the entries that named the loop at its asks: what the loop's
     # asks were for, not what came of them, so two states compare without them
     asked_for: set[tuple[str, int]] = field(default_factory=set, compare=False)
@@ -219,18 +224,18 @@ class Summaries:
         return Handled(tuple(_outcome(entry, came) for entry in entries), asked)
 
     def waiting(self, moment: Moment) -> bool:
-        """Whether a loop whose formula was dropped waits on this moment: a line it was asked for
-        is still missed."""
+        """Whether a loop whose formula was dropped waits on this moment: no formula of its is in
+        use or checked since, and a line it was asked for is still missed."""
         return bool(self._dropped_for(moment))
 
     def _dropped_for(self, moment: Moment) -> list[Site]:
-        """Each loop whose formula was dropped that a line it was asked for, still missed at the
-        moment, waits on."""
+        """Each loop whose formula was dropped, with no formula of its in use or checked since,
+        that a line it was asked for, still missed at the moment, waits on."""
         missed = {(entry.file, line) for entry in moment.causes for line in entry.lines}
         return [
             site
             for site, state in self.loops.items()
-            if state.last is SummaryState.DROPPED and state.asked_for & missed
+            if state.dropped and state.last not in _KEPT and state.asked_for & missed
         ]
 
     def _asked_for(self, site: Site, entries: tuple[WhyEntry, ...]) -> None:
@@ -246,7 +251,7 @@ class Summaries:
     def _turn(self, site: Site, run: Running) -> tuple[Asked, bool]:
         """One loop's turn at this moment, and whether the model was asked."""
         state = self.loops.get(site)
-        if state is not None and state.last in (SummaryState.IN_USE, SummaryState.CHECKED):
+        if state is not None and state.last in _KEPT:
             return Asked.CHECKED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
@@ -342,6 +347,7 @@ class Summaries:
         self.in_use.stop(site)
         state = self.loops[site]
         state.last = SummaryState.DROPPED
+        state.dropped = True
         reason = dropped_because(drop)
         state.tries.append(
             EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")

@@ -1,6 +1,7 @@
 """A loop whose formula was dropped is asked about again when a later moment's entry names it: the
 request holds the dropped formula among the earlier tries with why it was dropped, and the run it
-failed on first among its runs, which the past-run check now also sees."""
+failed on first among its runs, which the past-run check now also sees. It keeps waiting, moment
+after moment, until a formula of its is in use or checked."""
 
 from collections.abc import Mapping
 from dataclasses import replace
@@ -12,7 +13,7 @@ from pyct.core.foundation.branch import Changed, DropReason, FormulaDrop, PieceR
 from pyct.core.strs.strs import ConcolicStr
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
-from pyct.results.llm_asks import AskCost, SummaryState
+from pyct.results.llm_asks import AskCost, SummaryState, Unanswered, Why
 from pyct.results.record import InputRecord
 from pyct.run.notes import Note, SummaryFailed
 from pyct.run.stuck import Handled, Moment
@@ -206,3 +207,29 @@ def test_a_dropped_loop_is_not_asked_again_once_the_token_limit_is_reached() -> 
     assert summaries.can_ask is False
     assert handled == Handled((), asked=False)
     assert len(fake.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        Unanswered(Why.TIMED_OUT, "no reply in 30 s", AskCost(2)),
+        SummaryReply(FORMULA, AskCost(2)),
+    ],
+    ids=["no answer", "a failing formula"],
+)
+def test_a_dropped_loop_keeps_waiting_until_a_formula_of_its_is_in_use(
+    first: SummaryReply | Unanswered,
+) -> None:
+    summaries, fake = dropped_tool()
+    fake.answer = first
+
+    summaries.take((), Moment(2, missed(14), Run(AFTER)))
+    waits = summaries.waiting(Moment(3, missed(14), Run(AFTER)))
+    fake.answer = SummaryReply(CAPPED, AskCost(3))
+    summaries.take((), Moment(3, missed(14), Run(AFTER)))
+
+    assert waits is True
+    assert len(fake.requests) == 3
+    [state] = summaries.states()
+    assert (state.state, state.formula) == (SummaryState.IN_USE, CAPPED)
+    assert summaries.waiting(Moment(4, missed(14), Run(AFTER))) is False
