@@ -7,9 +7,10 @@ live and its call runs alone, each run of a loop in use starts plain: each
 name going in that is bound and holds a tracked int, float, str or bool is
 rebound to its plain value, and a ``for`` over a tracked str walks the plain
 str. Lists and dicts stay as they are; the run keeps a copy of each list
-or dict going in, Python's own or a tracked one, made one level deep by its
-own copy, which keeps a tracked one tracked while its form still describes
-it. The loop then runs on plain values and records no fork.
+or dict going in, Python's own or a tracked one, one level deep. A tracked
+one's copy is tracked while its form still describes it, and plain
+otherwise; either copy records nothing and leaves the target's own as it
+is. The loop then runs on plain values and records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
 each list or dict as the copy the start made, each fork, fact and downgrade
@@ -55,8 +56,6 @@ from pyct.core.strs.strs import ConcolicStr
 
 # the tracked values a loop in use runs on plain, and a formula's value hands on
 _SCALARS = frozenset({ConcolicInt, ConcolicFloat, ConcolicStr, ConcolicBool})
-# the lists and dicts going in that a run keeps a copy of
-_CONTAINERS = frozenset({list, dict, ConcolicList, ConcolicDict})
 
 type _Place = tuple[str, int, int]
 # a piece's names going in and its changed names
@@ -259,7 +258,17 @@ def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> No
 def _as_it_went_in(value: object) -> object:
     """A list or dict going in as its own copy makes it, one level deep, so a loop that changes
     it leaves the copy as it went in; a tracked one's copy is tracked by the same form and records
-    no fork. Any other value as it is."""
-    if type(value) in _CONTAINERS:
+    no fork. A tracked one changed without its methods since pyct last saw it gets a plain copy,
+    which records nothing and leaves the target's own as it is. Any other value as it is."""
+    kind = type(value)
+    if kind is ConcolicList:
+        items = cast(ConcolicList, value)
+        current = items.expression is not None and items.length() == len(items.shadow)
+        return copy.copy(items) if current else items.storage()
+    if kind is ConcolicDict:
+        pairs = cast(ConcolicDict, value)
+        current = pairs.expression is not None and pairs.size() == len(pairs.shadow)
+        return copy.copy(pairs) if current else pairs.storage()
+    if kind is list or kind is dict:
         return copy.copy(value)
     return value

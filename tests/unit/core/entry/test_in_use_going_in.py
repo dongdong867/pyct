@@ -4,9 +4,11 @@ record of a run it fails on, read the values as they went in, whatever the loop 
 from collections.abc import Mapping
 from typing import Any, cast
 
+import pytest
+
 from pyct.binding.bind import bind
 from pyct.core.entry.in_use import LoopInUse
-from pyct.core.foundation.branch import GoingIn, SinkItem
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, GoingIn, SinkItem
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.ints import ConcolicInt
 from tests.unit.core.entry.test_in_use import drops, forks, using
@@ -96,3 +98,61 @@ def test_a_tracked_list_or_dict_going_in_reaches_the_formula_tracked_as_a_copy()
     assert d is not args["d"]
     assert getattr(d, "expression", None) == getattr(args["d"], "expression", None) == "d"
     assert (forks(sink), drops(sink)) == ([], [])
+
+
+HEAP = """\
+import heapq
+def f(xs, s):
+    heapq.heappush(xs, 0)
+    t = 0
+    for c in s:
+        t += 1
+        len(xs)
+    if xs[0] > 0:
+        return t
+    return t
+"""
+STORED = """\
+def f(d, s):
+    dict.__setitem__(d, "k", 9)
+    t = 0
+    for c in s:
+        t += 1
+        len(d)
+    if d["a"] > 0:
+        return t
+    return t
+"""
+
+
+def lengthened(values: Mapping[str, object]) -> Mapping[str, object]:
+    """The formula of HEAP's and STORED's loops."""
+    s, t = values["s"], values["t"]
+    assert isinstance(s, str)
+    assert isinstance(t, int)
+    return {"t": t + len(s)}
+
+
+@pytest.mark.parametrize(
+    ("source", "going_in", "loop"),
+    [(HEAP, {"xs": [3, 5]}, (5, 4)), (STORED, {"d": {"a": 1}}, (4, 4))],
+    ids=["a list changed from C", "a dict changed from C"],
+)
+def test_the_copy_of_a_list_or_dict_changed_from_c_leaves_the_target_s_own_alone(
+    source: str, going_in: Mapping[str, object], loop: tuple[int, int]
+) -> None:
+    def judged(sink: list[SinkItem]) -> list[Branch | Fact | Downgrade]:
+        return [each for each in sink if isinstance(each, Branch | Fact | Downgrade)]
+
+    seen: list[list[Branch | Fact | Downgrade]] = []
+    for loops in ({}, {loop: LoopInUse(("s", "t", *going_in), ("t",), lengthened)}):
+        f = hooked(source)
+        with using(loops) as sink:
+            (value,) = bind(going_in, sink).values()
+            f(value, "ab")
+        seen.append(judged(sink))
+
+    written, in_use = seen
+    assert in_use == written
+    assert any(type(each) is Downgrade for each in written)
+    assert not any(each.site.file.endswith("copy.py") for each in in_use)
