@@ -8,9 +8,10 @@ but exactly None, bool, int, float, str, list, tuple and dict, as an instance a
 ``run()`` caller hands in, is an object too. A parameter holds an object when
 its lists, tuples and dicts hold one at any depth, each item of a list and each
 value of a dict read under what its hint asks of its items (``item_check``), so
-a list under ``list[Order]`` holds one. Every other parameter is plain, and a
-rewrite reads plain parameters alone (decision
-llm-a-rewrite-reads-no-parameter-that-holds-an-object).
+a list under ``list[Order]`` holds one. Every other parameter is plain. A
+rewrite reads a plain parameter whole and an object only as ``name.field``,
+the method's ``self`` among them, and reads no parameter that holds an object
+(decision llm-a-rewrite-reads-a-field-an-object-stores).
 
 The hints are the ones each input's ``Seed.checks`` holds, read as the input's
 own build reads them. Each type is compared with the plain ones by identity, so
@@ -44,16 +45,19 @@ class Kind(enum.Enum):
 @dataclass(frozen=True)
 class Kinds:
     """What tells an input's objects apart: what each parameter's hint asks, and the parameter
-    whose dict each input builds the instance a method runs on from, None for any other
-    target."""
+    whose dict each input builds the instance a method runs on from, with that instance's
+    class, None for any other target."""
 
     checks: Mapping[str, Check] = field(default_factory=dict)
     self_name: str | None = None
+    self_class: type | None = None
 
     @classmethod
-    def of_seed(cls, seed: Seed, self_name: str | None = None) -> Kinds:
+    def of_seed(
+        cls, seed: Seed, self_name: str | None = None, self_class: type | None = None
+    ) -> Kinds:
         """The kinds under the hints ``seed`` was made with."""
-        return cls(seed.checks, self_name)
+        return cls(seed.checks, self_name, self_class)
 
     def of(self, name: str, value: object) -> Kind:
         """The kind of parameter ``name``, holding ``value``. The method's ``self`` is built only
@@ -62,9 +66,16 @@ class Kinds:
             return Kind.OBJECT
         return kind_of(value, self.checks.get(name))
 
-    def plain(self, args: Mapping[str, object], names: Sequence[str]) -> bool:
-        """Whether ``args`` holds each name, each plain."""
-        return all(name in args and self.of(name, args[name]) is Kind.PLAIN for name in names)
+    def fit(
+        self, args: Mapping[str, object], names: Sequence[str], objects: Sequence[str] = ()
+    ) -> bool:
+        """Whether ``args`` holds each name, each of ``objects`` an object and every other one
+        plain."""
+        return all(
+            name in args
+            and self.of(name, args[name]) is (Kind.OBJECT if name in objects else Kind.PLAIN)
+            for name in names
+        )
 
 
 def kind_of(value: object, check: Check | None = None) -> Kind:

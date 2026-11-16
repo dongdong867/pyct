@@ -18,9 +18,14 @@ condition is skipped at this moment
 A condition with no parameter a rewrite may read is given up at this
 moment, unasked, so a later tool may take it. A parameter each input builds
 as an object, from a seed's form, under a class hint or as a method's
-``self``, is one a rewrite may not read (``pyct.rewrite.kinds``).
-A rewrite's run, as each solver ask, gets the solver timeout, or less when
-the budget has less.
+``self``, or an instance a ``run()`` caller hands in, is one a rewrite reads
+only as ``name.field`` (``pyct.rewrite.kinds``). The rewrite's child builds
+the objects it reads fields of as each input does, with the target's home
+module, hints and the build of ``self``, so their constructors run there once
+more, and reads each field through pyct's reader, which reads only what the
+instance stores (``pyct.binding.stored``); the reader's refusal fails the try
+with its reason. A rewrite's run, as each solver ask, gets the solver
+timeout, or less when the budget has less.
 
 The rewrite's input, and each input a kept rewrite's ask gives, says
 ``"source": "rewrite"``. A kept rewrite whose input takes the other side is
@@ -35,6 +40,7 @@ import types
 from collections.abc import Mapping
 
 from pyct.binding.bind import Seed
+from pyct.binding.stored import FieldUnreadError, read_field
 from pyct.branches.plan import Plan
 from pyct.config.llm import REWRITES_TOOL
 from pyct.core.foundation.branch import Branch, Fact
@@ -42,8 +48,8 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition, WhyEntry
 from pyct.results.llm_asks import Why
 from pyct.results.record import InputRecord, MissWhy, Source, Stop
-from pyct.rewrite.ask import GivenUp, Visit, holds_its_own_check
-from pyct.rewrite.condition import FUNCTION
+from pyct.rewrite.ask import GivenUp, Unread, Visit, holds_its_own_check
+from pyct.rewrite.condition import FUNCTION, READER
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteDropped, RewriteNote
 from pyct.rewrite.provider import RewriteProvider
@@ -51,11 +57,18 @@ from pyct.rewrite.request import About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.run.code_context import code_around
 from pyct.run.loop import Asker, Solved, solver_answer
-from pyct.run.model_runs import CANNOT_FORK, CannotFork, ModelCall, can_fork, run_model
+from pyct.run.model_runs import (
+    CANNOT_FORK,
+    Building,
+    CannotFork,
+    ModelCall,
+    can_fork,
+    run_model,
+)
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.target import Target
+from pyct.run.target import Target, execution_context
 from pyct.run.tell import Ask, Told
 from pyct.run.token_limit import TokenLimit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
@@ -80,8 +93,11 @@ class Rewrites(Asker):
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
         self.given_up: dict[Condition, GivenUp] = {}
-        self.kept = Kept()
+        self.kept = Kept(target.self_name)
         self._used: tuple[Condition, ...] = ()
+        context = execution_context(target)
+        # how a rewrite's child builds the objects it reads fields of, as each input does
+        self.building = Building(context.home, context.checks, context.self_build)
 
     @property
     def can_ask(self) -> bool:
@@ -98,7 +114,7 @@ class Rewrites(Asker):
             if given is None or self.limit.reached or not going(moment.run):
                 outcomes.append(Outcome.SKIPPED)
                 continue
-            tried = self._asking(given).tries(_Around(moment.run, self.told))
+            tried = self._asking(given).tries(_Around(moment.run, self.told, self.building))
             asked = asked or tried.asked
             outcomes.append(self._outcome(tried))
         return Handled(tuple(outcomes), asked)
@@ -115,7 +131,7 @@ class Rewrites(Asker):
         if holds_its_own_check(wanted):
             return _unasked(wanted, Unsat())
         started = time.monotonic()
-        reused = self.kept.reused(wanted, origin, _Child(started + limit).run)
+        reused = self.kept.reused(wanted, origin, _Child(started + limit, self.building).run)
         programs: tuple[Given, ...] = ()
         left = _left(started, limit)
         if reused is not None and left > 0:
@@ -169,9 +185,9 @@ class Rewrites(Asker):
             code=code_around(site.file, site.line),
             modules=modules,
         )
-        self_name = self.target.self_name
-        parameters = tuple(name for name in given.origin.args if name != self_name)
-        return Asking(self.provider, given, about, parameters, self.kept, self_name)
+        target = self.target
+        parameters = tuple(given.origin.args)
+        return Asking(self.provider, given, about, parameters, self.kept, target.self_class)
 
     def _outcome(self, tried: Tried) -> Outcome:
         """What the tries come to, said: an ask that got no answer is skipped, and once the
@@ -191,11 +207,13 @@ class Rewrites(Asker):
 
 
 class _Around:
-    """The run as a condition's tries see it, at one moment."""
+    """The run as a condition's tries see it, at one moment, and how a rewrite's child builds
+    the objects it reads fields of."""
 
-    def __init__(self, run: Running, told: Told) -> None:
+    def __init__(self, run: Running, told: Told, building: Building) -> None:
         self.run = run
         self.told = told
+        self.building = building
 
     def going(self) -> bool:
         return going(self.run)
@@ -229,26 +247,37 @@ class _Around:
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
-        return _Child(time.monotonic() + self._limit()).run(code, args)
+    ) -> ExecutionResult | Unread | str:
+        return _Child(time.monotonic() + self._limit(), self.building).run(code, args)
 
     def run_input(self, seed: Seed, plan: Plan) -> InputRecord | Stop:
         return self.run.run_input(seed, Source.REWRITE, plan)
 
 
 class _Child:
-    """Runs a rewrite in a child forked from pyct's process, which must end by ``until``."""
+    """Runs a rewrite in a child forked from pyct's process, which must end by ``until``, and
+    builds the objects it reads fields of as ``building`` says, its fields read by pyct's
+    reader."""
 
-    def __init__(self, until: float) -> None:
+    def __init__(self, until: float, building: Building) -> None:
         self.until = until
+        self.building = building
 
-    def run(self, code: types.CodeType, args: Mapping[str, object]) -> ExecutionResult | str:
-        """What the rewrite's call recorded, or why it did not run."""
+    def run(
+        self, code: types.CodeType, args: Mapping[str, object]
+    ) -> ExecutionResult | Unread | str:
+        """What the rewrite's call recorded, why the reader read no field, or why it did not
+        run."""
+        call = ModelCall(
+            code, FUNCTION, args, {READER: read_field}, self.building, (FieldUnreadError,)
+        )
         try:
-            ran = run_model(ModelCall(code, FUNCTION, args), self.until)
+            ran = run_model(call, self.until)
         except InputStartError as error:
             return f"cannot start a child: {error}"
-        return CANNOT_FORK if isinstance(ran, CannotFork) else ran.result
+        if isinstance(ran, CannotFork):
+            return CANNOT_FORK
+        return ran.result if ran.ended is None else Unread(ran.ended)
 
 
 def _unasked(wanted: Plan, answer: Answer) -> Solved:

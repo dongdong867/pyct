@@ -67,10 +67,10 @@ def request_text(request: RewriteRequest) -> str:
         parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
     parts.append(_input(request))
-    if request.unreadable:
+    if request.holders:
         parts.append(
-            "Parameters your condition may not read, since each holds an object: "
-            + ", ".join(request.unreadable)
+            "Parameters your condition may not read, since each holds an object inside a list,"
+            " tuple or dict: " + ", ".join(request.holders)
         )
     parts.append(f"The solver's answer for the condition: {request.answer}")
     if request.tries:
@@ -90,8 +90,9 @@ def _input(request: RewriteRequest) -> str:
     said = f"\n{ESCAPED_KEY}" if any(_ESCAPED.search(text) for text in shown) else ""
     return (
         "The input whose path the solver extended, each value as JSON, or as Python writes it"
-        " when JSON cannot hold it, and one that holds an object as a placeholder in angle"
-        f" brackets:\n{values}{said}"
+        " when JSON cannot hold it, an object as <Name object, built from ARGS>, ARGS the"
+        " arguments pyct builds it from, or as <Name object>, and a value that holds an object"
+        f" inside a list, tuple or dict as <holds an object>:\n{values}{said}"
     )
 
 
