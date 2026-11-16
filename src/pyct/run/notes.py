@@ -86,8 +86,9 @@ class SummarySkipped:
 
 @dataclass(frozen=True)
 class SummaryNotUsed:
-    """The formula for the loop at ``site`` passed its checks and is not put in use, and why: it
-    is kept as checked. Said right after its ``SummaryChecked``."""
+    """The formula for the loop at ``site`` passed its checks and is not put in use, or goes out
+    of use, and why: it is kept as checked. Said right after its ``SummaryChecked``, or after the
+    input on which the run's inputs fell back to pyct's own process."""
 
     site: Site
     reason: str

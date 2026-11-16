@@ -29,7 +29,7 @@ from pyct.run.summary_checks import CompleteRun
 
 # why a formula is not used: the run's inputs run in pyct's own process
 IN_PYCT_S_PROCESS = "inputs run in pyct's own process"
-# what a loop's own code holds that leaves its frame part way through a run, by its node
+# the return, yield and await a loop's own code can hold, by their nodes, in plain words
 _LEAVING: dict[type[ast.AST], str] = {
     ast.Return: "a return",
     ast.Yield: "a yield",
@@ -115,9 +115,9 @@ def statement_at(site: Site) -> tuple[ast.stmt, Piece] | None:
 
 
 def leaving_by(statement: ast.stmt) -> str | None:
-    """What the piece's own code holds that leaves its frame part way through a run, the first
-    met in the order written: a return, a yield, or an await, an ``async for``'s and an async
-    comprehension's included. A function, lambda or class defined inside it is its own."""
+    """The first return, yield or await the piece's own code holds, in the order written, an
+    ``async for``'s and an async comprehension's await included, or None when it holds none. A
+    function, lambda or class defined inside it is its own."""
     if isinstance(statement, ast.AsyncFor):
         return _LEAVING[ast.Await]
     pending = list(reversed(proper(statement)))
