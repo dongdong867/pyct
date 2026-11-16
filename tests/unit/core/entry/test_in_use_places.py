@@ -60,7 +60,9 @@ AT_LOOP = Site(FILE, *LOOP)
 
 def test_a_fact_the_formula_s_truth_test_records_is_placed_at_the_loop() -> None:
     def proven(values: Mapping[str, object]) -> None:
-        if bound.len(values["s"]) >= 0:
+        length = bound.len(values["s"])
+        assert isinstance(length, int)
+        if length >= 0:
             return
 
     assert recorded_by(proven) == [("fact", [">=", ["len", "s"], 0], AT_LOOP)]
