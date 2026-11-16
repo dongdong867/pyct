@@ -12,9 +12,9 @@ own copy, which keeps a tracked one tracked while its form still describes
 it. The loop then runs on plain values and records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
-each list or dict as the copy the start made, each fork and fact it records
-placed at the loop's site, and each changed name the frame has bound is
-compared with the formula's value of it by
+each list or dict as the copy the start made, each fork, fact and downgrade
+it records placed at the loop's site, and each changed name the frame has
+bound is compared with the formula's value of it by
 their JSON text, which records nothing. On a match each changed name whose
 formula value is a tracked int, float, str or bool holds the loop's own
 value with the formula's term; another formula value leaves the loop's
@@ -44,8 +44,7 @@ from typing import cast
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.frames import rebind
 from pyct.core.entry.plain_json import plain_json
-from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site
-from pyct.core.foundation.values import placed_at
+from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site, placed_at
 from pyct.core.lists.list_state import plain
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool

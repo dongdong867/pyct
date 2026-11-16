@@ -265,6 +265,21 @@ _SITES: dict[tuple[int, int], tuple[weakref.ref[types.CodeType], Site]] = {}
 # tuple, set in one store, so the alarm landing mid-update never pairs one with another's site
 _LAST: list[tuple[types.CodeType | None, int, Site]] = [(None, -1, Site(file="", line=0, col=0))]
 
+# set while a loop's formula runs, to the loop's site, where each fork, fact and downgrade it
+# records is placed
+_PLACED_AT: list[Site | None] = [None]
+
+
+def placed_at[T](site: Site, call: Callable[[], T]) -> T:
+    """``call()``, each site it asks `site_of` for being ``site``: a loop's site for the formula
+    that stands for the loop, so each fork, fact and downgrade the formula records sits there."""
+    before = _PLACED_AT[0]
+    try:
+        _PLACED_AT[0] = site
+        return call()
+    finally:
+        _PLACED_AT[0] = before
+
 
 def caller_site() -> Site:
     """The position of the innermost frame outside pyct.
@@ -280,8 +295,12 @@ def site_of(frame: types.FrameType | None) -> Site:
     """The position of ``frame``, or of the innermost frame outside pyct that called it.
 
     A caller that knows its own caller hands that frame in, which spares the
-    walk one step on a path a loop runs on every pass.
+    walk one step on a path a loop runs on every pass. While a formula runs it is the site
+    `placed_at` gives.
     """
+    placed = _PLACED_AT[0]
+    if placed is not None:
+        return placed
     # the last site found is outside pyct, so a repeat of it needs no walk
     last_code, last_at, last_site = _LAST[0]
     if frame is not None and frame.f_code is last_code and frame.f_lasti == last_at:
@@ -312,8 +331,12 @@ def lost_at(name: str, frame: types.FrameType) -> Downgrade:
     """The downgrade ``name`` made from ``frame``, or from the frame outside pyct that called it.
 
     The same call at the same instruction is the same downgrade, so it is
-    built once and handed back while the calls repeat.
+    built once and handed back while the calls repeat. While a formula runs it sits at the site
+    `placed_at` gives, and is kept for no repeat.
     """
+    placed = _PLACED_AT[0]
+    if placed is not None:
+        return Downgrade(name=name, site=placed)
     code, at, last = _LAST_LOST[0]
     if last is not None and frame.f_code is code and frame.f_lasti == at and last.name == name:
         return last

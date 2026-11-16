@@ -17,7 +17,6 @@ from pyct.core.foundation.branch import (
     Downgrade,
     Expression,
     Fact,
-    Site,
     caller_site,
     lost_at,
 )
@@ -56,8 +55,6 @@ _BEFORE_A_RAISE = [False]
 # set while an `is` tests a tracked bool's truth, to the bool the `is` compares it with, so the
 # fork that test records notes whether the `is` held
 _AGAINST: list[bool | None] = [None]
-# set while a loop's formula runs, to the loop's site, where each fork and fact it records is placed
-_PLACED_AT: list[Site | None] = [None]
 
 
 def forked(
@@ -79,9 +76,7 @@ def forked(
     marked = raising or _BEFORE_A_RAISE[0]
     against = _AGAINST[0]
     held = None if against is None else taken is against
-    placed = _PLACED_AT[0]
-    site = caller_site() if placed is None else placed
-    branch = Branch(expression, taken, site, marked, name, held)
+    branch = Branch(expression, taken, caller_site(), marked, name, held)
     sink.append(branch)
     return taken
 
@@ -97,21 +92,8 @@ def held(
     """Record a check pyct's own values already decided as a fact, where ``forked`` records a
     fork, and answer with the side it took (see ``core.branch.Fact``)."""
     marked = raising or _BEFORE_A_RAISE[0]
-    placed = _PLACED_AT[0]
-    site = caller_site() if placed is None else placed
-    sink.append(Fact(expression, taken, site, marked, lost_as=name))
+    sink.append(Fact(expression, taken, caller_site(), marked, lost_as=name))
     return taken
-
-
-def placed_at[T](site: Site, call: Callable[[], T]) -> T:
-    """``call()``, each fork and fact its truth tests record placed at ``site``, a loop's site
-    for the formula that stands for the loop."""
-    before = _PLACED_AT[0]
-    try:
-        _PLACED_AT[0] = site
-        return call()
-    finally:
-        _PLACED_AT[0] = before
 
 
 def tested_against(value: object, against: bool) -> bool:
