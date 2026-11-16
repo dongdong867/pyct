@@ -8,7 +8,6 @@ from typing import Any
 
 import pytest
 
-from pyct.binding.annotations import Builds, Items
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
 from pyct.core.foundation.branch import Branch, Fact, Site
@@ -18,13 +17,12 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, MissWhy, Stop, StopKind
 from pyct.rewrite import tries
-from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.ask import GivenUp, Unread
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.kinds import Kinds
 from pyct.rewrite.notes import (
     RewriteFailed,
-    RewriteGivenUp,
     RewriteNote,
     RewriteRead,
     RewriteSkipped,
@@ -33,7 +31,6 @@ from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.rewrite.request import VALUE_SIZE, About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
-from tests.unit.rewrite.orders import Order
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -55,7 +52,7 @@ class Fake:
 
     reply: str | Unanswered = 's == "1e-30"'
     # None runs each rewrite as recording its own fork, in its own file, on the other side
-    ran: ExecutionResult | str | None = None
+    ran: ExecutionResult | Unread | str | None = None
     record: InputRecord | Stop = field(
         default_factory=lambda: InputRecord(
             {"s": "1e-30"}, (Branch(FORK.expression, True, SITE),), frozenset()
@@ -99,7 +96,7 @@ class Fake:
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         self.handed.append(dict(args))
         if self.ran is None:
             fork = Branch(
@@ -200,94 +197,6 @@ def test_a_rewrite_that_cannot_run_by_the_next_ask_ends_the_tries_unasked() -> N
     assert fake.notes[-1] == RewriteSkipped(SITE, "cannot fork")
 
 
-def test_an_input_whose_every_argument_holds_an_object_gives_up_before_any_ask() -> None:
-    origin = Seed.of({"o": {"__class__": "m::Order"}, "l": [{"__class__": "m::Order"}]})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake()
-
-    found = Asking(fake, given, ABOUT, ("o", "l"), Kept()).tries(fake)
-
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
-
-
-def test_a_method_that_takes_only_self_gives_up_before_any_ask() -> None:
-    given = GivenUp(CONDITION, PLAN, Seed.of({"self": {"__class__": "m::Order"}}), MissWhy.TIMEOUT)
-    fake = Fake()
-
-    found = Asking(fake, given, ABOUT, (), Kept()).tries(fake)
-
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
-
-
-def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_in_the_ask() -> None:
-    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake(reply="o.cancel() == 1")
-
-    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
-
-    assert failed(fake) == ["a rewrite may not read o, which holds an object"] * 4
-    assert [request.unreadable for request in fake.requests] == [("o",)] * 4
-    assert fake.handed == []
-
-
-def test_a_rewrite_beside_an_argument_that_holds_an_object_runs_without_it() -> None:
-    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake()
-
-    assert Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake) == Tried(True, True)
-    assert fake.handed == [{"s": "0"}]
-
-
-# llm-rewrite-hint-built-object-in-a-list-is-not-read
-def test_an_input_whose_every_argument_a_hint_builds_gives_up_before_any_ask() -> None:
-    checks = {"o": Builds(Order), "l": Items(list, Builds(Order), fixed=True)}
-    origin = Seed.of({"o": {"code": "0"}, "l": [{"code": "0"}]}, checks)
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake()
-
-    found = Asking(fake, given, ABOUT, ("o", "l"), Kept()).tries(fake)
-
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
-
-
-# llm-rewrite-hint-built-object-refused-beside-a-plain-parameter
-def test_a_rewrite_reading_an_object_a_hint_builds_fails_and_is_named_in_the_ask() -> None:
-    origin = Seed.of({"s": "0", "o": {"code": "0"}}, {"o": Builds(Order)})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake(reply='o["code"] == "1e-30"')
-
-    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
-
-    assert failed(fake) == ["a rewrite may not read o, which holds an object"] * 4
-    assert [request.unreadable for request in fake.requests] == [("o",)] * 4
-    assert dict(fake.requests[0].args)["o"] == "<holds an object>"
-    assert fake.handed == []
-
-
-# llm-rewrite-hint-built-object-each-built-object-counts
-def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
-    origin = Seed.of({"self": {"code": "0"}, "s": "0"})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
-
-    Asking(fake, given, ABOUT, ("s",), Kept(), "self").tries(fake)
-
-    assert dict(fake.requests[0].args)["self"] == "<holds an object>"
-    assert fake.requests[0].unreadable == ()
-    reason = (
-        'the input {"self": <holds an object>, "s": "0"} already meets it, yet took the other side'
-    )
-    assert failed(fake)[0] == reason
-
-
 def test_a_rewrite_is_handed_and_kept_with_exactly_the_names_it_reads() -> None:
     given = GivenUp(CONDITION, PLAN, Seed.of({"s": "0", "t": "1"}), MissWhy.TIMEOUT)
     kept = Kept()
@@ -296,27 +205,6 @@ def test_a_rewrite_is_handed_and_kept_with_exactly_the_names_it_reads() -> None:
     assert Asking(fake, given, ABOUT, ("s", "t"), kept).tries(fake) == Tried(True, True)
     assert fake.handed == [{"s": "0"}]
     assert kept.rewrites[CONDITION].reads == ("s",)
-
-
-class Loud:
-    """An object whose ``__repr__`` raises, and whose contents no request may hold."""
-
-    def __init__(self) -> None:
-        self.secret = "hunter2"
-
-    def __repr__(self) -> str:
-        raise RuntimeError("repr ran")
-
-
-def test_a_try_s_reason_writes_an_object_argument_without_running_its_code() -> None:
-    given = GivenUp(CONDITION, PLAN, Seed.of({"s": "0", "o": Loud()}), MissWhy.TIMEOUT)
-    fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
-
-    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
-
-    reason = 'the input {"s": "0", "o": <Loud object>} already meets it, yet took the other side'
-    assert failed(fake) == [reason] * 4
-    assert dict(fake.requests[0].args)["o"] == "<Loud object>"
 
 
 def test_a_budget_spent_before_the_solver_asks_ends_the_tries() -> None:

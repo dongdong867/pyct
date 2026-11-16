@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,13 +88,14 @@ class Rewritten:
 
 def run_rewrites(
     spec: str,
-    seed: Mapping[str, object],
+    seed: Mapping[str, object] | Callable[[], Mapping[str, object]],
     provider: FakeRewrites | None,
     limits: Limits = SHORT,
 ) -> Rewritten:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package, every
     input in this process and each rewrite in a child of it, with ``provider`` as the rewrites
-    helper (none for a plain run)."""
+    helper (none for a plain run). A ``seed`` given as a function is made once the target has
+    loaded, so an instance it hands in is of the target's own classes."""
     records: list[InputRecord] = []
     said: list[str] = []
 
@@ -110,7 +111,9 @@ def run_rewrites(
     setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(rewrites=provider))
     tell = Tell(report=report, noted=noted)
     with interception(spec):
-        result = run(load_target(spec), seed, limits=limits, setup=setup, tell=tell)
+        target = load_target(spec)
+        made = seed() if callable(seed) else seed
+        result = run(target, made, limits=limits, setup=setup, tell=tell)
     return Rewritten(result, records, said)
 
 

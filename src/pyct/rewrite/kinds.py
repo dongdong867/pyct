@@ -62,9 +62,16 @@ class Kinds:
             return Kind.OBJECT
         return kind_of(value, self.checks.get(name))
 
-    def plain(self, args: Mapping[str, object], names: Sequence[str]) -> bool:
-        """Whether ``args`` holds each name, each plain."""
-        return all(name in args and self.of(name, args[name]) is Kind.PLAIN for name in names)
+    def fit(
+        self, args: Mapping[str, object], names: Sequence[str], objects: Sequence[str] = ()
+    ) -> bool:
+        """Whether ``args`` holds each name, each of ``objects`` an object and every other one
+        plain."""
+        return all(
+            name in args
+            and self.of(name, args[name]) is (Kind.OBJECT if name in objects else Kind.PLAIN)
+            for name in names
+        )
 
 
 def kind_of(value: object, check: Check | None = None) -> Kind:

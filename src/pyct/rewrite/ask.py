@@ -6,7 +6,10 @@ at the condition's site and side replaced by what the rewrite recorded on
 the input that path extends: its own forks and facts as they went there,
 each operation's fork before a raise kept on the side that did not raise,
 and its own branch taken true. The plan's aimed fork is one of them, so the
-original condition, whose ask ran out, is left out.
+original condition, whose ask ran out, is left out. What the rewrite's child
+recorded outside the rewrite's own code, as it built the objects the rewrite
+reads fields of, is left out too: the path already holds it from the
+input's own build.
 """
 
 from __future__ import annotations
@@ -29,14 +32,25 @@ from pyct.rewrite.kinds import Kinds
 
 # why a rewrite that records no fork of its own and no downgrade is refused
 READS_NO_ARGUMENT = "it reads no argument"
+# why a rewrite that reads fields records no fork of its own and no downgrade: each field holds
+# the same value on every input, since no constructor argument reaches it
+READS_NO_INPUT = "it reads no value an input sets"
 
 # the parts of expressions one plan's path may compare, over all its earlier forks, to tell
 # whether it holds its aimed fork's check on the other side
 PLAN_PARTS = 100_000
 
+
+@dataclass(frozen=True)
+class Unread:
+    """A rewrite's run that pyct's field reader ended: why it read no field of an object."""
+
+    reason: str
+
+
 # runs a rewrite's code in a child of pyct's process on an input's arguments: what the call
-# recorded, or why it did not run
-type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResult | str]
+# recorded, why the reader read no field, or why it did not run
+type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResult | Unread | str]
 
 # runs a real input aimed at a plan, as the loop runs every input: its record, or the stop it met
 type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
@@ -91,13 +105,18 @@ class Recorded:
     met: bool
 
 
-def recorded(result: ExecutionResult, file: str) -> Recorded | str:
-    """What a rewrite's run on an input puts in an ask, or why the run gives none: it raised or
-    did not finish, pyct followed no value through an operation, or it read no argument."""
+def recorded(result: ExecutionResult | Unread, rewrite: Rewrite) -> Recorded | str:
+    """What a rewrite's run on an input puts in an ask, or why the run gives none: the reader
+    read no field, it raised or did not finish, pyct followed no value through an operation, or
+    it read no argument, or no value an input sets of the fields it reads. Only the forks and
+    facts the rewrite's own code recorded go in."""
+    if isinstance(result, Unread):
+        return result.reason
     if result.failure is not None:
         failure = result.failure
         verb = "raised" if failure.kind is FailureKind.TARGET_RAISED else "did not finish"
         return f"it {verb} on the input: {failure.detail}"
+    file = rewrite.code.co_filename
     own = [
         at
         for at, fork in enumerate(result.branches)
@@ -106,13 +125,36 @@ def recorded(result: ExecutionResult, file: str) -> Recorded | str:
         and not fork.raising
     ]
     if not own:
-        names = list(dict.fromkeys(entry.name for entry in result.downgrades))
-        return f"pyct does not follow {', '.join(names)}" if names else READS_NO_ARGUMENT
+        return _none_own(result, rewrite)
     last = result.branches[own[-1]]
-    forks = (*result.branches[: own[-1]], dataclasses.replace(last, taken=True))
+    kept = [fork for fork in result.branches[: own[-1]] if fork.site.file == file]
+    forks = (*kept, dataclasses.replace(last, taken=True))
     # a plan only to merge the facts in among the forks; nothing aims at its aim
     aim = Aim(last.site, len(forks) - 1)
-    return Recorded(Plan(forks, aim, facts=result.facts).asked, last.taken)
+    return Recorded(Plan(forks, aim, facts=_own_facts(result, file)).asked, last.taken)
+
+
+def _none_own(result: ExecutionResult, rewrite: Rewrite) -> str:
+    """Why a rewrite's run that recorded no fork of its own gives no ask."""
+    names = list(dict.fromkeys(entry.name for entry in result.downgrades))
+    if names:
+        return f"pyct does not follow {', '.join(names)}"
+    if rewrite.fields:
+        return f"{READS_NO_INPUT}: {', '.join(rewrite.fields)}"
+    return READS_NO_ARGUMENT
+
+
+def _own_facts(result: ExecutionResult, file: str) -> tuple[Fact, ...]:
+    """The facts the rewrite's own code recorded, each placed after the forks of its own code
+    recorded before it."""
+    own_before = [0]
+    for fork in result.branches:
+        own_before.append(own_before[-1] + (fork.site.file == file))
+    return tuple(
+        fact.placed_after(own_before[min(fact.after, len(result.branches))])
+        for fact in result.facts
+        if fact.site.file == file
+    )
 
 
 def holds_its_own_check(plan: Plan) -> bool:
@@ -133,12 +175,16 @@ def holds_its_own_check(plan: Plan) -> bool:
     return False
 
 
-def run_on(rewrite: Rewrite, origin: Seed, run: RunRewrite) -> ExecutionResult | str | None:
-    """The rewrite run on an input's arguments: what the call recorded, or why it did not run;
-    None, with nothing run, when the input lacks a name it reads, or that name is or holds an
-    object there under the hints the input was made with (``Kinds``)."""
+def run_on(
+    rewrite: Rewrite, origin: Seed, run: RunRewrite, self_name: str | None = None
+) -> ExecutionResult | Unread | str | None:
+    """The rewrite run on an input's arguments: what the call recorded, why the reader read no
+    field, or why it did not run; None, with nothing run, when the input lacks a name it reads,
+    or that name does not have the kind there it had where the rewrite was checked, under the
+    hints the input was made with and the method's ``self_name`` (``Kinds``): an object for a
+    name it reads fields of, plain for any other."""
     args = origin.args
-    if not Kinds.of_seed(origin).plain(args, rewrite.reads):
+    if not Kinds.of_seed(origin, self_name).fit(args, rewrite.reads, rewrite.objects):
         return None
     return run(rewrite.code, rewrite.handed(args))
 

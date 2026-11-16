@@ -13,9 +13,15 @@ substitutions, and it runs only in a forked child (`pyct.run.model_runs`).
 
 ``__rewrite__`` takes exactly the parameters the expression names
 (``Rewrite.reads``); the child is handed those arguments, and a kept rewrite
-is checked against those names. A rewrite reads no parameter that is or
-holds an object on the input (``pyct.rewrite.kinds``): the check refuses one
-that names such a parameter, so the child is handed plain values alone.
+is checked against those names. A parameter that is an object on the input
+(``pyct.rewrite.kinds``) is read only as ``name.field``, one level deep: the
+check refuses any other use of its name, since using the object whole runs
+its class's special methods, and a field whose name starts and ends with
+``__``. Each field read is then written as a call of pyct's reader,
+``READER``, which the child binds to one that reads only what the instance
+stores (``pyct.binding.stored``), so the reply's own tree never names it. A
+parameter that holds an object inside a list, tuple or dict is one a rewrite
+may not read at all.
 """
 
 from __future__ import annotations
@@ -31,6 +37,9 @@ from pyct.utils.fences import code_blocks
 
 # the function pyct writes the rewrite into, and the one it branches on the rewrite's value in
 FUNCTION = "__rewrite__"
+# the name each field read of an object is written as a call of, which the child binds to pyct's
+# reader: called with the object, its parameter's name and the field's
+READER = "__pyct_field__"
 _BRANCH = "__held__"
 # the line and column of that branch, whose fork is the rewrite's own
 HELD_LINE = 5
@@ -103,10 +112,18 @@ def expression_in(text: str, parameters: Sequence[str]) -> str | None:
 class Rewrite:
     """A rewrite's module code, and the parameters its expression reads, in the function's
     order: what ``__rewrite__`` takes, what its child is handed, and what a kept rewrite needs
-    an input to hold."""
+    an input to hold. ``fields`` are the field reads of objects it makes, each written
+    ``name.field``, in the order the expression writes them."""
 
     code: types.CodeType
     reads: tuple[str, ...]
+    fields: tuple[str, ...] = ()
+
+    @property
+    def objects(self) -> tuple[str, ...]:
+        """The parameters it reads fields of, which a kept rewrite needs an input to hold as
+        objects."""
+        return tuple(dict.fromkeys(field.partition(".")[0] for field in self.fields))
 
     def handed(self, args: Mapping[str, object]) -> dict[str, object]:
         """The arguments the rewrite reads, taken from ``args``, which holds each of them."""
@@ -114,11 +131,16 @@ class Rewrite:
 
 
 def rewrite_code(
-    expression: str, parameters: Sequence[str], file: str, objects: Sequence[str] = ()
+    expression: str,
+    parameters: Sequence[str],
+    file: str,
+    objects: Sequence[str] = (),
+    fields: Sequence[str] = (),
 ) -> Rewrite | Refused:
     """The module code of ``__rewrite__`` on the ``parameters`` that ``expression`` reads,
     which branches on it, each code object named ``file``; or why the rewrite is refused, one
-    reading any of ``objects``, those that hold an object, included.
+    reading any of ``objects``, those that hold an object, included, and one using any of
+    ``fields``, the objects, other than as ``name.field``.
 
     ``expression`` is one that ``expression_in`` read, so it sits inside parentheses of its
     own and cannot reach past them.
@@ -132,8 +154,9 @@ def rewrite_code(
         f"def {FUNCTION}({', '.join(reads)}):\n"
         f"    return {_BRANCH}((\n{expression}\n    ))\n"
     )
-    code = compile_model_code(text, file, _Check(frozenset(parameters), frozenset(objects)))
-    return code if isinstance(code, Refused) else Rewrite(code, reads)
+    check = _Check(frozenset(parameters), frozenset(objects), frozenset(fields))
+    code = compile_model_code(text, file, check)
+    return code if isinstance(code, Refused) else Rewrite(code, reads, tuple(check.read))
 
 
 def _reads(expression: str, parameters: Sequence[str]) -> tuple[str, ...]:
@@ -156,9 +179,14 @@ def _names(tree: ast.AST) -> set[str]:
 class _Check:
     """Rewrites' form check, which ``compile_model_code`` calls on the parsed module."""
 
-    def __init__(self, parameters: frozenset[str], objects: frozenset[str]) -> None:
+    def __init__(
+        self, parameters: frozenset[str], objects: frozenset[str], fields: frozenset[str]
+    ) -> None:
         self.parameters = parameters
         self.objects = objects
+        self.fields = fields
+        # each field read written as the reader's call, as ``name.field``, once
+        self.read: list[str] = []
 
     def __call__(self, tree: ast.Module) -> ast.Module | str:
         function = tree.body[2]
@@ -166,11 +194,13 @@ class _Check:
         returned = function.body[0]
         assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call)
         branched = returned.value
-        rules = ExpressionRules("rewrite", self.parameters, self.objects)
+        rules = ExpressionRules("rewrite", self.parameters, self.objects, self.fields)
         refused = refusal(branched.args[0], rules)
         if refused is not None:
             return refused
-        branched.args[0] = _AsBits().visit(branched.args[0])
+        reads = _AsReads(self.fields)
+        branched.args[0] = _AsBits().visit(reads.visit(branched.args[0]))
+        self.read = list(dict.fromkeys(reads.read))
         return tree
 
 
@@ -178,26 +208,32 @@ class _Check:
 class ExpressionRules:
     """What one expression of model-written code may read, call and write: the noun its
     refusals name the code by, the names it may read, those among them it may not since each
-    holds an object, the functions it may call by name, and the types of its literals."""
+    holds an object, those it may read only as ``name.field`` since each is an object, the
+    functions it may call by name, and the types of its literals."""
 
     noun: str
     names: frozenset[str]
     objects: frozenset[str] = frozenset()
+    fields: frozenset[str] = frozenset()
     calls: frozenset[str] = CALLS
     literals: tuple[type, ...] = LITERALS
 
 
 def refusal(expression: ast.expr, rules: ExpressionRules) -> str | None:
-    """Why the expression is outside the form ``rules`` allow, or reads one of their
-    ``objects``; or None. Read in a loop, not a call per level."""
+    """Why the expression is outside the form ``rules`` allow, reads one of their ``objects``
+    at all, or one of their ``fields`` other than as ``name.field``; or None. A name that holds
+    an object is said first, wherever it sits. Read in a loop, not a call per level."""
+    held = _holding(expression, rules)
+    if held is not None:
+        return f"a {rules.noun} may not read {held}, which holds an object"
     pending: list[tuple[ast.AST, int]] = [(expression, 0)]
     while pending:
         node, depth = pending.pop()
         if depth > MOST_DEPTH:
             return f"the {rules.noun} nests more than {MOST_DEPTH} deep"
         if isinstance(node, ast.Name):
-            if node.id in rules.objects:
-                return f"a {rules.noun} may not read {node.id}, which holds an object"
+            if node.id in rules.fields:
+                return f"a {rules.noun} may read {node.id} only as {node.id}.<field>"
             if node.id not in rules.names:
                 return f"a {rules.noun} may not read {node.id}"
             continue
@@ -220,6 +256,8 @@ def _parts(node: ast.AST, rules: ExpressionRules) -> list[ast.AST] | str:
         return [node.value, node.slice]
     if isinstance(node, _PLAIN):
         return [part for part in ast.iter_child_nodes(node) if isinstance(part, ast.expr)]
+    if isinstance(node, ast.Attribute) and _field(node, rules) and not _special(node.attr):
+        return []
     if isinstance(node, ast.Attribute):
         return f"a {rules.noun} may not read the attribute {node.attr}"
     return f"a {rules.noun} may not use {_REFUSED_AS.get(type(node), type(node).__name__)}"
@@ -244,6 +282,8 @@ def _call_parts(call: ast.Call, rules: ExpressionRules) -> list[ast.AST] | str:
         return parts if allowed else f"a {noun} may not call {func.id}"
     if not isinstance(func, ast.Attribute):
         return f"a {noun} calls only a function by its name or a method"
+    if isinstance(func.value, ast.Name) and func.value.id in rules.fields:
+        return f"a {noun} may not call a method of {func.value.id}"
     if func.attr.startswith("_") or func.attr in _READS_FIELDS:
         return f"a {noun} may not call {func.attr}"
     receiver = func.value
@@ -252,6 +292,47 @@ def _call_parts(call: ast.Call, rules: ExpressionRules) -> list[ast.AST] | str:
             return f"math has no function {func.attr}"
         return parts
     return [receiver, *parts]
+
+
+def _holding(expression: ast.expr, rules: ExpressionRules) -> str | None:
+    """The first name the expression reads that holds an object, or None."""
+    for node in ast.walk(expression):
+        if isinstance(node, ast.Name) and node.id in rules.objects:
+            return node.id
+    return None
+
+
+def _field(node: ast.Attribute, rules: ExpressionRules) -> bool:
+    """Whether the attribute is a field read of one of the rules' objects, ``name.field``."""
+    return isinstance(node.value, ast.Name) and node.value.id in rules.fields
+
+
+def _special(name: str) -> bool:
+    """Whether the name starts and ends with ``__``, as Python's own special names do."""
+    return name.startswith("__") and name.endswith("__")
+
+
+class _AsReads(ast.NodeTransformer):
+    """Each field read of one of ``fields``, ``name.field``, written as the reader's call,
+    ``READER(name, "name", "field")``, and kept in ``read`` as ``name.field``. The check has
+    bounded the depth, so a call per level is safe."""
+
+    def __init__(self, fields: frozenset[str]) -> None:
+        self.fields = fields
+        self.read: list[str] = []
+
+    def visit_Attribute(self, node: ast.Attribute) -> ast.expr:
+        value = node.value
+        if not isinstance(value, ast.Name) or value.id not in self.fields:
+            self.generic_visit(node)
+            return node
+        self.read.append(f"{value.id}.{node.attr}")
+        arguments: list[ast.expr] = [
+            ast.Name(value.id, ast.Load()),
+            ast.Constant(value.id),
+            ast.Constant(node.attr),
+        ]
+        return ast.copy_location(ast.Call(ast.Name(READER, ast.Load()), arguments, []), node)
 
 
 class _AsBits(ast.NodeTransformer):

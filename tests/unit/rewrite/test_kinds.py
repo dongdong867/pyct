@@ -130,12 +130,12 @@ def test_a_seed_s_kinds_read_the_hints_it_was_made_with() -> None:
     hinted = Seed.of({"order": {"code": "0"}, "s": "0"}, {"order": ORDER})
     unhinted = Seed.of({"order": {"code": "0"}, "s": "0"})
 
-    assert Kinds.of_seed(hinted).plain(hinted.args, ("s",))
-    assert not Kinds.of_seed(hinted).plain(hinted.args, ("order", "s"))
-    assert Kinds.of_seed(unhinted).plain(unhinted.args, ("order", "s"))
+    assert Kinds.of_seed(hinted).fit(hinted.args, ("s",))
+    assert not Kinds.of_seed(hinted).fit(hinted.args, ("order", "s"))
+    assert Kinds.of_seed(unhinted).fit(unhinted.args, ("order", "s"))
 
 
 def test_a_name_the_input_lacks_is_not_plain() -> None:
     args: Mapping[str, object] = {"s": "0"}
 
-    assert not Kinds().plain(args, ("s", "t"))
+    assert not Kinds().fit(args, ("s", "t"))
