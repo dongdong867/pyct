@@ -52,6 +52,9 @@ class Tool:
     def heard(self, record: InputRecord, number: int) -> None:
         self.told_of.append((number, record))
 
+    def waiting(self, moment: Moment) -> bool:
+        return False
+
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         self.moments.append((moment.number, len(moment.run.records), entries))
         if self.pauses:

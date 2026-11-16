@@ -15,6 +15,8 @@ from pyct.config.plateau import Plateau
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse
 from pyct.results.record import InputRecord
+from pyct.run.summaries import EarlierFormula
+from pyct.run.summary_runs import ShownRun
 from tests.acceptance.llm_summaries import (
     COUNT,
     SEED,
@@ -28,6 +30,7 @@ from tests.acceptance.llm_summaries import (
 )
 from tests.acceptance.test_substitute_is_and_in import plain_lines
 from tests.acceptance.test_track_a_value_through_a_loop_summary import (
+    CAPPED,
     LOOPS,
     Z,
     after_checked,
@@ -53,6 +56,12 @@ def dropped_run() -> Summarized:
     done = run_summaries(f"{LOOPS}::capped", SEED, provider, LONGER)
     assert len(provider.requests) == 1
     return done
+
+
+def items(done: Summarized) -> list[dict[str, object]]:
+    """Each loop's item in the summary line's ``llm.summaries``."""
+    use = LlmUse("openai:gpt-6-luna", ("summaries",))
+    return json.loads(render_summary(done.result, use))["llm"]["summaries"]
 
 
 def first_dropped(done: Summarized) -> int:
@@ -131,11 +140,9 @@ def test_a_dropped_formula_is_listed_dropped_with_its_check() -> None:
     checked = next(line for line in done.said if ": checked on " in line)
     found = re.search(r"checked on (\d+) past runs", checked)
     assert found is not None
-    use = LlmUse("openai:gpt-6-luna", ("summaries",))
-    [item] = json.loads(render_summary(done.result, use))["llm"]["summaries"]
+    [item] = items(done)
     assert item["state"] == "dropped"
-    # the code block of `COUNT`, as the reply holds it
-    assert item["formula"] == 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
+    assert item["formula"] == first_formula()
     assert item["tries"] == 1
     assert item["checked_on"] == int(found.group(1))
 
@@ -158,3 +165,35 @@ def test_a_formula_that_raises_is_dropped_and_the_input_runs_as_plain_python() -
     record = done.records[many[0] - 1]
     assert line_of("few_z", 'return "many"') in record.covered_lines
     assert sorted(record.covered_lines) == plain_lines(Path(G), "few_z", str(record.args["s"]))
+
+
+# llm-summary-checked-on-every-run-asked-again-after-a-drop
+def test_a_dropped_loop_is_asked_about_again_with_why_and_the_run_it_failed_on() -> None:
+    provider = FakeSummaries([COUNT, CAPPED])
+
+    done = run_summaries(f"{LOOPS}::capped", SEED, provider, LONGER)
+
+    assert len(provider.requests) == 2
+    number = first_dropped(done)
+    s = str(done.records[number - 1].args["s"])
+    reason = f"t was 5, the formula gave {s.count('z')}"
+    first, again = provider.requests
+    assert again.place == first.place
+    assert again.tries == (EarlierFormula(first_formula(), f"dropped at input {number}: {reason}"),)
+    # the run the formula failed on comes first among the runs
+    assert again.runs[0] == ShownRun((("s", json.dumps(s)), ("t", "0")), (("t", "5"),))
+    assert provider.tries[again.place] == 2
+    said = done.llm_said()
+    at = said.index(dropped_line("capped", number, reason))
+    loop = f"llm: summary for the loop at {G}:{line_of('capped', 'for c in s:')}"
+    assert said[at + 1] == (
+        f'{loop}:\n    t = t + s.count("z")\n    if t > 5:\n        t = 5\n    return {{"t": t}}'
+    )
+    assert re.fullmatch(rf"{re.escape(loop)}: checked on \d+ past runs", said[at + 2])
+    [item] = items(done)
+    assert (item["state"], item["tries"]) == ("in use", 2)
+
+
+def first_formula() -> str:
+    """The code block of ``COUNT``, as the reply holds it."""
+    return 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'

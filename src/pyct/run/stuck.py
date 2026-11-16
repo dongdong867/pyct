@@ -110,7 +110,9 @@ class Moment:
 class StuckTool(Protocol):
     """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry;
     ``can_ask`` is false once the tool will ask no more this run, such as when the token limit is
-    reached. ``heard`` takes each input the run keeps, with its number in the run, from 1."""
+    reached. ``heard`` takes each input the run keeps, with its number in the run, from 1.
+    ``waiting`` says whether the tool asks at the moment about something no entry it is handed
+    names: it is then handed the moment, with no entry when none is its own."""
 
     @property
     def kind(self) -> Kind: ...
@@ -121,6 +123,8 @@ class StuckTool(Protocol):
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled: ...
 
     def heard(self, record: InputRecord, number: int) -> None: ...
+
+    def waiting(self, moment: Moment) -> bool: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -190,7 +194,7 @@ class Stuck:
             if tool is None or run.stopped is not None:
                 continue
             entries = tuple(each for each in moment.causes if self._takes(kind, each, outcomes))
-            if entries:
+            if entries or tool.waiting(moment):
                 asked = self._handed(tool, entries, moment, outcomes) or asked
         self._asked += asked
         self._ended = len(run.records)

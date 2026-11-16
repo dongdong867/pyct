@@ -141,6 +141,10 @@ class Rewrites(Asker):
         """Each input the run keeps: rewrites judge their kept rewrites by a pass's input, in
         ``ran``."""
 
+    def waiting(self, moment: Moment) -> bool:
+        """Rewrites ask at a moment only about the entries they are handed."""
+        return False
+
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
         """Keep the plan when it is among the first ``VISITS`` at its condition whose ask ran
         out, after the ones kept before it."""
