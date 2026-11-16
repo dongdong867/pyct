@@ -61,6 +61,8 @@ class Splits:
         # each slice's length, by name: the split and the slices it is cut by, in turn
         self.starts: dict[str, tuple[SplitList, slice]] = {}
         self.cuts: dict[str, tuple[SplitList, tuple[slice, ...]]] = {}
+        # where the glued pieces of lines and of words are declared: the program's definitions
+        self.declared: list[str] = []
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
@@ -90,6 +92,7 @@ class Splits:
             read_count=self._read_count(node, held),
             fixed=self.fixed_reads,
             walked=self.walked.get(id(node), -1),
+            declared=self.declared,
         )
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count

@@ -24,9 +24,11 @@ say, is read where the input's own values put it, as origin/v2 reads it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 
 from pyct.core.strs.str_splits import LONGEST_WALK
+from pyct.solver.glued import Glued, glues
 from pyct.solver.list_terms import FALSE, TRUE, Lin, Read, both, negated
 from pyct.solver.splits import (
     SPLITS,
@@ -67,7 +69,8 @@ class SplitList:
     known; ``read_count`` is c*, that count moved as little as the path's compares with plain
     ints need. With ``fixed`` false, a piece from the end that no walk of the reversed string
     reads is read where the input's own count puts it, with no count held. ``walked`` is the
-    farthest piece from the start the path reads, by the walk ``at`` writes, -1 for none.
+    farthest piece from the start the path reads, -1 for none. ``declared`` is where the
+    pieces are declared when they are glued (see ``glued``), the program's definitions.
     """
 
     term: str
@@ -78,6 +81,18 @@ class SplitList:
     read_count: int | None = None
     fixed: bool = True
     walked: int = -1
+    declared: list[str] = field(default_factory=list, compare=False, repr=False)
+
+    @cached_property
+    def glued(self) -> Glued | None:
+        """The pieces of lines glued together (`glued`), where the path reads a piece from
+        the start: then each of its pieces, and each that is there, is read from them, so one
+        writing of the pieces holds on the path. A walk's count beside glued pieces ran to the
+        limit where glued alone answered at once. None for any other split, and for one the
+        path reads only by its count or from the end, which keeps the walk."""
+        if self.walked < 0 or not glues(self.head, self.operands):
+            return None
+        return Glued(self.term, self.head, self.operands, self.declared)
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -94,10 +109,11 @@ class SplitList:
         """That it holds more pieces than ``number``: piece ``number`` is there, on any string.
 
         Where the path reads piece ``number`` or any piece after it from the start, it is there
-        as the walk that reads it writes it: the same terms the read asserts, where a membership
-        beside them left cvc5 past its limit on an int conversion of a later piece. Otherwise,
-        on whitespace, the string has that many words and one more, which one membership says.
-        An rsplit past the walk has the split's pieces up to its limit.
+        as the read writes it: the same terms the read asserts, where a membership beside them
+        left cvc5 past its limit on an int conversion of a later piece. Otherwise, lines are
+        counted as their pieces are written, and on whitespace the string has that many words
+        and one more, which one membership says. An rsplit past the walk has the split's pieces
+        up to its limit.
         """
         if number < 0:
             return TRUE
@@ -107,8 +123,8 @@ class SplitList:
         if number <= self.walked:
             return self._there(number)
         if self.head == "splitlines" or self._walked():
-            # lines, and an rsplit walked to its limit (at most 17 pieces), count by their walk
-            return SPLITS[self.head](self.term, self.operands, number)[1]
+            # lines, and an rsplit walked to its limit (at most 17 pieces), count by their pieces
+            return self._there(number)
         if self._words():
             return words_past(self.term, number)
         separator = self.operands[0]
@@ -136,11 +152,13 @@ class SplitList:
         return self.head in ("split", "rsplit") and (not self.operands or self.operands[0] is None)
 
     def _there(self, index: int) -> str:
-        """That piece ``index`` is there, as the walk that reads it writes it: the pieces a
-        path takes out are asserted there by the same walk, which cvc5 answered faster beside
-        the pieces themselves than one membership."""
+        """That piece ``index`` is there, as its piece is written: the pieces a path takes out
+        are asserted there by the same terms, which cvc5 answered faster beside the pieces
+        themselves than one membership."""
         if 0 <= self.limit() < index:
             return FALSE
+        if self.glued is not None:
+            return self.glued.there(index)
         if self.head == "rsplit" and not self._walked():
             # the split's pieces from the start, whose count this rsplit has up to its limit;
             # the string it reads them on is the read's restriction, not the count's
@@ -148,7 +166,9 @@ class SplitList:
         return SPLITS[self.head](self.term, self.operands, index)[1]
 
     def piece(self, index: int) -> str:
-        """Piece ``index`` from the start."""
+        """Piece ``index`` from the start: glued where the pieces are, else by its walk."""
+        if self.glued is not None:
+            return self.glued.piece(index)
         return SPLITS[self.head](self.term, self.operands, index)[0]
 
     def fact(self) -> str:

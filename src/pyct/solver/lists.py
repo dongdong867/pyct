@@ -202,6 +202,7 @@ class ListTerms(ListTyping, PositionPins):
     def _split(self, node: list[Expression], kinds: Kinds) -> Counted:
         """A split's list: its count, and its pieces as `split_lists` reads them. A count is
         at least as many pieces as every string has, and c* where it meets anything else."""
+        self.splits.declared = self.definitions
         listed = self.splits.made(node, self.named(node[1]))
         self.least[listed.count] = listed.least()
         if (fact := listed.fact()) != TRUE:
