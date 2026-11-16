@@ -8,9 +8,10 @@ but exactly None, bool, int, float, str, list, tuple and dict, as an instance a
 ``run()`` caller hands in, is an object too. A parameter holds an object when
 its lists, tuples and dicts hold one at any depth, each item of a list and each
 value of a dict read under what its hint asks of its items (``item_check``), so
-a list under ``list[Order]`` holds one. Every other parameter is plain, and a
-rewrite reads plain parameters alone (decision
-llm-a-rewrite-reads-no-parameter-that-holds-an-object).
+a list under ``list[Order]`` holds one. Every other parameter is plain. A
+rewrite reads a plain parameter whole and an object only as ``name.field``,
+the method's ``self`` among them, and reads no parameter that holds an object
+(decision llm-a-rewrite-reads-a-field-an-object-stores).
 
 The hints are the ones each input's ``Seed.checks`` holds, read as the input's
 own build reads them. Each type is compared with the plain ones by identity, so

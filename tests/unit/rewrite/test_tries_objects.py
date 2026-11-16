@@ -32,15 +32,17 @@ def test_an_input_whose_every_argument_holds_an_object_gives_up_before_any_ask()
     assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
 
 
-def test_a_method_that_takes_only_self_gives_up_before_any_ask() -> None:
-    given = GivenUp(CONDITION, PLAN, Seed.of({"self": {"__class__": "m::Order"}}), MissWhy.TIMEOUT)
-    fake = Fake()
+# llm-rewrite-object-fields-reads-self
+def test_a_method_that_takes_only_self_is_asked_and_reads_its_field() -> None:
+    given = GivenUp(CONDITION, PLAN, Seed.of({"self": {"code": "0"}}), MissWhy.TIMEOUT)
+    kept = Kept("self")
+    fake = Fake(reply='self.code == "1e-30"', answer=Sat({}))
 
-    found = Asking(fake, given, ABOUT, (), Kept()).tries(fake)
+    found = Asking(fake, given, ABOUT, ("self",), kept, "self").tries(fake)
 
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
+    assert found == Tried(True, True)
+    assert fake.handed == [{"self": {"code": "0"}}]
+    assert kept.rewrites[CONDITION].fields == ("self.code",)
 
 
 def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_in_the_ask() -> None:

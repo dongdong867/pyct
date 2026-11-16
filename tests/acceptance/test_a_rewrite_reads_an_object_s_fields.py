@@ -42,6 +42,9 @@ from tests.acceptance.test_a_rewrite_reads_no_object_a_hint_builds import record
 
 # `tagged(order)`: `if float(order.tags[0]) == 1e-30:` on line 17
 TAGGED = f"{OBJECTS}::tagged"
+# `Till.pay(self)`: `if float(self.code) == 1e-30:` on line 59, `return 1` on line 60
+TILL_PAY = f"{OBJECTS}::Till.pay"
+TILL_AT = f"llm: rewrite for {file_of('objects')}:59:11"
 
 
 # llm-rewrite-object-fields-reads-a-seed-named-object
@@ -80,6 +83,19 @@ def test_a_field_of_an_instance_a_run_caller_hands_in_is_read() -> None:
 
     assert f"{PAY_AT}: {TOOK}" in llm_said(ran.said)
     assert covers(ran, 6)
+
+
+# llm-rewrite-object-fields-reads-self
+def test_a_field_of_a_method_s_self_is_read() -> None:
+    provider = FakeRewrites(['self.code == "1e-30"'])
+
+    ran = run_rewrites(TILL_PAY, {"self": {"code": "0"}}, provider)
+
+    said = llm_said(ran.said)
+    assert provider.requests
+    assert not any("given up" in line for line in said)
+    assert f"{TILL_AT}: {TOOK}" in said
+    assert {"self": {"code": "1e-30"}} in covers(ran, 60)
 
 
 # llm-rewrite-object-fields-reads-a-slot

@@ -178,8 +178,7 @@ class Rewrites(Asker):
             modules=modules,
         )
         self_name = self.target.self_name
-        parameters = tuple(name for name in given.origin.args if name != self_name)
-        return Asking(self.provider, given, about, parameters, self.kept, self_name)
+        return Asking(self.provider, given, about, tuple(given.origin.args), self.kept, self_name)
 
     def _outcome(self, tried: Tried) -> Outcome:
         """What the tries come to, said: an ask that got no answer is skipped, and once the
