@@ -15,12 +15,11 @@ from pyct.core.entry import in_use
 from pyct.core.entry.in_use import LoopInUse
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
 from pyct.intercept.hook import Interception, intercepting
+from pyct.run.formula_runner import FormulaInPyctProcessError, FormulaRunner, FormulaText
 from pyct.run.isolation import Isolation
 from pyct.run.loops_in_use import (
     IN_PYCT_S_PROCESS,
-    FormulaInPyctProcessError,
     FormulaInUse,
-    FormulaRunner,
     LoopsInUse,
     leaving_by,
     unused_because,
@@ -36,6 +35,8 @@ from tests.unit.run.test_run_pieces import forget_modules
 G = str(REPO_ROOT / "targets" / "summaries" / "loops.py")
 FEW_Z, FEW_STOPS = Site(G, 45, 4), Site(G, 89, 4)
 COUNT = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
+# the text a runner a test builds by hand carries
+TEXT = FormulaText(COUNT, ("s", "t"), ("t",), (G, 45, 4), "<summary m:3:4>")
 
 
 def compiled(text: str, file: str = "<summary m:3:4>") -> Formula:
@@ -59,7 +60,7 @@ def table() -> Iterator[dict[tuple[str, int, int], LoopInUse]]:
 
 def test_a_runner_built_here_never_runs_its_code_here() -> None:
     code = compile("raise SystemExit('ran')", "<summary m:3:4>", "exec")
-    runner = FormulaRunner(code)
+    runner = FormulaRunner(code, TEXT)
 
     with pytest.raises(FormulaInPyctProcessError):
         runner({"s": "z", "t": 0})
@@ -243,7 +244,7 @@ def test_what_a_loop_holds_that_leaves_its_frame(code: str, leaving: str | None)
 
 
 def test_a_runner_is_called_on_values_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    runner = FormulaRunner(compiled(COUNT).code)
+    runner = FormulaRunner(compiled(COUNT).code, TEXT)
     # as in an input's own process, whose id is not the one that built the runner
     monkeypatch.setattr(runner, "home", -1)
 

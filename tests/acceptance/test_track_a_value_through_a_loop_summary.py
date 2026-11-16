@@ -17,6 +17,7 @@ from pyct.core.foundation.branch import Branch
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse
 from pyct.results.record import InputRecord, Source
+from pyct.run.isolation import Isolation
 from tests.acceptance.llm_summaries import (
     COUNT,
     ONE_MOMENT,
@@ -79,12 +80,17 @@ def holds(expression: object, part: object) -> bool:
     return isinstance(expression, list) and any(holds(each, part) for each in expression)
 
 
-def summarized(function: str, reply: str, limits: Limits = ONE_MOMENT) -> Summarized:
+def summarized(
+    function: str,
+    reply: str,
+    limits: Limits = ONE_MOMENT,
+    isolation: Isolation = Isolation.AUTO,
+) -> Summarized:
     """``function`` of G run from the seed, the provider answering ``reply``, past the formula's
-    ``checked on`` line."""
+    ``checked on`` line, each input where ``isolation`` says."""
     spec = f"{LOOPS}::{function}"
     provider = FakeSummaries([reply])
-    done = run_summaries(spec, SEED, provider, limits)
+    done = run_summaries(spec, SEED, provider, limits, isolation)
     assert len(provider.requests) == 1
     assert after_checked(done), done.said
     return done
@@ -100,6 +106,16 @@ def test_an_input_after_the_check_forks_on_the_formula_s_count() -> None:
     done = summarized("few_z", COUNT)
 
     every_after_holds(after_checked(done), line_of("few_z", "if t > 3:"), [">", Z, 3])
+
+
+# llm-summary-for-a-stuck-loop-in-use-in-a-fresh-interpreter
+def test_an_input_in_a_fresh_interpreter_forks_on_the_formula_s_count() -> None:
+    done = summarized("few_z", COUNT, isolation=Isolation.FRESH)
+
+    every_after_holds(after_checked(done), line_of("few_z", "if t > 3:"), [">", Z, 3])
+    # inputs that start fresh run in a process of their own, so the formula is in use
+    assert not any(" not used: " in line for line in done.llm_said())
+    assert state_of(done) == "in use"
 
 
 # llm-summary-for-a-stuck-loop-in-use-loop-records-no-fork

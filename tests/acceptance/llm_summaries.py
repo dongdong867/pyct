@@ -109,10 +109,12 @@ def run_summaries(
     seed: Mapping[str, object] | Sequence[Mapping[str, object]],
     provider: FakeSummaries,
     limits: Limits = ONE_MOMENT,
+    isolation: Isolation = Isolation.AUTO,
 ) -> Summarized:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package and
     records each loop's runs, every input and each formula check in a child forked from this
-    process, with ``provider`` as the summaries helper."""
+    process, with ``provider`` as the summaries helper. ``isolation`` says where each input runs
+    instead, such as in a fresh interpreter."""
     records = provider.records
     said: list[str] = []
 
@@ -125,7 +127,7 @@ def run_summaries(
         if line is not None:
             said.append(line)
 
-    setup = Setup(isolation=Isolation.AUTO, helpers=Helpers(summaries=provider))
+    setup = Setup(isolation=isolation, helpers=Helpers(summaries=provider))
     tell = Tell(report=report, noted=noted)
     with interception(spec, pieces=True):
         result = run(load_target(spec), seed, limits=limits, setup=setup, tell=tell)

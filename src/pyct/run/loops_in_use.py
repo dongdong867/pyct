@@ -1,15 +1,10 @@
-"""A run's loops in use: whether a loop's checked formula can come into use, the runner each
-formula in use is called through, and core's table of loops in use (`pyct.core.entry.in_use`),
-which each input forked from pyct's process inherits.
+"""A run's loops in use: whether a loop's checked formula can come into use, and core's table of
+loops in use (`pyct.core.entry.in_use`), which each input forked from pyct's process inherits and
+a fresh interpreter is handed as text (`pyct.run.formula_runner`).
 
 pyct's process compiles a formula (`pyct.run.summary_checks.formula_code`)
-and never runs it, not even its ``def`` statement, as decision
-llm-model-written-code-runs-only-in-a-process-of-the-call-s-own says. The
-runner holds the compiled code; on its first call, which comes inside an
-input's own process at the loop's end, it runs the code's module as a
-model-run child does (`pyct.run.model_runs`), with the target's builtins
-bound, then calls ``summary`` on the values it is handed. Called in the
-process that built it, it raises `FormulaInPyctProcessError` instead.
+and never runs it; each loop in use calls its formula through a
+`FormulaRunner`, which runs the code only in an input's own process.
 
 A formula comes into use when the run's inputs run in a process of their
 own, the loop's own code holds no ``return``, ``yield`` or ``await``, and
@@ -20,19 +15,15 @@ from __future__ import annotations
 
 import ast
 import json
-import math
-import os
 import types
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from pyct.core.entry.in_use import IN_USE, LoopInUse
 from pyct.core.foundation.branch import Site
-from pyct.intercept.wrap import bound_builtins
 from pyct.results.pieces import FUNCTIONS, SCOPES, Piece, pieces, proper
+from pyct.run.formula_runner import FormulaRunner, FormulaText
 from pyct.run.summary_checks import CompleteRun
-from pyct.run.summary_form import SUMMARY
 
 # why a formula is not used: the run's inputs run in pyct's own process
 IN_PYCT_S_PROCESS = "inputs run in pyct's own process"
@@ -49,10 +40,6 @@ _KINDS = (int, float, str, bool)
 _OTHER_KINDS: dict[type, str] = {list: "a list", dict: "a dict", type(None): "None"}
 
 
-class FormulaInPyctProcessError(RuntimeError):
-    """A formula's runner was called in pyct's own process, which never runs model code."""
-
-
 @dataclass(frozen=True)
 class FormulaInUse:
     """A loop's formula in use: its text as the reply wrote it, its parameters, the names it gives
@@ -67,32 +54,6 @@ class FormulaInUse:
     code: types.CodeType
 
 
-class FormulaRunner:
-    """A formula's call as a loop in use makes it: each parameter's value by name in, each changed
-    name's value by name out. The code's module runs on the first call, in the input's process."""
-
-    def __init__(self, code: types.CodeType) -> None:
-        self.code = code
-        # the process that built the runner, pyct's own, where the code never runs
-        self.home = os.getpid()
-        self.summary: Callable[..., Any] | None = None
-
-    def __call__(self, values: Mapping[str, object]) -> Mapping[str, object]:
-        if self.summary is None:
-            self.summary = self._defined()
-        return self.summary(**values)
-
-    def _defined(self) -> Callable[..., Any]:
-        """The formula's function, its module run in a namespace of its own."""
-        if os.getpid() == self.home:
-            raise FormulaInPyctProcessError("pyct's own process never runs a formula")
-        namespace: dict[str, object] = {"__builtins__": bound_builtins(), "math": math}
-        exec(self.code, namespace)
-        summary = namespace[SUMMARY]
-        assert callable(summary)
-        return summary
-
-
 class LoopsInUse:
     """A run's formulas in use, by their loops' sites, each in core's table until `close`."""
 
@@ -103,8 +64,10 @@ class LoopsInUse:
         """Put the formula's loop in use from the next input on."""
         site = formula.site
         self.formulas[site] = formula
-        runner = FormulaRunner(formula.code)
-        IN_USE[_place(site)] = LoopInUse(formula.parameters, formula.changed, runner)
+        place = _place(site)
+        text = FormulaText(formula.text, formula.parameters, formula.changed, place, formula.file)
+        runner = FormulaRunner(formula.code, text)
+        IN_USE[place] = LoopInUse(formula.parameters, formula.changed, runner)
 
     def close(self) -> None:
         """Take each of the run's loops out of core's table, as the run ends."""
