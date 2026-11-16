@@ -1,5 +1,5 @@
-"""The rewrites tool tells a method's ``self`` apart as an object: the request shows the dict each
-input builds the instance from as an object, never as JSON."""
+"""The rewrites tool tells a method's ``self`` apart as an object: the request shows the instance
+as its class and the dict each input builds it from, and a rewrite may read its fields."""
 
 from pyct.core.foundation.branch import Site
 from pyct.run.stuck import Outcome
@@ -19,7 +19,7 @@ TILL_PAY = "targets.rewrites.objects::Till.pay"
 
 
 # llm-rewrite-hint-built-object-each-built-object-counts
-def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
+def test_a_method_s_self_is_shown_as_its_class_and_the_dict_it_is_built_from() -> None:
     provider = FakeRewrites(["I cannot rewrite it."])
     tool, file = tool_for(TOTAL, provider)
     site = Site(file, 15, 11)
@@ -34,7 +34,10 @@ def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
 
     assert handled.outcomes == (Outcome.GAVE_UP,)
     request = provider.requests[0]
-    assert dict(request.args) == {"self": "<holds an object>", "discount": "0"}
+    assert dict(request.args) == {
+        "self": '<Cart object, built from {"owner": "ann"}>',
+        "discount": "0",
+    }
     assert request.unreadable == ()
 
 
@@ -52,4 +55,4 @@ def test_a_method_that_takes_only_self_is_asked_with_self_as_its_parameter() -> 
     assert handled.outcomes == (Outcome.GAVE_UP,)
     assert provider.requests
     assert {request.unreadable for request in provider.requests} == {()}
-    assert dict(provider.requests[0].args) == {"self": "<holds an object>"}
+    assert dict(provider.requests[0].args) == {"self": '<Till object, built from {"code": "0"}>'}

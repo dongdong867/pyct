@@ -53,13 +53,15 @@ CALLS = frozenset({"len", "int", "float", "str", "bool", "abs", "min", "max", "o
 FORM = (
     "Answer with one Python expression and nothing else: a condition on the function's"
     " parameters that every input it holds for takes the side the line needs. It may be"
-    " narrower than the condition. It may read the parameters that hold no object, and their"
-    ' items, written x[i] or d["k"]; literals; comparisons; and, or, not; arithmetic; len,'
-    " int, float, str, bool, abs, min, max, ord and chr; math.<function>; and the methods of"
-    " the values whose names do not start with _, other than format and format_map. It reads"
-    " no other name, and no self, and passes no key function. Each operand of and, or and not"
-    " runs on every input, so an operand may not raise where an earlier one would have guarded"
-    " it."
+    " narrower than the condition. It may read the parameters, a method's self among them, and"
+    ' their items, written x[i] or d["k"]; a field of a parameter that is an object, written'
+    " order.code, one level deep, but never the object whole and never its methods; literals;"
+    " comparisons; and, or, not; arithmetic; len, int, float, str, bool, abs, min, max, ord and"
+    " chr; math.<function>; and the methods of the values whose names do not start with _,"
+    " other than format and format_map. It reads no other name, and no parameter that holds an"
+    " object inside a list, tuple or dict, and passes no key function. Each operand of and, or"
+    " and not runs on every input, so an operand may not raise where an earlier one would have"
+    " guarded it."
 )
 # the methods whose text reads a value's attributes
 _READS_FIELDS = frozenset({"format", "format_map"})

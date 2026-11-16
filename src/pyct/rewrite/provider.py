@@ -40,11 +40,12 @@ class RewriteRequest:
     the side the missed line needs; ``earlier`` the distinct conditions the path took before it,
     each at its last place, nearest last; ``code`` the source of the function that holds it;
     ``args`` each parameter with the input's value as JSON, or as Python writes it when JSON
-    cannot hold it, and a value that holds an object as a placeholder written without running
-    the target's code (``pyct.rewrite.request.value_text``); ``answer`` what the solver said,
-    ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first, each saying
-    whether the solver answered ``timeout`` or ``unknown`` to its rewrite's ask; and
-    ``unreadable`` the parameters a rewrite may not read, since each holds an object.
+    cannot hold it, and a value that is or holds an object as a placeholder written without
+    running the target's code (``pyct.rewrite.request.args_text``); ``answer`` what the solver
+    said, ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first, each
+    saying whether the solver answered ``timeout`` or ``unknown`` to its rewrite's ask; and
+    ``unreadable`` the parameters a rewrite may not read, since each holds an object inside a
+    list, tuple or dict.
     """
 
     place: str

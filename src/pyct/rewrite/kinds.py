@@ -45,16 +45,19 @@ class Kind(enum.Enum):
 @dataclass(frozen=True)
 class Kinds:
     """What tells an input's objects apart: what each parameter's hint asks, and the parameter
-    whose dict each input builds the instance a method runs on from, None for any other
-    target."""
+    whose dict each input builds the instance a method runs on from, with that instance's
+    class, None for any other target."""
 
     checks: Mapping[str, Check] = field(default_factory=dict)
     self_name: str | None = None
+    self_class: type | None = None
 
     @classmethod
-    def of_seed(cls, seed: Seed, self_name: str | None = None) -> Kinds:
+    def of_seed(
+        cls, seed: Seed, self_name: str | None = None, self_class: type | None = None
+    ) -> Kinds:
         """The kinds under the hints ``seed`` was made with."""
-        return cls(seed.checks, self_name)
+        return cls(seed.checks, self_name, self_class)
 
     def of(self, name: str, value: object) -> Kind:
         """The kind of parameter ``name``, holding ``value``. The method's ``self`` is built only

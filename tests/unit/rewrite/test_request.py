@@ -114,7 +114,7 @@ def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_cod
     aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
     wanted = plan((aimed,))
     assert wanted is not None
-    form = {"__class__": "m::Order", "secret": "hunter2"}
+    form = {"__class__": "m::Order", "code": "0"}
     origin = Seed.of({"n": 0, "o": Loud(), "l": [1, Loud()], "f": form})
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
@@ -124,13 +124,15 @@ def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_cod
         "n": "0",
         "o": "<Loud object>",
         "l": "<holds an object>",
-        "f": "<holds an object>",
+        "f": '<Order object, built from {"code": "0"}>',
     }
     assert "hunter2" not in request_text(request)
 
 
 # llm-rewrite-hint-built-object-each-built-object-counts
-def test_an_object_a_hint_or_a_method_s_self_builds_is_a_placeholder_not_json() -> None:
+# llm-rewrite-object-fields-request-shows-an-object-a-hint-builds
+# llm-rewrite-object-fields-request-shows-self
+def test_an_object_a_hint_or_self_builds_shows_its_class_and_its_arguments() -> None:
     aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
     wanted = plan((aimed,))
     assert wanted is not None
@@ -139,13 +141,13 @@ def test_an_object_a_hint_or_a_method_s_self_builds_is_a_placeholder_not_json() 
     origin = Seed.of(seed, checks)
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
-    request = request_for(given, ABOUT, (), (), Kinds.of_seed(origin, "self"))
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(origin, "self", Order))
 
     assert dict(request.args) == {
         "n": "0",
-        "o": "<holds an object>",
+        "o": '<Order object, built from {"code": "0"}>',
         "l": "<holds an object>",
-        "self": "<holds an object>",
+        "self": '<Order object, built from {"code": "0"}>',
     }
 
 

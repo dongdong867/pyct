@@ -145,8 +145,8 @@ class _NoInput:
 @dataclass(frozen=True)
 class Asking:
     """One condition's tries: the provider, what the solver gave up on, where it sits, the
-    function's parameters, the rewrites kept, and the method's ``self`` parameter, None for a
-    target that is no method."""
+    function's parameters, the rewrites kept, and the method's ``self`` parameter with its
+    class, each None for a target that is no method."""
 
     provider: RewriteProvider
     given: GivenUp
@@ -154,12 +154,13 @@ class Asking:
     parameters: tuple[str, ...]
     kept: Kept
     self_name: str | None = None
+    self_class: type | None = None
 
     @functools.cached_property
     def kinds(self) -> Kinds:
         """What tells the given-up input's objects apart: the hints its seed was made with, and
         the method's ``self``."""
-        return Kinds.of_seed(self.given.origin, self.self_name)
+        return Kinds.of_seed(self.given.origin, self.self_name, self.self_class)
 
     @functools.cached_property
     def unreadable(self) -> tuple[str, ...]:
@@ -339,7 +340,7 @@ def _no_input(expression: str, answers: Sequence[Unsat | Unknown | Timeout]) -> 
 
 
 def _written(args: Mapping[str, object], kinds: Kinds) -> str:
-    """An input's arguments, each name as JSON and each value as ``value_text`` writes it."""
+    """An input's arguments, each name as JSON and each value as ``args_text`` writes it."""
     return (
         "{"
         + ", ".join(f"{json.dumps(name)}: {text}" for name, text in args_text(args, kinds))
