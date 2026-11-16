@@ -11,6 +11,8 @@ from pathlib import Path
 
 import pytest
 
+from pyct.results.failure import FailureKind
+from pyct.results.record import Source
 from pyct.run import run as run_module
 from tests.acceptance.harness import input_lines, numbers_of, run_pyct, stderr_lines
 from tests.acceptance.llm_rewrites import (
@@ -37,6 +39,7 @@ from tests.acceptance.object_fields import (
     instance,
     noisy_log,  # noqa: F401
     order_seed,
+    tries,
 )
 from tests.acceptance.test_a_rewrite_reads_no_object_a_hint_builds import recording
 
@@ -147,6 +150,15 @@ def test_a_field_is_read_as_the_constructor_stored_it() -> None:
     assert str(order["code"]).upper() == "1E-30"
 
 
+# llm-rewrite-object-fields-reads-what-the-constructor-stored
+def test_a_field_is_not_read_as_the_seed_wrote_it() -> None:
+    # the constructor stores the code in upper case, so no input stores "1e-30"
+    ran = run_rewrites(PAY, order_seed("Trimmed"), FakeRewrites(['order.code == "1e-30"']))
+
+    assert tries(ran, PAY_AT)[0].startswith("try 1: the solver answered unsat")
+    assert covers(ran, 6) == []
+
+
 # llm-rewrite-object-fields-runs-the-constructor-in-the-child
 def test_the_constructor_runs_once_more_in_the_rewrite_s_child(noisy: Path) -> None:
     ran = run_rewrites(PAY, order_seed("Noisy"), FakeRewrites([READS_CODE]))
@@ -202,4 +214,14 @@ def test_a_run_without_rewrites_builds_no_rewrites_tool(monkeypatch: pytest.Monk
     ran = run_rewrites(PAY, order_seed(), None)
 
     assert llm_said(ran.said) == []
-    assert ran.records
+    # the seed's input covers the false side and the constructor's line 51; the solver's input,
+    # whose code it picks, raises in float() on line 5
+    assert [(record.source, sorted(record.covered_lines)) for record in ran.records] == [
+        (Source.SEED, [5, 7, 51]),
+        (Source.SOLVER, [5, 51]),
+    ]
+    assert dict(ran.records[0].args) == {"order": form("Order", code="0")}
+    failure = ran.records[1].failure
+    assert failure is not None
+    assert failure.kind is FailureKind.TARGET_RAISED
+    assert failure.detail.startswith("ValueError: ")
