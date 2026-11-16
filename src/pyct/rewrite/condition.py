@@ -12,8 +12,11 @@ rewrite outside the form ``FORM`` gives the model; otherwise ``and``,
 substitutions, and it runs only in a forked child (`pyct.run.model_runs`).
 
 ``__rewrite__`` takes exactly the parameters the expression names
-(``Rewrite.reads``); the child is handed those arguments, and a kept rewrite
-is checked against those names. A parameter that is an object on the input
+(``Rewrite.reads``), by keyword into one dict, ``ARGUMENTS``, so the
+expression reads each as ``ARGUMENTS["name"]`` and no parameter's name can
+stand for a name pyct writes in, ``bool``, ``__held__`` or ``READER``; the
+child is handed those arguments, and a kept rewrite is checked against those
+names. A parameter that is an object on the input
 (``pyct.rewrite.kinds``) is read only as ``name.field``, one level deep: the
 check refuses any other use of its name, since using the object whole runs
 its class's special methods, and a field whose name starts and ends with
@@ -41,6 +44,8 @@ FUNCTION = "__rewrite__"
 # reader: called with the object, its parameter's name and the field's
 READER = "__pyct_field__"
 _BRANCH = "__held__"
+# the dict ``__rewrite__`` takes its arguments in, by keyword, whatever their names
+ARGUMENTS = "arguments"
 # the line and column of that branch, whose fork is the rewrite's own
 HELD_LINE = 5
 HELD_COL = 7
@@ -153,7 +158,7 @@ def rewrite_code(
     text = (
         "import math\n\n\n"
         f"def {_BRANCH}(held):\n    if held:\n        return True\n    return False\n\n\n"
-        f"def {FUNCTION}({', '.join(reads)}):\n"
+        f"def {FUNCTION}(**{ARGUMENTS}):\n"
         f"    return {_BRANCH}((\n{expression}\n    ))\n"
     )
     check = _Check(frozenset(parameters), frozenset(objects), frozenset(fields))
@@ -200,7 +205,7 @@ class _Check:
         refused = refusal(branched.args[0], rules)
         if refused is not None:
             return refused
-        reads = _AsReads(self.fields)
+        reads = _AsReads(self.parameters, self.fields)
         branched.args[0] = _AsBits().visit(reads.visit(branched.args[0]))
         self.read = list(dict.fromkeys(reads.read))
         return tree
@@ -315,13 +320,20 @@ def _special(name: str) -> bool:
 
 
 class _AsReads(ast.NodeTransformer):
-    """Each field read of one of ``fields``, ``name.field``, written as the reader's call,
-    ``READER(name, "name", "field")``, and kept in ``read`` as ``name.field``. The check has
-    bounded the depth, so a call per level is safe."""
+    """Each of ``parameters`` written as its entry of ``ARGUMENTS``, and each field read of one
+    of ``fields``, ``name.field``, as the reader's call, ``READER(ARGUMENTS["name"], "name",
+    "field")``, kept in ``read`` as ``name.field``. The check has bounded the depth, so a call
+    per level is safe."""
 
-    def __init__(self, fields: frozenset[str]) -> None:
+    def __init__(self, parameters: frozenset[str], fields: frozenset[str]) -> None:
+        self.parameters = parameters
         self.fields = fields
         self.read: list[str] = []
+
+    def visit_Name(self, node: ast.Name) -> ast.expr:
+        if node.id not in self.parameters:
+            return node
+        return ast.copy_location(_argument(node.id), node)
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.expr:
         value = node.value
@@ -330,11 +342,16 @@ class _AsReads(ast.NodeTransformer):
             return node
         self.read.append(f"{value.id}.{node.attr}")
         arguments: list[ast.expr] = [
-            ast.Name(value.id, ast.Load()),
+            ast.copy_location(_argument(value.id), value),
             ast.Constant(value.id),
             ast.Constant(node.attr),
         ]
         return ast.copy_location(ast.Call(ast.Name(READER, ast.Load()), arguments, []), node)
+
+
+def _argument(name: str) -> ast.expr:
+    """The parameter ``name`` read from ``ARGUMENTS``."""
+    return ast.Subscript(ast.Name(ARGUMENTS, ast.Load()), ast.Constant(name), ast.Load())
 
 
 class _AsBits(ast.NodeTransformer):
