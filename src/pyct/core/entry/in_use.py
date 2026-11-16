@@ -280,11 +280,13 @@ def _as_it_went_in(value: object) -> object:
     if kind is ConcolicList:
         items = cast(ConcolicList, value)
         current = items.expression is not None and items.length() == len(items.shadow)
-        return copy.copy(items) if current else items.storage()
+        return copy.copy(items) if current else [plain(item) for item in items.storage()]
     if kind is ConcolicDict:
         pairs = cast(ConcolicDict, value)
         current = pairs.expression is not None and pairs.size() == len(pairs.shadow)
-        return copy.copy(pairs) if current else pairs.storage()
+        if current:
+            return copy.copy(pairs)
+        return {key: plain(each) for key, each in pairs.storage().items()}
     if kind is list or kind is dict:
         return copy.copy(value)
     return value

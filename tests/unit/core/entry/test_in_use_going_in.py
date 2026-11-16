@@ -1,7 +1,7 @@
 """A loop in use keeps, as it starts, a copy of each list or dict going in: its formula, and the
 record of a run it fails on, read the values as they went in, whatever the loop does to them."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import Any, cast
 
 import pytest
@@ -133,26 +133,84 @@ def lengthened(values: Mapping[str, object]) -> Mapping[str, object]:
     return {"t": t + len(s)}
 
 
-@pytest.mark.parametrize(
-    ("source", "going_in", "loop"),
-    [(HEAP, {"xs": [3, 5]}, (5, 4)), (STORED, {"d": {"a": 1}}, (4, 4))],
-    ids=["a list changed from C", "a dict changed from C"],
-)
-def test_the_copy_of_a_list_or_dict_changed_from_c_leaves_the_target_s_own_alone(
-    source: str, going_in: Mapping[str, object], loop: tuple[int, int]
-) -> None:
-    def judged(sink: list[SinkItem]) -> list[Branch | Fact | Downgrade]:
-        return [each for each in sink if isinstance(each, Branch | Fact | Downgrade)]
+def compares_the_largest(values: Mapping[str, object]) -> Mapping[str, object]:
+    """HEAP's formula, comparing an item of the list going in."""
+    xs = values["xs"]
+    assert isinstance(xs, list)
+    assert max(cast(list[int], xs)) > 4
+    return lengthened(values)
 
-    seen: list[list[Branch | Fact | Downgrade]] = []
-    for loops in ({}, {loop: LoopInUse(("s", "t", *going_in), ("t",), lengthened)}):
+
+def compares_a(values: Mapping[str, object]) -> Mapping[str, object]:
+    """STORED's formula, comparing the value of the dict's key ``a``."""
+    d = values["d"]
+    assert isinstance(d, dict)
+    assert cast(dict[str, int], d)["a"] > 0
+    return lengthened(values)
+
+
+type _Judged = list[Branch | Fact | Downgrade]
+
+
+def written_and_in_use(
+    source: str,
+    going_in: Mapping[str, object],
+    loop: tuple[int, int],
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]],
+) -> tuple[_Judged, _Judged, int]:
+    """The forks, facts and downgrades of a call with the loop followed as written and of one
+    with the loop in use, and how many times the formula ran."""
+    calls: list[Mapping[str, object]] = []
+
+    def counting(values: Mapping[str, object]) -> Mapping[str, object]:
+        calls.append(values)
+        return formula(values)
+
+    seen: list[_Judged] = []
+    for loops in ({}, {loop: LoopInUse(("s", "t", *going_in), ("t",), counting)}):
         f = hooked(source)
         with using(loops) as sink:
             (value,) = bind(going_in, sink).values()
             f(value, "ab")
-        seen.append(judged(sink))
-
+        seen.append([each for each in sink if isinstance(each, Branch | Fact | Downgrade)])
     written, in_use = seen
+    return written, in_use, len(calls)
+
+
+CHANGED_FROM_C = pytest.mark.parametrize(
+    ("source", "going_in", "loop"),
+    [(HEAP, {"xs": [3, 5]}, (5, 4)), (STORED, {"d": {"a": 1}}, (4, 4))],
+    ids=["a list changed from C", "a dict changed from C"],
+)
+
+
+@CHANGED_FROM_C
+def test_the_copy_of_a_list_or_dict_changed_from_c_leaves_the_target_s_own_alone(
+    source: str, going_in: Mapping[str, object], loop: tuple[int, int]
+) -> None:
+    written, in_use, calls = written_and_in_use(source, going_in, loop, lengthened)
+
+    assert calls == 1
     assert in_use == written
     assert any(type(each) is Downgrade for each in written)
     assert not any(each.site.file.endswith("copy.py") for each in in_use)
+
+
+@pytest.mark.parametrize(
+    ("source", "going_in", "loop", "formula"),
+    [
+        (HEAP, {"xs": [3, 5]}, (5, 4), compares_the_largest),
+        (STORED, {"d": {"a": 1}}, (4, 4), compares_a),
+    ],
+    ids=["a list changed from C", "a dict changed from C"],
+)
+def test_a_formula_comparing_an_item_of_such_a_copy_records_what_the_loop_records(
+    source: str,
+    going_in: Mapping[str, object],
+    loop: tuple[int, int],
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]],
+) -> None:
+    written, in_use, calls = written_and_in_use(source, going_in, loop, formula)
+
+    assert calls == 1
+    assert in_use == written
