@@ -1,5 +1,5 @@
 """A call on model-written code builds the objects its arguments name as an input of the target
-does, with the target's home module, hints and the build of a method's ``self``, passed first;
+does, with the target's home module, hints and the build of a method's ``self``, passed by name;
 and a raise of one of the call's own ending errors ends it with that error's text, not as a
 raise."""
 
@@ -70,9 +70,27 @@ def test_an_object_a_hint_builds_is_built() -> None:
     assert ran(call).answer == '"Order"'
 
 
-def test_the_instance_a_method_runs_on_is_built_and_passed_first() -> None:
+def test_the_instance_a_method_runs_on_is_built_and_passed() -> None:
     call = ModelCall(
         code_of("def f(self, n):\n    return [type(self).__name__, self.code, n]\n"),
+        "f",
+        {"n": 1, "self": {"code": "0"}},
+        building=Building(
+            checks={"self": inside_of(Order).keys}, self_build=SelfBuild(Order, "self")
+        ),
+    )
+
+    done = ran(call)
+
+    assert done.result.failure is None, done.result.failure
+    assert done.answer == '["Order", "0", 1]'
+
+
+def test_the_instance_a_method_runs_on_is_passed_by_its_name_wherever_the_function_takes_it() -> (
+    None
+):
+    call = ModelCall(
+        code_of("def f(n, self):\n    return [type(self).__name__, self.code, n]\n"),
         "f",
         {"n": 1, "self": {"code": "0"}},
         building=Building(

@@ -98,6 +98,18 @@ def test_a_field_of_a_method_s_self_is_read() -> None:
     assert {"self": {"code": "1e-30"}} in covers(ran, 60)
 
 
+# llm-rewrite-object-fields-reads-self
+def test_a_field_of_self_is_read_when_the_seed_names_self_after_another_parameter() -> None:
+    # `Till.pay_over(self, n)`: `if float(self.code) == 1e-30:` on line 64, `return 1` on 66
+    provider = FakeRewrites(['self.code == "1e-30" and n > 0'])
+
+    ran = run_rewrites(f"{OBJECTS}::Till.pay_over", {"n": 1, "self": {"code": "0"}}, provider)
+
+    at = f"llm: rewrite for {file_of('objects')}:64:11"
+    assert f"{at}: {TOOK}" in llm_said(ran.said)
+    assert {"n": 1, "self": {"code": "1e-30"}} in covers(ran, 66)
+
+
 # llm-rewrite-object-fields-reads-a-slot
 def test_a_field_in_a_slot_is_read() -> None:
     ran = run_rewrites(PAY, order_seed("Slotted"), FakeRewrites([READS_CODE]))

@@ -60,6 +60,12 @@ class Till:
             return 1
         return 0
 
+    def pay_over(self, n):
+        if float(self.code) == 1e-30:
+            if n > 0:
+                return 1
+        return 0
+
 
 class Tagged:
     def __init__(self, tags):

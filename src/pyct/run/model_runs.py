@@ -10,7 +10,7 @@ writes each fork, fact and downgrade to a journal as an input's process
 does, then the answer as JSON to a second mapping. The child builds each
 object the arguments name as an input of the target builds it, with the
 target's home module, hints and the build of a method's ``self``, which it
-passes first, so the constructor runs in the child as in each input. A raise
+passes by its name, so the constructor runs in the child as in each input. A raise
 of one of the call's own ending errors ends the call with that error's text,
 which the asking tool reads as why its code read nothing. Whatever the call
 changes in its own process goes with the child; what it does outside the
@@ -161,14 +161,19 @@ def _serve(
 
 def _calling(call: ModelCall, returned: list[object], ended: list[str]) -> Callable[..., None]:
     """The call as the child makes it: the code's module run in a namespace of its own, then
-    its function called on the bound arguments, the instance a method runs on first, its answer
-    kept in ``returned``, or the text of an ending error in ``ended``."""
+    its function called on the bound arguments, each by its name, the instance a method runs on
+    under the name its build gives it wherever the function takes it, its answer kept in
+    ``returned``, or the text of an ending error in ``ended``."""
+    self_build = call.building.self_build
 
     def called(*first: object, **bound: object) -> None:
         namespace: dict[str, object] = {"__builtins__": bound_builtins(), **call.names}
         exec(call.code, namespace)
         function = namespace[call.function]
         assert callable(function)
+        if self_build is not None and first:
+            bound = {self_build.name: first[0], **bound}
+            first = first[1:]
         try:
             returned.append(function(*first, **bound))
         except call.ends as error:
