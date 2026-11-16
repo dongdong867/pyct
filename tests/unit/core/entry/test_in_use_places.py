@@ -1,15 +1,18 @@
 """Every fork, fact and downgrade a loop's formula records sits at the loop's place: the formula is
-not code of the target, and no line of it is one the target holds."""
+not code of the target, and no line of it is one the target holds. A piece that is not in use
+does none of the work of the loops in use."""
 
 import math
 from collections.abc import Callable, Mapping
 
+import pytest
+
 from pyct.binding.bind import bind
-from pyct.core.entry import bound
+from pyct.core.entry import bound, in_use
 from pyct.core.entry.in_use import LoopInUse
 from pyct.core.entry.math_calls import ROUTERS
 from pyct.core.foundation.branch import Branch, Downgrade, Fact, PieceRun, SinkItem, Site
-from tests.unit.core.entry.test_in_use import using
+from tests.unit.core.entry.test_in_use import WHILE, using
 from tests.unit.core.entry.test_pieces import FILE, hooked
 
 READS = """\
@@ -81,3 +84,19 @@ def test_a_downgrade_through_math_in_the_formula_is_placed_at_the_loop() -> None
         ROUTERS[id(math.log)](values["x"])
 
     assert recorded_by(logged) == [("downgrade", "log", AT_LOOP)]
+
+
+def test_a_piece_not_in_use_does_no_work_of_the_loops_in_use_while_another_is_in_use(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    called: list[str] = []
+    monkeypatch.setattr(in_use, "entered", lambda *_: called.append("entered"))
+    monkeypatch.setattr(in_use, "over", lambda iterable, *_: called.append("over") or iterable)
+    f, g = hooked(READS), hooked(WHILE)
+
+    # another loop of the same file is in use, at a line neither of these loops starts at
+    with using({(9, 4): LoopInUse(NAMES, ("t",), lambda _: {})}) as sink:
+        f(**bind({"s": "ab", "d": {"a": 2}, "x": 5.0}, sink))
+        g(2)
+
+    assert called == []

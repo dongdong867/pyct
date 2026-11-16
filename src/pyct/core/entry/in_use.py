@@ -100,13 +100,14 @@ class Run:
 
 
 class _Using:
-    """The live input's loops in use: whether its call uses them, where its drops go, the loops
-    dropped in it, and each run waiting on its end, by line."""
+    """The live input's loops in use: the lines they start at when its call uses them, none
+    else, where its drops go, the loops dropped in it, and each run waiting on its end, by
+    line."""
 
-    __slots__ = ("active", "dropped", "sink", "waiting")
+    __slots__ = ("dropped", "lines", "sink", "waiting")
 
     def __init__(self) -> None:
-        self.active = False
+        self.lines: frozenset[int] = frozenset()
         self.sink: BranchSink | None = None
         self.clear()
 
@@ -133,12 +134,12 @@ def start(sink: BranchSink, *, alone: bool) -> None:
     process of its own, and hands its drops to ``sink``."""
     USING.clear()
     USING.sink = sink
-    USING.active = alone and bool(IN_USE)
+    USING.lines = frozenset(line for _, line, _ in IN_USE) if alone else frozenset()
 
 
 def forget() -> None:
     """The live input ends: no loop is in use until the next `start`."""
-    USING.active = False
+    USING.lines = frozenset()
     USING.sink = None
     USING.clear()
 

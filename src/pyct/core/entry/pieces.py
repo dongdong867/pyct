@@ -30,11 +30,13 @@ hook raises nothing of its own into the target, and reads each value
 through its base type.
 
 A hook that records nothing does little: with no input live it reads one
-field, and past a piece's runs a lookup by its line. A piece that shares
-its line with another piece whose runs are all started reads its frame on
-each entry instead, as would one given no names at all, which
-`pyct.intercept.loops` leaves as written; an exit reads its frame while an
-entry waits on its line.
+field, and past a piece's runs a lookup by its line, then one in the lines
+the loops in use start at, which holds none while no loop is in use. A
+piece that shares its line with another piece whose runs are all started
+reads its frame on each entry instead, as would one given no names at all,
+which `pyct.intercept.loops` leaves as written; an exit reads its frame
+while an entry waits on its line. A piece at a line a loop in use starts at
+enters `pyct.core.entry.in_use` on each entry.
 """
 
 from __future__ import annotations
@@ -239,7 +241,7 @@ def piece_over[Iterated](
         or line in _recording.waiting
     ):
         _recording.entered(sys._getframe(1), line, col, going_in, changed)
-    if USING.active:
+    if line in USING.lines:
         return in_use.over(iterable, sys._getframe(1), line, col, (going_in, changed))
     return iterable
 
@@ -268,7 +270,7 @@ def piece_in(
         or line in _recording.waiting
     ):
         entry = _recording.entered(sys._getframe(1), line, col, going_in, changed)
-    if USING.active:
+    if line in USING.lines:
         run = in_use.entered(sys._getframe(1), line, col, (going_in, changed))
         if run is not None:
             run.entry = entry
