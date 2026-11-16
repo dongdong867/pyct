@@ -28,18 +28,14 @@ from pyct.run.notes import (
 )
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.summaries import (
-    AskedLoop,
     EarlierFormula,
     LoopState,
-    ShownRun,
     Summaries,
     SummaryReply,
     SummaryRequest,
-    asked_loop,
-    piece_at,
-    shown_runs,
 )
 from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, piece_at, shown_runs
 from pyct.run.target import load_target
 from pyct.run.tell import Ask, Tell, Told
 from tests.acceptance.harness import REPO_ROOT

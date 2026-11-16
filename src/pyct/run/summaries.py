@@ -41,19 +41,17 @@ from __future__ import annotations
 import enum
 import time
 import types
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from pyct.config.llm import SUMMARIES_TOOL
-from pyct.core.foundation.branch import PieceRun, Site
+from pyct.core.foundation.branch import Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
-from pyct.results.pieces import Piece
-from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
-from pyct.run.loops_in_use import FormulaInUse, LoopsInUse, statement_at, unused_because
+from pyct.run.loops_in_use import FormulaInUse, LoopsInUse, unused_because
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import (
     AskSkipped,
@@ -65,30 +63,15 @@ from pyct.run.notes import (
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.summary_checks import (
-    CompleteRun,
-    Ended,
-    check_formula,
-    formula_code,
-)
+from pyct.run.summary_checks import Ended, check_formula, formula_code
+from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, shown_runs
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
 
-# the recorded runs a request shows at most
-SHOWN_RUNS = 10
 # why a loop is not asked about: no run of it holds every name it changes; or, as
 # ``CANNOT_FORK`` says, no formula could run beside a second thread of pyct's process
 NO_RECORDED_RUN = "no recorded run"
-
-
-@dataclass(frozen=True)
-class ShownRun:
-    """One recorded run of the loop as a request shows it: each parameter with its value at the
-    start, and each changed name with its value at the end, each value JSON text."""
-
-    going_in: tuple[tuple[str, str], ...]
-    changed: tuple[tuple[str, str], ...]
 
 
 @dataclass(frozen=True)
@@ -133,17 +116,6 @@ class SummaryProvider(Protocol):
     """Gives a loop's summary. It never raises for an LLM problem: it returns Unanswered."""
 
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered: ...
-
-
-@dataclass(frozen=True)
-class AskedLoop:
-    """A loop at one moment: its site, its piece, its complete runs, and the formula's
-    parameters."""
-
-    site: Site
-    piece: Piece
-    runs: tuple[CompleteRun, ...]
-    parameters: tuple[str, ...]
 
 
 class Asked(enum.Enum):
@@ -357,58 +329,6 @@ class Summaries:
                 self.loops.items(), key=lambda item: (item[0].file, item[0].line, item[0].col)
             )
         )
-
-
-def asked_loop(site: Site, records: Sequence[InputRecord]) -> AskedLoop | None:
-    """The loop at ``site`` with its complete runs in the records, oldest first, and the names
-    going in that each holds; None when the site holds no piece or no run is complete."""
-    piece = piece_at(site)
-    if piece is None:
-        return None
-    wanted = set(piece.changed)
-    runs = tuple(
-        CompleteRun(number, each)
-        for number, record in enumerate(records, start=1)
-        for each in record.pieces
-        if each.site == site and wanted <= {changed.name for changed in each.changed}
-    )
-    if not runs:
-        return None
-    held = [{going.name for going in each.run.going_in} for each in runs]
-    parameters = tuple(name for name in piece.going_in if all(name in names for names in held))
-    return AskedLoop(site, piece, runs, parameters)
-
-
-def shown_runs(loop: AskedLoop) -> tuple[ShownRun, ...]:
-    """Up to ``SHOWN_RUNS`` of the loop's complete runs, as values: those whose values going in
-    differ from every earlier one's first, then those whose changed values differ, then the
-    rest, each group in run order."""
-    every = [_shown(each.run, loop) for each in loop.runs]
-    picked: list[int] = []
-    for part in ("going_in", "changed"):
-        seen = {getattr(every[at], part) for at in picked}
-        for at, each in enumerate(every):
-            if at not in picked and getattr(each, part) not in seen:
-                seen.add(getattr(each, part))
-                picked.append(at)
-    picked += [at for at in range(len(every)) if at not in picked]
-    return tuple(every[at] for at in picked[:SHOWN_RUNS])
-
-
-def _shown(run: PieceRun, loop: AskedLoop) -> ShownRun:
-    going_in = tuple((each.name, each.value) for each in run.going_in)
-    changed = {each.name: each.value for each in run.changed}
-    return ShownRun(
-        tuple(pair for pair in going_in if pair[0] in loop.parameters),
-        tuple((name, changed[name]) for name in loop.piece.changed),
-    )
-
-
-def piece_at(site: Site) -> Piece | None:
-    """The piece of a function in ``site``'s file at its line and column, as the file reads now;
-    None when it does not read or parse, or holds none there."""
-    found = statement_at(site)
-    return None if found is None else found[1]
 
 
 def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:
