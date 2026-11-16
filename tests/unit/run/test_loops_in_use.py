@@ -4,6 +4,7 @@ use only for inputs in a process of their own, a loop that cannot leave part way
 values of the kinds a loop in use hands on."""
 
 import ast
+import os
 import types
 from collections.abc import Iterator
 from pathlib import Path
@@ -63,7 +64,7 @@ def table() -> Iterator[dict[tuple[str, int, int], LoopInUse]]:
 
 def test_a_runner_built_here_never_runs_its_code_here() -> None:
     code = compile("raise SystemExit('ran')", "<summary m:3:4>", "exec")
-    runner = FormulaRunner(code, TEXT)
+    runner = FormulaRunner(code, TEXT, os.getpid())
 
     with pytest.raises(FormulaInPyctProcessError):
         runner({"s": "z", "t": 0})
@@ -86,6 +87,8 @@ def test_a_loop_put_in_use_runs_nothing_and_takes_its_place_in_core_s_table(
     assert loop.formula.code is code
     assert loop.formula.summary is None
     assert loop.formula.text is formula
+    # pyct's process builds it, and it refuses to run there
+    assert loop.formula.home == os.getpid()
     assert loops.sites == {FEW_Z}
 
 
@@ -248,8 +251,8 @@ def test_what_a_loop_holds_that_leaves_its_frame(code: str, leaving: str | None)
 
 
 def test_a_runner_is_called_on_values_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
-    runner = FormulaRunner(compiled(COUNT).code, TEXT)
-    # as in an input's own process, whose id is not the one that built the runner
+    runner = FormulaRunner(compiled(COUNT).code, TEXT, os.getpid())
+    # as in an input's own process, whose id is not pyct's
     monkeypatch.setattr(runner, "home", -1)
 
     assert runner({"s": "zaz", "t": 1}) == {"t": 3}

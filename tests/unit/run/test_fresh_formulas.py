@@ -100,8 +100,8 @@ def test_a_formula_that_does_not_compile_leaves_its_loop_out_of_core_s_table(
     assert list(table) == [(G, 45, 4)]
 
 
-def test_a_runner_built_by_default_refuses_to_run_where_it_was_built() -> None:
-    runner = FormulaRunner(compiled(COUNT).code, text_of((G, 45, 4)))
+def test_a_runner_told_pyct_s_process_refuses_to_run_there() -> None:
+    runner = FormulaRunner(compiled(COUNT).code, text_of((G, 45, 4)), os.getpid())
 
     assert runner.home == os.getpid()
     with pytest.raises(FormulaInPyctProcessError):
@@ -166,7 +166,7 @@ def test_a_fresh_input_runs_the_loop_as_written_when_its_formula_does_not_compil
     # with no formula the loop's forks leave inputs open past any budget, so the runs stop early
     plain = ran(Isolation.FRESH, tmp_path, SHORT)
     place = (str(counts), *LOOP)
-    runner = FormulaRunner(compiled(COUNT).code, text_of(place, REFUSED))
+    runner = FormulaRunner(compiled(COUNT).code, text_of(place, REFUSED), os.getpid())
     in_use.IN_USE[place] = LoopInUse(("s", "t"), ("t",), runner)
 
     result = ran(Isolation.FRESH, tmp_path, SHORT)

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import types
 from collections.abc import Sequence
 
@@ -51,7 +52,7 @@ class LoopsInUse:
         """Put the formula's loop in use from the next input on: its text, and its code as pyct's
         process compiled it."""
         self.sites.add(Site(*text.place))
-        runner = FormulaRunner(code, text)
+        runner = FormulaRunner(code, text, os.getpid())
         IN_USE[text.place] = LoopInUse(text.parameters, text.changed, runner)
 
     def stop(self, site: Site) -> None:

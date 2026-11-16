@@ -8,8 +8,8 @@ runner holds the compiled code; on its first call, which comes inside an
 input's own process at the loop's end, it runs the code's module as a
 model-run child does (`pyct.run.model_runs`), with the target's builtins
 bound, then calls ``summary`` on the values it is handed. Called in the
-process that built it, pyct's own by default, it raises
-`FormulaInPyctProcessError` instead.
+process it is told is pyct's own, it raises `FormulaInPyctProcessError`
+instead.
 
 A forked input inherits core's table of loops in use (`pyct.core.entry.in_use`)
 with each runner in it. A code object does not pickle, so a fresh
@@ -31,15 +31,12 @@ import os
 import types
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Final, Literal
+from typing import Any
 
 from pyct.core.entry.in_use import IN_USE, LoopInUse
 from pyct.intercept.model_code import Refused
 from pyct.intercept.wrap import bound_builtins
 from pyct.run.summary_form import SUMMARY, compiled_formula
-
-# the process a runner refuses to run in unless told another: the one that builds it
-BUILDER: Final = "builder"
 
 
 class FormulaInPyctProcessError(RuntimeError):
@@ -63,18 +60,13 @@ class FormulaRunner:
     """A formula's call as a loop in use makes it: each parameter's value by name in, each changed
     name's value by name out. The code's module runs on the first call, in the input's process.
 
-    ``home`` is the process the code never runs in: by default the one that builds the runner,
-    pyct's own; None in a fresh interpreter, which builds the runner it calls."""
+    ``home`` is the id of the process the code never runs in: pyct's own, which builds the runner
+    a forked input inherits; None in a fresh interpreter, which builds the runner it calls."""
 
-    def __init__(
-        self,
-        code: types.CodeType,
-        text: FormulaText,
-        home: int | None | Literal["builder"] = BUILDER,
-    ) -> None:
+    def __init__(self, code: types.CodeType, text: FormulaText, home: int | None) -> None:
         self.code = code
         self.text = text
-        self.home = os.getpid() if home == BUILDER else home
+        self.home = home
         self.summary: Callable[..., Any] | None = None
 
     def __call__(self, values: Mapping[str, object]) -> Mapping[str, object]:
