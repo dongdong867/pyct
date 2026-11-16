@@ -64,9 +64,10 @@ def replayed(tmp_path: Path, spec: str, seed: str, replay: Path) -> tuple[int, s
 
 
 # llm-rewrite-hint-built-object-is-not-read-as-a-dict
-def test_a_condition_on_a_hint_built_object_is_given_up_unasked(tmp_path: Path) -> None:
-    # the replies that ended the run with a traceback when the object read as a dict; the
-    # condition is now given up before any of them is asked for
+def test_a_hint_built_object_read_as_a_dict_is_refused_and_the_run_goes_on(tmp_path: Path) -> None:
+    # the replies that ended the run with a traceback when the object read as a dict; since
+    # a-rewrite-reads-an-object-s-fields a rewrite reads the object only as order.<field>, so
+    # each is asked for and refused
     replay = recording(tmp_path / "hinted.jsonl", f"{MODULE}:2:7", [READS_A_KEY] * 4)
 
     code, stdout, stderr = replayed(tmp_path, PAY, '{"order": {"code": "0"}}', replay)
@@ -74,12 +75,15 @@ def test_a_condition_on_a_hint_built_object_is_given_up_unasked(tmp_path: Path) 
     assert code == 0, stderr
     assert "Traceback" not in stderr
     at = f"llm: rewrite for {file_of('hinted')}:2:7"
-    said = [line for line in stderr_lines(stderr) if line.startswith(at)]
-    assert said == [f"{at} given up: no argument a rewrite may read"]
+    said = [line for line in stderr_lines(stderr) if line.startswith(f"{at}, try ")]
+    assert said == [
+        f"{at}, try {number}: a rewrite may read order only as order.<field>"
+        for number in range(1, 5)
+    ]
     summary = summary_line(stdout)
     llm = summary["llm"]
     assert isinstance(llm, dict)
-    assert (llm["asks"], llm["replayed"], llm["skipped"]) == (0, 0, 0)
+    assert llm["replayed"] == 4
     assert f"stopped: {summary['stopped']}" in stderr_lines(stderr)
 
 
@@ -107,13 +111,13 @@ def test_a_rewrite_that_reads_a_hint_built_object_is_refused_and_the_next_one_ru
     at = f"llm: rewrite for {file_of('hinted')}:14:7"
     assert llm_said(ran.said)[:4] == [
         f"{at}: {READS_A_KEY}",
-        f"{at}, try 1: a rewrite may not read order, which holds an object",
+        f"{at}, try 1: a rewrite may read order only as order.<field>",
         f'{at}: s == "1e-30"',
         f"{at}: took the wanted side",
     ]
     request = provider.requests[0]
-    assert dict(request.args)["order"] == "<holds an object>"
-    assert request.unreadable == ("order",)
+    assert dict(request.args)["order"] == '<Order object, built from {"code": "0"}>'
+    assert request.holders == ()
 
 
 # llm-rewrite-hint-built-object-leaves-a-run-without-rewrites-as-it-is

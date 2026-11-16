@@ -19,7 +19,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.llm.rewrites import EXACT_VALUE, request_text
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount, InputRecord, MissWhy
-from pyct.rewrite.ask import GivenUp, Visit
+from pyct.rewrite.ask import GivenUp, Unread, Visit
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteSkipped, RewriteTook
 from pyct.rewrite.tries import Asking, Tried
@@ -65,7 +65,7 @@ class Visits(Fake):
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         ran = self.rans.get(args.get("s"))
         if ran is None:
             return super().run_rewrite(code, args)
@@ -254,7 +254,7 @@ class SpentAsItRuns(Visits):
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         if args.get("s") != self.spent_on:
             return super().run_rewrite(code, args)
         self.spent = True
