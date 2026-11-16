@@ -137,6 +137,10 @@ class Rewrites(Asker):
             self.told.note(RewriteDropped(condition.site, number))
         self._used = ()
 
+    def heard(self, record: InputRecord, number: int) -> None:
+        """Each input the run keeps: rewrites judge their kept rewrites by a pass's input, in
+        ``ran``."""
+
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
         """Keep the plan when it is among the first ``VISITS`` at its condition whose ask ran
         out, after the ones kept before it."""

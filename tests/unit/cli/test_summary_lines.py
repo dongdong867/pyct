@@ -6,6 +6,7 @@ from pyct.cli.llm import note_line
 from pyct.core.foundation.branch import Site
 from pyct.run.notes import (
     SummaryChecked,
+    SummaryDropped,
     SummaryFailed,
     SummaryNote,
     SummaryNotUsed,
@@ -48,6 +49,16 @@ SITE = Site("/t/m.py", 10, 4)
         (
             SummaryNotUsed(SITE, "s\x1b is a list"),
             "llm: summary for the loop at /t/m.py:10 not used: s\\x1b is a list",
+        ),
+        (
+            SummaryDropped(SITE, 9, "t was 5, the formula gave 6"),
+            "llm: summary for the loop at /t/m.py:10 dropped at input 9: t was 5,"
+            " the formula gave 6",
+        ),
+        (
+            SummaryDropped(SITE, 3, "the formula gave no t\x1b"),
+            "llm: summary for the loop at /t/m.py:10 dropped at input 3: the formula gave no"
+            " t\\x1b",
         ),
     ],
 )

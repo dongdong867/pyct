@@ -264,11 +264,13 @@ class Loop:
         return Attempt(stop=self._stopped)
 
     def _keep(self, record: InputRecord, seed: Seed, turn: bool = True) -> InputRecord:
-        """Measure an input, hand it out, add its path, and keep its copy under its number.
-        ``turn`` is false for an input run between passes, which no pick of the tree's aimed."""
+        """Measure an input, hand it out, add its path, keep its copy under its number, and tell
+        the moments' tools of it. ``turn`` is false for an input run between passes, which no
+        pick of the tree's aimed."""
         self.inputs[len(self.records)] = seed
         kept = _took(record, self.told, self.tree, self.progress, turn)
         self.records.append(kept)
+        self._stuck.heard(kept, len(self.records))
         return kept
 
     def _untried(self, attempt: Attempt) -> dict[ForkSite, int]:

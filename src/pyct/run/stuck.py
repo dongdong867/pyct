@@ -110,7 +110,7 @@ class Moment:
 class StuckTool(Protocol):
     """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry;
     ``can_ask`` is false once the tool will ask no more this run, such as when the token limit is
-    reached."""
+    reached. ``heard`` takes each input the run keeps, with its number in the run, from 1."""
 
     @property
     def kind(self) -> Kind: ...
@@ -119,6 +119,8 @@ class StuckTool(Protocol):
     def can_ask(self) -> bool: ...
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled: ...
+
+    def heard(self, record: InputRecord, number: int) -> None: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -168,6 +170,12 @@ class Stuck:
             return self._ended is None or inputs > self._ended
         since = run.bounds.seeds if self._ended is None else self._ended
         return inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
+        pass's, or one run between two passes."""
+        for tool in self._tools.values():
+            tool.heard(record, number)
 
     def hold(self, run: Running) -> None:
         """Hold one moment: work out the causes, within ``CAUSE_SECONDS`` of now and the run's

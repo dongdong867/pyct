@@ -89,6 +89,9 @@ class FakeTool:
         outcomes = tuple(self.outcomes.get(entry, Outcome.SKIPPED) for entry in entries)
         return Handled(outcomes, asked=self.asks)
 
+    def heard(self, record: InputRecord, number: int) -> None:
+        pass
+
 
 def held(tools: Sequence[FakeTool], run: FakeRun | None = None) -> FakeRun:
     run = run or FakeRun()

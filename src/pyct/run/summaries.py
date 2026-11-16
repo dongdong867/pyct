@@ -26,9 +26,15 @@ passed, once in the run for each loop and reason. A check whose child
 could not start, or that the run's deadline ended, is no try: the loop is
 skipped at this moment, and said. No input runs.
 
+The tool hears each input the run keeps. A loop in use that an input's
+record says was dropped goes out of use from the next input on, and its
+drop is said with the input's number and why. Once the run's inputs run in
+pyct's own process, each loop in use goes out of use and is kept as
+checked, said once for each loop.
+
 The summary line lists each loop an ask was sent for with what came of its
-last ask sent (``SummaryState``): its formula in use, or checked and not
-used; failed, by a check or a reply with no code block; unanswered; or
+last ask sent (``SummaryState``): its formula in use, checked and not used,
+or dropped; failed, by a check or a reply with no code block; unanswered; or
 unchecked, when the check could not run or the deadline ended it. An ask the
 token limit refused sent nothing and leaves that as it was.
 
@@ -50,13 +56,21 @@ from pyct.core.foundation.branch import Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
+from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
-from pyct.run.loops_in_use import FormulaInUse, LoopsInUse, unused_because
+from pyct.run.loops_in_use import (
+    IN_PYCT_S_PROCESS,
+    FormulaInUse,
+    LoopsInUse,
+    dropped_because,
+    unused_because,
+)
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import (
     AskSkipped,
     ReplyIgnored,
     SummaryChecked,
+    SummaryDropped,
     SummaryFailed,
     SummaryNotUsed,
     SummaryRead,
@@ -268,6 +282,22 @@ class Summaries:
             return SummaryState.CHECKED
         self.in_use.use(FormulaInUse(text, loop.parameters, changed, loop.site, file, code))
         return SummaryState.IN_USE
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        """An input the run kept as its input ``number``: each loop in use its record says was
+        dropped goes out of use, said with why; then, once the run's inputs run in pyct's own
+        process, each loop still in use goes out of use, kept as checked."""
+        for drop in record.drops:
+            if drop.site in self.in_use.formulas:
+                self.in_use.stop(drop.site)
+                self.loops[drop.site].last = SummaryState.DROPPED
+                self.told.note(SummaryDropped(drop.site, number, dropped_because(drop)))
+        if self.isolated is None or not self.in_use.formulas or self.isolated():
+            return
+        for site in list(self.in_use.formulas):
+            self.in_use.stop(site)
+            self.loops[site].last = SummaryState.CHECKED
+            self._say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS))
 
     def close(self) -> None:
         """The run ends: no loop of its is in use any more."""

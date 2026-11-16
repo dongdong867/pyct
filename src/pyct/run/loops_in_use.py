@@ -9,6 +9,8 @@ and never runs it; each loop in use calls its formula through a
 A formula comes into use when the run's inputs run in a process of their
 own, the loop's own code holds no ``return``, ``yield`` or ``await``, and
 every changed value its complete runs recorded is an int, float, str or bool.
+It goes out of use when an input's run of the loop drops it, or once the
+run's inputs run in pyct's own process.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pyct.core.entry.in_use import IN_USE, LoopInUse
-from pyct.core.foundation.branch import Site
+from pyct.core.foundation.branch import DropReason, FormulaDrop, Site
 from pyct.results.pieces import FUNCTIONS, SCOPES, Piece, pieces, proper
 from pyct.run.formula_runner import FormulaRunner, FormulaText
 from pyct.run.summary_checks import CompleteRun
@@ -69,11 +71,26 @@ class LoopsInUse:
         runner = FormulaRunner(formula.code, text)
         IN_USE[place] = LoopInUse(formula.parameters, formula.changed, runner)
 
+    def stop(self, site: Site) -> None:
+        """Take the loop at ``site`` out of use from the next input on."""
+        self.formulas.pop(site, None)
+        IN_USE.pop(_place(site), None)
+
     def close(self) -> None:
         """Take each of the run's loops out of core's table, as the run ends."""
         for site in self.formulas:
             IN_USE.pop(_place(site), None)
         self.formulas.clear()
+
+
+def dropped_because(drop: FormulaDrop) -> str:
+    """Why an input's run of a loop dropped its formula, in plain words, each value its JSON
+    text: the loop's value and the formula's, the raise's type, or the name it gave no value."""
+    if drop.reason is DropReason.MISMATCH:
+        return f"{drop.name} was {drop.value}, the formula gave {drop.got}"
+    if drop.reason is DropReason.RAISED:
+        return f"the formula raised {drop.got}"
+    return f"the formula gave no {drop.name}"
 
 
 def unused_because(

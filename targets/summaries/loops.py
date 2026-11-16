@@ -101,10 +101,10 @@ def capped(s: str) -> str:
     for c in s:
         if c == "z" and t < 5:
             t += 1
-    if t == 4:
-        return "four"
     if t > 5:
         return "never"
+    if t == 4:
+        return "four"
     return "few"
 
 
