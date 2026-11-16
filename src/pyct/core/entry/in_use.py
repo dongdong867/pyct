@@ -21,7 +21,8 @@ value with the formula's term; another formula value leaves the loop's
 value as it is. On a mismatch, a raise, or a changed name the formula gives
 no value for, the changed names stay as the loop left them, the sink is
 handed a `FormulaDrop`, and the loop is followed as written for the rest of
-the input. Either way each other name going in gets its tracked value back
+the input; a run of the loop still open then, in an outer frame, ends with
+its names restored and no call. Either way each other name going in gets its tracked value back
 when the frame still holds the plain value the start wrote.
 
 A raise that is not an ``Exception``, the deadline's, passes through. A run
@@ -172,11 +173,15 @@ def over[Iterated](
 
 
 def left(frame: types.FrameType, line: int, col: int) -> Run | None:
-    """A loop's run ends in the frame: its formula stands for it. Hands back the run when its
+    """A loop's run ends in the frame: its formula stands for it, unless the input dropped the
+    formula while the run was open, which only restores the names. Hands back the run when its
     formula was dropped on it, else None."""
     with contextlib.suppress(Exception):
         run = USING.pop(line, (id(frame), col))
         if run is None:
+            return None
+        if run.place in USING.dropped:
+            _rebound(frame, run, {})
             return None
         held = frame.f_locals
         real = {name: held[name] for name in run.loop.changed if name in held}
@@ -187,14 +192,17 @@ def left(frame: types.FrameType, line: int, col: int) -> Run | None:
 
 
 def assigned(frame: types.FrameType, run: Run, value: object) -> tuple[object, bool]:
-    """An assignment's run ends in the frame with its value: the value to store, the tracked
-    one when the formula matches, and whether the formula was dropped on it."""
+    """An assignment's run ends in the frame with its value, as `left`: the value to store, the
+    tracked one when the formula matches, and whether the formula was dropped on it."""
     with contextlib.suppress(Exception):
         line = run.site.line
         waiting = USING.waiting.get(line)
         if waiting is None or waiting.get(run.key) is not run:
             return value, False
         USING.pop(line, run.key)
+        if run.place in USING.dropped:
+            _rebound(frame, run, {})
+            return value, False
         stored = run.loop.changed[0]
         made = _finished(run, {stored: value})
         _rebound(frame, run, made or {})
