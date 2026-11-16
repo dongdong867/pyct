@@ -13,8 +13,8 @@ from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState
 from pyct.run import loop
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.loops_in_use import FormulaInUse
-from pyct.run.notes import Note, SummaryChecked, SummaryRead
+from pyct.run.loops_in_use import IN_PYCT_S_PROCESS, FormulaInUse
+from pyct.run.notes import Note, SummaryChecked, SummaryNotUsed, SummaryRead
 from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.stuck import Handled, Moment, Outcome
@@ -106,6 +106,34 @@ def test_a_formula_that_passes_stays_checked_for_inputs_in_pyct_s_process(
     assert table == {}
 
 
+def test_a_formula_not_used_says_why_right_after_its_checked_line() -> None:
+    notes: list[Note] = []
+    summaries, _ = tool(isolated=False, notes=notes)
+
+    taken(summaries)
+
+    assert notes == [
+        SummaryRead(LOOP, 't = t + s.count("z")'),
+        SummaryChecked(LOOP, 2),
+        SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS),
+    ]
+
+
+def test_a_formula_not_used_is_said_once_and_its_loop_not_asked_about_again() -> None:
+    notes: list[Note] = []
+    summaries, fake = tool(isolated=False, notes=notes)
+    taken(summaries)
+
+    handled = taken(summaries, at=2)
+
+    assert len(fake.requests) == 1
+    assert handled == Handled((Outcome.TOOK,), asked=False)
+    assert [each for each in notes if isinstance(each, SummaryNotUsed)] == [
+        SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS)
+    ]
+    assert summaries.states()[0].state is SummaryState.CHECKED
+
+
 def test_a_loop_in_use_is_not_asked_about_again() -> None:
     summaries, fake = tool(isolated=True)
     taken(summaries)
@@ -134,13 +162,16 @@ def test_closing_takes_the_run_s_loops_out_of_use(
 def test_a_tool_told_nothing_of_where_inputs_run_keeps_a_formula_checked(
     table: dict[tuple[str, int, int], LoopInUse],
 ) -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
     summaries = Summaries(Fake(SummaryReply(FORMULA, AskCost(1))), load_target(COUNTS), told)
 
     taken(summaries)
 
     assert summaries.states()[0].state is SummaryState.CHECKED
     assert table == {}
+    # nothing is known of where the inputs run, so nothing is said of it
+    assert notes == [SummaryRead(LOOP, 't = t + s.count("z")'), SummaryChecked(LOOP, 2)]
 
 
 def test_the_run_takes_its_loops_out_of_use_when_it_ends(

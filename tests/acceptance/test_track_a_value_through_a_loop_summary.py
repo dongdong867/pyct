@@ -195,9 +195,35 @@ def test_the_formula_s_own_if_forks_at_the_loop_s_line() -> None:
 def test_a_formula_in_use_is_listed_in_use() -> None:
     done = summarized("few_z", COUNT)
 
+    assert state_of(done) == "in use"
+
+
+# llm-summary-for-a-stuck-loop-not-used-for-a-loop-that-can-leave
+def test_a_formula_for_a_loop_that_returns_is_not_used_and_says_why() -> None:
+    done = summarized("few_stops", COUNT)
+
+    loop = line_of("few_stops", "for c in s:")
+    said = done.llm_said()
+    checked = next(at for at, line in enumerate(said) if ": checked on " in line)
+    not_used = f"llm: summary for the loop at {G}:{loop} not used: the loop holds a return"
+    assert said[checked + 1] == not_used
+    assert said.count(not_used) == 1
+    stop, z = line_of("few_stops", 'if c == "!":'), line_of("few_stops", 'if c == "z":')
+    for record in after_checked(done):
+        s = str(record.args["s"])
+        read = s.index("!") + 1 if "!" in s else len(s)
+        # each character read forks at the `"!"` test, and each but a `"!"` at the `"z"` test
+        assert len(forks_at(record, stop)) == read, record
+        assert len(forks_at(record, z)) == len(s[:read].replace("!", "")), record
+        assert not any(holds(each.expression, Z) for each in record.forks), record
+    assert state_of(done) == "checked"
+
+
+def state_of(done: Summarized) -> object:
+    """The state of the run's one loop in the summary line's ``llm.summaries``."""
     use = LlmUse("openai:gpt-6-luna", ("summaries",))
     [item] = json.loads(render_summary(done.result, use))["llm"]["summaries"]
-    assert item["state"] == "in use"
+    return item["state"]
 
 
 # llm-summary-for-a-stuck-loop-in-use-a-raise-leaves-the-input-plain

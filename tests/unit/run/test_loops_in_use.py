@@ -156,10 +156,39 @@ def test_a_formula_whose_loop_changes_an_int_float_str_or_bool_is_used(value: st
     assert unused_because(FEW_Z, complete("0", value), ("t",), True) is None
 
 
-@pytest.mark.parametrize("value", ["[1]", '{"a": 1}', "null"])
-def test_a_formula_whose_loop_changes_a_value_of_another_kind_is_not_used(value: str) -> None:
-    reason = "t is not an int, float, str or bool"
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        ("[1]", "t is a list"),
+        ('{"a": 1}', "t is a dict"),
+        ("null", "t is None"),
+        ("{", "t is unreadable"),
+    ],
+)
+def test_a_formula_whose_loop_changes_a_value_of_another_kind_is_not_used(
+    value: str, reason: str
+) -> None:
     assert unused_because(FEW_Z, complete("0", value), ("t",), True) == reason
+
+
+@pytest.mark.parametrize(
+    ("function", "reason"),
+    [
+        ("def f(s):\n    t = 0\n    for c in s:\n        yield c\n        t += 1\n", "a yield"),
+        (
+            "async def f(s):\n    t = 0\n    for c in s:\n        await c\n        t += 1\n",
+            "an await",
+        ),
+    ],
+)
+def test_a_formula_for_a_loop_that_yields_or_awaits_is_not_used(
+    tmp_path: Path, function: str, reason: str
+) -> None:
+    module = tmp_path / "m.py"
+    module.write_text(f"{function}    return t\n")
+    loop = Site(str(module), 3, 4)
+
+    assert unused_because(loop, complete("0"), ("t",), True) == f"the loop holds {reason}"
 
 
 def test_a_formula_whose_loop_is_gone_from_its_file_is_not_used() -> None:

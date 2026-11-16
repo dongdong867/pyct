@@ -21,9 +21,10 @@ A formula that fails a check is a failed try, said with its reason and kept
 for the loop's later asks; one that passes both is kept for its loop, and
 that loop is not asked about again. It comes into use from the next input
 on, for the rest of the run, when it can (``pyct.run.loops_in_use``); else
-it is kept as checked. A check whose child could not start, or that the
-run's deadline ended, is no try: the loop is skipped at this moment, and
-said. No input runs.
+it is kept as checked, and why is said right after the line that says it
+passed, once in the run for each loop and reason. A check whose child
+could not start, or that the run's deadline ended, is no try: the loop is
+skipped at this moment, and said. No input runs.
 
 The summary line lists each loop an ask was sent for with what came of its
 last ask sent (``SummaryState``): its formula in use, or checked and not
@@ -59,6 +60,7 @@ from pyct.run.notes import (
     ReplyIgnored,
     SummaryChecked,
     SummaryFailed,
+    SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
 )
@@ -179,18 +181,20 @@ class Summaries:
         target: Target,
         told: Told,
         limit: TokenLimit | None = None,
-        isolated: Callable[[], bool] = lambda: False,
+        isolated: Callable[[], bool] | None = None,
     ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
-        # whether the run's inputs run in a process of their own: none do, unless the run says
+        # whether the run's inputs run in a process of their own; None when the run does not
+        # say, and then no formula comes into use and nothing is said of it
         self.isolated = isolated
         self.loops: dict[Site, LoopState] = {}
         self.in_use = LoopsInUse()
-        # each loop skipped with no ask, with each reason it was skipped for, already said this run
-        self.said_skips: set[tuple[Site, str]] = set()
+        # each loop skipped with no ask, or whose formula is not used, with each reason, said this
+        # run
+        self.said_once: set[SummarySkipped | SummaryNotUsed] = set()
 
     @property
     def can_ask(self) -> bool:
@@ -246,9 +250,13 @@ class Summaries:
     def _skipped(self, site: Site, reason: str) -> None:
         """A loop skipped with no ask, said the first time this run it is skipped for
         ``reason``."""
-        if (site, reason) not in self.said_skips:
-            self.said_skips.add((site, reason))
-            self.told.note(SummarySkipped(site, reason))
+        self._say_once(SummarySkipped(site, reason))
+
+    def _say_once(self, note: SummarySkipped | SummaryNotUsed) -> None:
+        """A note said the first time this run it comes, for its loop and reason."""
+        if note not in self.said_once:
+            self.said_once.add(note)
+            self.told.note(note)
 
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
         """The reply's formula read, its form checked, then checked on the loop's runs and
@@ -271,15 +279,20 @@ class Summaries:
         if failed is not None:
             return self._failed(state, site, failed)
         state.checked_on = len(loop.runs)
-        state.last = self._used(loop, reply.code, file, formula.code)
         self.told.note(SummaryChecked(site, len(loop.runs)))
+        state.last = self._used(loop, reply.code, file, formula.code)
         return Asked.CHECKED
 
     def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
         """A formula that passed both checks, from its text, its code objects' file name and its
-        code: in use when it can be, else kept as checked."""
+        code: in use when it can be, else kept as checked and, when the tool was told where the
+        run's inputs run, said with why."""
         changed = loop.piece.changed
-        if unused_because(loop.site, loop.runs, changed, self.isolated()) is not None:
+        if self.isolated is None:
+            return SummaryState.CHECKED
+        reason = unused_because(loop.site, loop.runs, changed, self.isolated())
+        if reason is not None:
+            self._say_once(SummaryNotUsed(loop.site, reason))
             return SummaryState.CHECKED
         self.in_use.use(FormulaInUse(text, loop.parameters, changed, loop.site, file, code))
         return SummaryState.IN_USE

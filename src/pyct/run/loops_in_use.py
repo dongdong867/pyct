@@ -45,6 +45,8 @@ _LEAVING: dict[type[ast.AST], str] = {
 }
 # the kinds of the values a loop in use can change
 _KINDS = (int, float, str, bool)
+# each other kind a value's JSON text reads as, in plain words
+_OTHER_KINDS: dict[type, str] = {list: "a list", dict: "a dict", type(None): "None"}
 
 
 class FormulaInPyctProcessError(RuntimeError):
@@ -126,8 +128,9 @@ def unused_because(
         return f"the loop holds {leaving}"
     for each in runs:
         for value in each.run.changed:
-            if value.name in changed and not _of_kinds(value.value):
-                return f"{value.name} is not an int, float, str or bool"
+            kind = _kind(value.value) if value.name in changed else None
+            if kind is not None:
+                return f"{value.name} is {kind}"
     return None
 
 
@@ -167,12 +170,17 @@ def leaving_by(statement: ast.stmt) -> str | None:
     return None
 
 
-def _of_kinds(text: str) -> bool:
-    """Whether a recorded value's JSON text holds an int, float, str or bool."""
+def _kind(text: str) -> str | None:
+    """What a recorded value's JSON text holds, in plain words, when it is not an int, float,
+    str or bool: ``a list``, ``a dict`` or ``None``, and ``unreadable`` for text JSON does not
+    read; None when it is one of those four."""
     try:
-        return isinstance(json.loads(text), _KINDS)
+        value = json.loads(text)
     except ValueError:
-        return False
+        return "unreadable"
+    if isinstance(value, _KINDS):
+        return None
+    return _OTHER_KINDS[type(value)]
 
 
 def _place(site: Site) -> tuple[str, int, int]:

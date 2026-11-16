@@ -8,6 +8,7 @@ from pyct.run.notes import (
     SummaryChecked,
     SummaryFailed,
     SummaryNote,
+    SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
 )
@@ -39,6 +40,14 @@ SITE = Site("/t/m.py", 10, 4)
         (
             SummarySkipped(SITE, "cannot fork"),
             "llm: summary for the loop at /t/m.py:10 skipped: cannot fork",
+        ),
+        (
+            SummaryNotUsed(SITE, "inputs run in pyct's own process"),
+            "llm: summary for the loop at /t/m.py:10 not used: inputs run in pyct's own process",
+        ),
+        (
+            SummaryNotUsed(SITE, "s\x1b is a list"),
+            "llm: summary for the loop at /t/m.py:10 not used: s\\x1b is a list",
         ),
     ],
 )
