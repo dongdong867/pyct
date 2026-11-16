@@ -60,8 +60,18 @@ def test_a_slot_is_read_and_an_empty_one_holds_no_field() -> None:
         lambda: tricky.PropOverSlot("1"),
         lambda: tricky.DictProp("1"),
         tricky.DataDesc,
+        tricky.BorrowedSlot,
+        tricky.BorrowedDict,
     ],
-    ids=["property", "own __getattribute__", "property over a slot", "__dict__ property", "data"],
+    ids=[
+        "property",
+        "own __getattribute__",
+        "property over a slot",
+        "__dict__ property",
+        "data",
+        "another class's slot",
+        "another class's __dict__",
+    ],
 )
 def test_a_name_the_class_answers_with_code_is_not_read(built: Callable[[], object]) -> None:
     assert refused(built()) == f"it cannot read order.code: {BY_CODE}"

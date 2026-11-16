@@ -69,6 +69,19 @@ class PropOverSlot(Slots):
         return "x"
 
 
+class BorrowedSlot:
+    """A class that holds another class's slot under its own name."""
+
+    code = vars(Slots)["code"]
+
+
+class BorrowedDict:
+    """A class whose ``__dict__`` is another class's getter, which reads no instance of it."""
+
+    __slots__ = ("__weakref__",)
+    __dict__ = vars(Plain)["__dict__"]  # pyrefly: ignore[bad-override]
+
+
 class DictProp:
     def __init__(self, code: str) -> None:
         object.__setattr__(self, "code", code)

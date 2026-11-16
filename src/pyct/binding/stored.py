@@ -98,7 +98,7 @@ def _stored(owner: object, field: str) -> object:
         return _Why(ABSENT)
     if type(holder) is not types.GetSetDescriptorType:
         return _Why(BY_CODE)
-    fields = cast(types.GetSetDescriptorType, holder).__get__(owner, cls)
+    fields = _own_dict(cast(types.GetSetDescriptorType, holder), owner, cls)
     if type(fields) is not dict:
         return _Why(BY_CODE)
     found = _matching(dict.items(cast(dict[object, object], fields)), field)
@@ -106,11 +106,23 @@ def _stored(owner: object, field: str) -> object:
 
 
 def _slot(held: types.MemberDescriptorType, owner: object, cls: type) -> object:
-    """What a slot holds, read by Python's own C code, or ``_Why`` when it holds nothing."""
+    """What a slot holds, read by Python's own C code, or ``_Why`` when it holds nothing or is
+    another class's slot, which reads no instance of this one."""
     try:
         return held.__get__(owner, cls)
     except AttributeError:
         return _Why(ABSENT)
+    except TypeError:
+        return _Why(BY_CODE)
+
+
+def _own_dict(holder: types.GetSetDescriptorType, owner: object, cls: type) -> object:
+    """The instance's ``__dict__``, read by Python's own C code, or ``_Why`` when the getter is
+    another class's, which reads no instance of this one."""
+    try:
+        return holder.__get__(owner, cls)
+    except TypeError:
+        return _Why(BY_CODE)
 
 
 def _data_descriptor(kind: type) -> bool:
