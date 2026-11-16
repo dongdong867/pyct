@@ -8,9 +8,10 @@ name going in that is bound and holds a tracked int, float, str or bool is
 rebound to its plain value, and a ``for`` over a tracked str walks the plain
 str. Lists and dicts stay as they are; the run keeps a copy of each list
 or dict going in, Python's own or a tracked one, one level deep. A tracked
-one's copy is tracked while its form still describes it, and plain
-otherwise; either copy records nothing and leaves the target's own as it
-is. The loop then runs on plain values and records no fork.
+one's copy is tracked while it has a form and its length is the one pyct
+last saw, and plain, its items plain too, otherwise; either copy records
+nothing and leaves the target's own as it is. The loop then runs on plain
+values and records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
 each list or dict as the copy the start made, each fork, fact and downgrade
@@ -273,9 +274,9 @@ def _as_it_went_in(value: object) -> object:
     """A list or dict going in as a copy of the list or dict itself, one level deep, taken on
     every run of a loop in use: a loop that adds, removes or replaces its items leaves the copy
     as it went in. A tracked one's copy is tracked by the same form and records no fork; one
-    changed without its methods since pyct last saw it gets a plain copy, which records nothing
-    and leaves the target's own as it is. The copy costs about 4 microseconds for a tracked list
-    of 100 items and 40 for 1,000. Any other value as it is."""
+    with no form, or whose length is not the one pyct last saw, gets a plain copy whose items
+    are plain, which records nothing and leaves the target's own as it is. The copy costs about
+    4 microseconds for a tracked list of 100 items and 40 for 1,000. Any other value as it is."""
     kind = type(value)
     if kind is ConcolicList:
         items = cast(ConcolicList, value)

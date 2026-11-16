@@ -1,5 +1,8 @@
-"""A loop in use keeps, as it starts, a copy of each list or dict going in: its formula, and the
-record of a run it fails on, read the values as they went in, whatever the loop does to them."""
+"""A loop in use keeps, as it starts, a copy of each list or dict going in, of the list or dict
+itself, one level deep: its formula, and the record of a run it fails on, read the list or dict as
+it went in after the loop removes its items. A tracked one reaches the formula as a tracked copy,
+or as a plain one when its length changed from C, and the plain one records what the loop as
+written records."""
 
 from collections.abc import Callable, Mapping
 from typing import Any, cast
