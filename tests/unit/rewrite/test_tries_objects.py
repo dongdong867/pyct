@@ -38,7 +38,7 @@ def test_a_method_that_takes_only_self_is_asked_and_reads_its_field() -> None:
     kept = Kept("self")
     fake = Fake(reply='self.code == "1e-30"', answer=Sat({}))
 
-    found = Asking(fake, given, ABOUT, ("self",), kept, "self").tries(fake)
+    found = Asking(fake, given, ABOUT, ("self",), kept).tries(fake)
 
     assert found == Tried(True, True)
     assert fake.handed == [{"self": {"code": "0"}}]
@@ -136,7 +136,7 @@ def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
     given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
     fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
 
-    Asking(fake, given, ABOUT, ("s",), Kept(), "self").tries(fake)
+    Asking(fake, given, ABOUT, ("s",), Kept("self")).tries(fake)
 
     assert dict(fake.requests[0].args)["self"] == "<holds an object>"
     assert fake.requests[0].holders == ()

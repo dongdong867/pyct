@@ -145,16 +145,20 @@ class _NoInput:
 @dataclass(frozen=True)
 class Asking:
     """One condition's tries: the provider, what the solver gave up on, where it sits, the
-    function's parameters, the rewrites kept, and the method's ``self`` parameter with its
-    class, each None for a target that is no method."""
+    function's parameters, the rewrites kept, which name the method's ``self`` parameter, and
+    that parameter's class, None for a target that is no method."""
 
     provider: RewriteProvider
     given: GivenUp
     about: About
     parameters: tuple[str, ...]
     kept: Kept
-    self_name: str | None = None
     self_class: type | None = None
+
+    @property
+    def self_name(self) -> str | None:
+        """The method's ``self`` parameter, as the kept rewrites name it."""
+        return self.kept.self_name
 
     @functools.cached_property
     def kinds(self) -> Kinds:
