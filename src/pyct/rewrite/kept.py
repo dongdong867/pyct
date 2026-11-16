@@ -41,13 +41,13 @@ class Kept:
     def reused(self, plan: Plan, origin: Seed, run: RunRewrite) -> Reused | None:
         """The plan's ask with each kept rewrite the plan holds in its condition's place, each
         run on ``origin``; None when no kept rewrite takes a place in it. A rewrite reading a
-        name the input does not hold, or one that holds an object there, takes none."""
+        name the input does not hold, or one that is or holds an object there, takes none."""
         asked = plan.asked
         used: list[Condition] = []
         for condition, rewrite in self.rewrites.items():
             if not holding(plan, condition):
                 continue
-            ran = run_on(rewrite, origin.args, run)
+            ran = run_on(rewrite, origin, run)
             if ran is None:
                 continue
             items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)

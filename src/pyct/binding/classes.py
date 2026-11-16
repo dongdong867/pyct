@@ -132,6 +132,12 @@ def module_of(cls: type) -> object:
     return type.__dict__["__module__"].__get__(cls)
 
 
+def name_of(cls: type) -> str:
+    """The ``__name__`` of ``cls``, read through ``type``'s own descriptor, so no code of the
+    class's own type runs."""
+    return type.__dict__["__name__"].__get__(cls)
+
+
 def _defining(cls: type, name: str) -> type | None:
     """The first class of ``cls``'s method resolution order whose own namespace holds ``name``,
     read so that no code runs."""

@@ -13,9 +13,9 @@ substitutions, and it runs only in a forked child (`pyct.run.model_runs`).
 
 ``__rewrite__`` takes exactly the parameters the expression names
 (``Rewrite.reads``); the child is handed those arguments, and a kept rewrite
-is checked against those names. A rewrite reads no parameter that holds an
-object (``holds_object``): the check refuses one that names such a
-parameter, so the child is handed plain values alone.
+is checked against those names. A rewrite reads no parameter that is or
+holds an object on the input (``pyct.rewrite.kinds``): the check refuses one
+that names such a parameter, so the child is handed plain values alone.
 """
 
 from __future__ import annotations
@@ -23,10 +23,9 @@ from __future__ import annotations
 import ast
 import math
 import types
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
-from pyct.binding.builds import object_form
 from pyct.intercept.model_code import Refused, compile_model_code
 from pyct.utils.fences import code_blocks
 
@@ -62,10 +61,6 @@ NO_EXPRESSION = "the reply holds no expression"
 _REFUSALS = (SyntaxError, ValueError, RecursionError, MemoryError)
 # the literals a rewrite may write
 LITERALS: tuple[type, ...] = (int, float, str, bool, type(None))
-# the types of the values a rewrite may read, and of those it may read into, which
-# ``holds_object`` walks
-_SCALARS = frozenset({type(None), bool, int, float, str})
-HOLDERS = frozenset({list, tuple, dict})
 _PLAIN = (ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare, ast.Tuple, ast.List, ast.Slice)
 _REFUSED_AS: dict[type[ast.AST], str] = {
     ast.Lambda: "a lambda",
@@ -156,39 +151,6 @@ def _reads(expression: str, parameters: Sequence[str]) -> tuple[str, ...]:
 def _names(tree: ast.AST) -> set[str]:
     """Each name the tree reads or writes."""
     return {node.id for node in ast.walk(tree) if isinstance(node, ast.Name)}
-
-
-def holds_each_without_object(args: Mapping[str, object], names: Sequence[str]) -> bool:
-    """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
-    return all(name in args and not holds_object(args[name]) for name in names)
-
-
-def holds_object(value: object) -> bool:
-    """Whether a value is an object or holds one among the keys and items of its lists, tuples
-    and dicts, at any depth: a seed's object form, a dict holding ``"__class__"``
-    (``object_form``), or a value whose type is not exactly None, bool, int, float, str, list,
-    tuple or dict. Read in a loop, each list, tuple and dict once."""
-    pending = [value]
-    seen: set[int] = set()
-    while pending:
-        each = pending.pop()
-        kind = type(each)
-        if kind in _SCALARS:
-            continue
-        if kind not in HOLDERS or object_form(each):
-            return True
-        if id(each) not in seen:
-            seen.add(id(each))
-            pending.extend(_held(each))
-    return False
-
-
-def _held(holder: object) -> Iterable[object]:
-    """A list's or tuple's items, or a dict's keys and values."""
-    if isinstance(holder, dict):
-        return [*holder.keys(), *holder.values()]
-    assert isinstance(holder, list | tuple)
-    return holder
 
 
 class _Check:

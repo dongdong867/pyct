@@ -5,6 +5,7 @@ fork there."""
 import types
 from collections.abc import Mapping
 
+from pyct.binding.annotations import Builds
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.core.foundation.branch import Branch, Site
@@ -12,6 +13,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
+from tests.unit.rewrite.orders import Order
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -78,3 +80,16 @@ def test_a_rewrite_is_used_where_a_name_it_does_not_read_holds_an_object() -> No
     assert reused is not None
     assert reused.conditions == (CONDITION,)
     assert handed == [{"s": "0"}]
+
+
+# llm-rewrite-hint-built-object-kept-only-where-the-input-holds-no-object
+def test_an_input_where_a_hint_builds_a_name_the_rewrite_reads_takes_no_rewrite() -> None:
+    rewrite = rewrite_code('order == None and s == "1e-30"', ("order", "s"), FILE)
+    assert isinstance(rewrite, Rewrite)
+    found = Kept()
+    found.keep(CONDITION, rewrite)
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
+    assert wanted is not None
+    origin = Seed.of({"order": {"code": "0"}, "s": "0"}, {"order": Builds(Order)})
+
+    assert found.reused(wanted, origin, never) is None
