@@ -67,10 +67,10 @@ def request_text(request: RewriteRequest) -> str:
         parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
     parts.append(_input(request))
-    if request.unreadable:
+    if request.holders:
         parts.append(
             "Parameters your condition may not read, since each holds an object inside a list,"
-            " tuple or dict: " + ", ".join(request.unreadable)
+            " tuple or dict: " + ", ".join(request.holders)
         )
     parts.append(f"The solver's answer for the condition: {request.answer}")
     if request.tries:

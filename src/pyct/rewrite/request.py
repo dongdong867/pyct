@@ -45,7 +45,7 @@ def request_for(
     given: GivenUp,
     about: About,
     tries: tuple[EarlierTry, ...],
-    unreadable: tuple[str, ...],
+    holders: tuple[str, ...],
     kinds: Kinds,
 ) -> RewriteRequest:
     """The request for a condition the solver gave up on, with this moment's earlier tries and
@@ -64,7 +64,7 @@ def request_for(
         args=args_text(given.origin.args, kinds),
         answer=given.answer.value,
         tries=tries,
-        unreadable=unreadable,
+        holders=holders,
     )
 
 

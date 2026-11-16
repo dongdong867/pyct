@@ -117,7 +117,7 @@ def test_a_rewrite_that_reads_a_hint_built_object_is_refused_and_the_next_one_ru
     ]
     request = provider.requests[0]
     assert dict(request.args)["order"] == '<Order object, built from {"code": "0"}>'
-    assert request.unreadable == ()
+    assert request.holders == ()
 
 
 # llm-rewrite-hint-built-object-leaves-a-run-without-rewrites-as-it-is

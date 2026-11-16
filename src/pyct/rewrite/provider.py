@@ -44,7 +44,7 @@ class RewriteRequest:
     running the target's code (``pyct.rewrite.request.args_text``); ``answer`` what the solver
     said, ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first, each
     saying whether the solver answered ``timeout`` or ``unknown`` to its rewrite's ask; and
-    ``unreadable`` the parameters a rewrite may not read, since each holds an object inside a
+    ``holders`` the parameters a rewrite may not read, since each holds an object inside a
     list, tuple or dict.
     """
 
@@ -55,7 +55,7 @@ class RewriteRequest:
     args: tuple[tuple[str, str], ...]
     answer: str
     tries: tuple[EarlierTry, ...] = ()
-    unreadable: tuple[str, ...] = ()
+    holders: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

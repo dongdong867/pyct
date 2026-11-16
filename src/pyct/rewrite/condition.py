@@ -141,13 +141,14 @@ def rewrite_code(
     expression: str,
     parameters: Sequence[str],
     file: str,
+    holders: Sequence[str] = (),
     objects: Sequence[str] = (),
-    fields: Sequence[str] = (),
 ) -> Rewrite | Refused:
     """The module code of ``__rewrite__`` on the ``parameters`` that ``expression`` reads,
     which branches on it, each code object named ``file``; or why the rewrite is refused, one
-    reading any of ``objects``, those that hold an object, included, and one using any of
-    ``fields``, the objects, other than as ``name.field``.
+    reading any of ``holders``, those that hold an object inside a list, tuple or dict,
+    included, and one using any of ``objects``, those that are objects, other than as
+    ``name.field``.
 
     ``expression`` is one that ``expression_in`` read, so it sits inside parentheses of its
     own and cannot reach past them.
@@ -161,7 +162,7 @@ def rewrite_code(
         f"def {FUNCTION}(**{ARGUMENTS}):\n"
         f"    return {_BRANCH}((\n{expression}\n    ))\n"
     )
-    check = _Check(frozenset(parameters), frozenset(objects), frozenset(fields))
+    check = _Check(frozenset(parameters), frozenset(holders), frozenset(objects))
     code = compile_model_code(text, file, check)
     return code if isinstance(code, Refused) else Rewrite(code, reads, tuple(check.read))
 
@@ -187,11 +188,11 @@ class _Check:
     """Rewrites' form check, which ``compile_model_code`` calls on the parsed module."""
 
     def __init__(
-        self, parameters: frozenset[str], objects: frozenset[str], fields: frozenset[str]
+        self, parameters: frozenset[str], holders: frozenset[str], objects: frozenset[str]
     ) -> None:
         self.parameters = parameters
+        self.holders = holders
         self.objects = objects
-        self.fields = fields
         # each field read written as the reader's call, as ``name.field``, once
         self.read: list[str] = []
 
@@ -201,11 +202,11 @@ class _Check:
         returned = function.body[0]
         assert isinstance(returned, ast.Return) and isinstance(returned.value, ast.Call)
         branched = returned.value
-        rules = ExpressionRules("rewrite", self.parameters, self.objects, self.fields)
+        rules = ExpressionRules("rewrite", self.parameters, self.holders, self.objects)
         refused = refusal(branched.args[0], rules)
         if refused is not None:
             return refused
-        reads = _AsReads(self.parameters, self.fields)
+        reads = _AsReads(self.parameters, self.objects)
         branched.args[0] = _AsBits().visit(reads.visit(branched.args[0]))
         self.read = list(dict.fromkeys(reads.read))
         return tree
@@ -214,21 +215,22 @@ class _Check:
 @dataclass(frozen=True)
 class ExpressionRules:
     """What one expression of model-written code may read, call and write: the noun its
-    refusals name the code by, the names it may read, those among them it may not since each
-    holds an object, those it may read only as ``name.field`` since each is an object, the
-    functions it may call by name, and the types of its literals."""
+    refusals name the code by, the names it may read, the ``holders`` among them it may not
+    since each holds an object inside a list, tuple or dict, the ``objects`` it may read only as
+    ``name.field`` since each is an object, the functions it may call by name, and the types of
+    its literals."""
 
     noun: str
     names: frozenset[str]
+    holders: frozenset[str] = frozenset()
     objects: frozenset[str] = frozenset()
-    fields: frozenset[str] = frozenset()
     calls: frozenset[str] = CALLS
     literals: tuple[type, ...] = LITERALS
 
 
 def refusal(expression: ast.expr, rules: ExpressionRules) -> str | None:
-    """Why the expression is outside the form ``rules`` allow, reads one of their ``objects``
-    at all, or one of their ``fields`` other than as ``name.field``; or None. A name that holds
+    """Why the expression is outside the form ``rules`` allow, reads one of their ``holders``
+    at all, or one of their ``objects`` other than as ``name.field``; or None. A name that holds
     an object is said first, wherever it sits. Read in a loop, not a call per level."""
     held = _holding(expression, rules)
     if held is not None:
@@ -239,7 +241,7 @@ def refusal(expression: ast.expr, rules: ExpressionRules) -> str | None:
         if depth > MOST_DEPTH:
             return f"the {rules.noun} nests more than {MOST_DEPTH} deep"
         if isinstance(node, ast.Name):
-            if node.id in rules.fields:
+            if node.id in rules.objects:
                 return f"a {rules.noun} may read {node.id} only as {node.id}.<field>"
             if node.id not in rules.names:
                 return f"a {rules.noun} may not read {node.id}"
@@ -289,7 +291,7 @@ def _call_parts(call: ast.Call, rules: ExpressionRules) -> list[ast.AST] | str:
         return parts if allowed else f"a {noun} may not call {func.id}"
     if not isinstance(func, ast.Attribute):
         return f"a {noun} calls only a function by its name or a method"
-    if isinstance(func.value, ast.Name) and func.value.id in rules.fields:
+    if isinstance(func.value, ast.Name) and func.value.id in rules.objects:
         return f"a {noun} may not call a method of {func.value.id}"
     if func.attr.startswith("_") or func.attr in _READS_FIELDS:
         return f"a {noun} may not call {func.attr}"
@@ -302,16 +304,18 @@ def _call_parts(call: ast.Call, rules: ExpressionRules) -> list[ast.AST] | str:
 
 
 def _holding(expression: ast.expr, rules: ExpressionRules) -> str | None:
-    """The first name the expression reads that holds an object, or None."""
+    """The first name the expression reads that holds an object inside a list, tuple or dict,
+    one of the rules' ``holders``, or None."""
     for node in ast.walk(expression):
-        if isinstance(node, ast.Name) and node.id in rules.objects:
+        if isinstance(node, ast.Name) and node.id in rules.holders:
             return node.id
     return None
 
 
 def _field(node: ast.Attribute, rules: ExpressionRules) -> bool:
-    """Whether the attribute is a field read of one of the rules' objects, ``name.field``."""
-    return isinstance(node.value, ast.Name) and node.value.id in rules.fields
+    """Whether the attribute reads a field of one of the rules' ``objects``, written
+    ``name.field``; whether that field's name is allowed is the caller's to check."""
+    return isinstance(node.value, ast.Name) and node.value.id in rules.objects
 
 
 def _special(name: str) -> bool:
@@ -321,13 +325,13 @@ def _special(name: str) -> bool:
 
 class _AsReads(ast.NodeTransformer):
     """Each of ``parameters`` written as its entry of ``ARGUMENTS``, and each field read of one
-    of ``fields``, ``name.field``, as the reader's call, ``READER(ARGUMENTS["name"], "name",
+    of ``objects``, ``name.field``, as the reader's call, ``READER(ARGUMENTS["name"], "name",
     "field")``, kept in ``read`` as ``name.field``. The check has bounded the depth, so a call
     per level is safe."""
 
-    def __init__(self, parameters: frozenset[str], fields: frozenset[str]) -> None:
+    def __init__(self, parameters: frozenset[str], objects: frozenset[str]) -> None:
         self.parameters = parameters
-        self.fields = fields
+        self.objects = objects
         self.read: list[str] = []
 
     def visit_Name(self, node: ast.Name) -> ast.expr:
@@ -337,7 +341,7 @@ class _AsReads(ast.NodeTransformer):
 
     def visit_Attribute(self, node: ast.Attribute) -> ast.expr:
         value = node.value
-        if not isinstance(value, ast.Name) or value.id not in self.fields:
+        if not isinstance(value, ast.Name) or value.id not in self.objects:
             self.generic_visit(node)
             return node
         self.read.append(f"{value.id}.{node.attr}")

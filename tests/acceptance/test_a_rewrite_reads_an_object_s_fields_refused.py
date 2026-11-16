@@ -103,7 +103,7 @@ def test_an_object_in_a_list_fails_its_try() -> None:
 
     at = f"llm: rewrite for {file_of('objects')}:23:7"
     assert tries(ran, at)[0] == "try 1: a rewrite may not read orders, which holds an object"
-    assert provider.requests[0].unreadable == ("orders",)
+    assert provider.requests[0].holders == ("orders",)
 
 
 # llm-rewrite-object-fields-refused-a-field-of-a-field

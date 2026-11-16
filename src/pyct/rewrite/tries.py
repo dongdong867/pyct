@@ -163,13 +163,13 @@ class Asking:
         return Kinds.of_seed(self.given.origin, self.self_name, self.self_class)
 
     @functools.cached_property
-    def unreadable(self) -> tuple[str, ...]:
+    def holders(self) -> tuple[str, ...]:
         """The parameters that hold an object inside a list, tuple or dict on the given-up input
         (``Kinds``), which a rewrite may not read."""
         return self._of_kind(Kind.HOLDS_OBJECT)
 
     @functools.cached_property
-    def fields(self) -> tuple[str, ...]:
+    def objects(self) -> tuple[str, ...]:
         """The parameters that are objects on the given-up input, which a rewrite reads only as
         ``name.field``."""
         return self._of_kind(Kind.OBJECT)
@@ -182,7 +182,7 @@ class Asking:
     def readable(self) -> bool:
         """Whether some parameter holds no object inside a list, tuple or dict, so a rewrite may
         read it."""
-        return len(self.unreadable) < len(self.parameters)
+        return len(self.holders) < len(self.parameters)
 
     def tries(self, around: Around) -> Tried:
         """Ask up to ``ASKS`` times, each carrying the earlier tries, until a rewrite's input
@@ -223,7 +223,7 @@ class Asking:
         if blocked is not None:
             around.note(RewriteSkipped(self.given.condition.site, blocked))
             return _Ended(blocked)
-        request = request_for(self.given, self.about, earlier, self.unreadable, self.kinds)
+        request = request_for(self.given, self.about, earlier, self.holders, self.kinds)
         started = time.monotonic()
         answer = self.provider.rewrite(request)
         around.pause(time.monotonic() - started)
@@ -237,7 +237,7 @@ class Asking:
             return EarlierTry(reply.text.strip()[:QUOTED], NO_EXPRESSION)
         around.note(RewriteRead(site, expression))
         file = f"<rewrite {self.about.place}>"
-        rewrite = rewrite_code(expression, self.parameters, file, self.unreadable, self.fields)
+        rewrite = rewrite_code(expression, self.parameters, file, self.holders, self.objects)
         if isinstance(rewrite, Refused):
             return EarlierTry(expression, rewrite.reason)
         ran = around.run_rewrite(rewrite.code, rewrite.handed(self.given.origin.args))

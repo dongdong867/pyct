@@ -53,7 +53,7 @@ def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_i
     Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
 
     assert failed(fake) == ["a rewrite may not read o, which holds an object"] * 4
-    assert [request.unreadable for request in fake.requests] == [("o",)] * 4
+    assert [request.holders for request in fake.requests] == [("o",)] * 4
     assert fake.handed == []
 
 
@@ -66,7 +66,7 @@ def test_a_rewrite_calling_a_method_of_an_object_fails_and_nothing_runs() -> Non
     Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
 
     assert failed(fake) == ["a rewrite may not call a method of o"] * 4
-    assert [request.unreadable for request in fake.requests] == [()] * 4
+    assert [request.holders for request in fake.requests] == [()] * 4
     assert fake.handed == []
 
 
@@ -126,7 +126,7 @@ def test_a_rewrite_reading_an_object_a_hint_builds_as_a_dict_fails() -> None:
     Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
 
     assert failed(fake) == ["a rewrite may read o only as o.<field>"] * 4
-    assert [request.unreadable for request in fake.requests] == [()] * 4
+    assert [request.holders for request in fake.requests] == [()] * 4
     assert fake.handed == []
 
 
@@ -139,7 +139,7 @@ def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
     Asking(fake, given, ABOUT, ("s",), Kept(), "self").tries(fake)
 
     assert dict(fake.requests[0].args)["self"] == "<holds an object>"
-    assert fake.requests[0].unreadable == ()
+    assert fake.requests[0].holders == ()
     reason = (
         'the input {"self": <holds an object>, "s": "0"} already meets it, yet took the other side'
     )

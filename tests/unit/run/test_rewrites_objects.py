@@ -47,7 +47,7 @@ def test_a_method_s_self_is_shown_as_its_class_and_the_dict_it_is_built_from() -
         "self": '<Cart object, built from {"owner": "ann"}>',
         "discount": "0",
     }
-    assert request.unreadable == ()
+    assert request.holders == ()
 
 
 # llm-rewrite-object-fields-reads-self
@@ -63,7 +63,7 @@ def test_a_method_that_takes_only_self_is_asked_with_self_as_its_parameter() -> 
 
     assert handled.outcomes == (Outcome.GAVE_UP,)
     assert provider.requests
-    assert {request.unreadable for request in provider.requests} == {()}
+    assert {request.holders for request in provider.requests} == {()}
     assert dict(provider.requests[0].args) == {"self": '<Till object, built from {"code": "0"}>'}
 
 

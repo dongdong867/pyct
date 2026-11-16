@@ -16,8 +16,8 @@ from tests.unit.rewrite.orders import Order
 FILE = "<rewrite m:2:7>"
 PARAMETERS = ("order", "s", "orders")
 # order is an object and orders holds one
-FIELDS = ("order",)
-OBJECTS = ("orders",)
+OBJECTS = ("order",)
+HOLDERS = ("orders",)
 WHOLE = "a rewrite may read order only as order.<field>"
 
 
@@ -27,7 +27,7 @@ def _one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def checked(expression: str, parameters: tuple[str, ...] = PARAMETERS) -> Rewrite | Refused:
-    return rewrite_code(expression, parameters, FILE, OBJECTS, FIELDS)
+    return rewrite_code(expression, parameters, FILE, HOLDERS, OBJECTS)
 
 
 def refusal(expression: str) -> str:

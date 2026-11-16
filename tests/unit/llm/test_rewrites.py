@@ -56,7 +56,7 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
 
 
 def test_the_request_names_the_parameters_a_rewrite_may_not_read() -> None:
-    request = dataclasses.replace(REQUEST, unreadable=("o", "l"))
+    request = dataclasses.replace(REQUEST, holders=("o", "l"))
 
     assert "may not read" not in request_text(REQUEST)
     assert (
