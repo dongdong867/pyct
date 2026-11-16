@@ -42,7 +42,6 @@ enters `pyct.core.entry.in_use` on each entry.
 from __future__ import annotations
 
 import contextlib
-import json
 import sys
 import types
 from collections.abc import Mapping
@@ -51,7 +50,7 @@ from typing import cast
 from pyct.core.entry import in_use
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.in_use import USING, Run
-from pyct.core.entry.plain_json import plain_json
+from pyct.core.entry.waiting import Key, Waiting, json_text, popped
 from pyct.core.foundation.branch import BranchSink, Changed, GoingIn, PieceRun, Site
 
 # the runs of each piece recorded in an input, its first
@@ -63,11 +62,7 @@ MOST_TEXT = 1024 * 1024
 # what `size` counts for each run, and for each value, beside their characters
 RUN_COUNT, VALUE_COUNT = 64, 2
 
-_dumps = json.dumps
-
 type _Site = tuple[str, int, int]
-# an entry waiting on its exit, by its frame's id and its column
-type _Key = tuple[int, int]
 
 
 class _Entry:
@@ -77,7 +72,7 @@ class _Entry:
     __slots__ = ("changed", "going_in", "key", "site")
 
     def __init__(
-        self, site: Site, going_in: tuple[GoingIn, ...], changed: tuple[str, ...], key: _Key
+        self, site: Site, going_in: tuple[GoingIn, ...], changed: tuple[str, ...], key: Key
     ) -> None:
         self.site = site
         self.going_in = going_in
@@ -103,7 +98,7 @@ class _Recording:
         # given, and its column
         self.done: dict[int, tuple[tuple[str, ...], int]] = {}
         # by line, each entry waiting on its exit
-        self.waiting: dict[int, dict[_Key, _Entry]] = {}
+        self.waiting: Waiting[_Entry] = {}
         self.text = 0
 
     def entered(
@@ -118,7 +113,7 @@ class _Recording:
         runs and its values going in are kept, after any entry left in this frame is dropped."""
         with contextlib.suppress(Exception):
             key = (id(frame), col)
-            self._drop(line, key)
+            popped(self.waiting, line, key)
             site = (frame.f_code.co_filename, line, col)
             started = self.runs.get(site, 0)
             names = going_in or changed
@@ -141,7 +136,7 @@ class _Recording:
         """A loop's run ends in the frame: its run is recorded, when its entry waits on it. Its
         position among the piece's recorded runs, or None when it is not recorded."""
         with contextlib.suppress(Exception):
-            entry = self._drop(line, (id(frame), col))
+            entry = popped(self.waiting, line, (id(frame), col))
             if entry is None:
                 return None
             values = _changed(frame.f_locals, changed)
@@ -157,8 +152,8 @@ class _Recording:
             waiting = self.waiting.get(entry.site.line)
             if waiting is None or waiting.get(entry.key) is not entry:
                 return None
-            self._drop(entry.site.line, entry.key)
-            text = _text(value)
+            popped(self.waiting, entry.site.line, entry.key)
+            text = json_text(value, MOST_VALUE)
             if text is not None:
                 changed = tuple(Changed(name, text) for name in entry.changed)
                 return self._record(PieceRun(entry.site, entry.going_in, changed))
@@ -185,16 +180,6 @@ class _Recording:
         self.recorded[run.site] = at + 1
         self.sink.append(run)
         return at
-
-    def _drop(self, line: int, key: _Key) -> _Entry | None:
-        """Drop the entry waiting at the line by the key, and hand it back."""
-        waiting = self.waiting.get(line)
-        if waiting is None:
-            return None
-        entry = waiting.pop(key, None)
-        if not waiting:
-            del self.waiting[line]
-        return entry
 
 
 _RECORDING = _Recording()
@@ -328,7 +313,7 @@ def piece_value[Value](
         stored, failed = in_use.assigned(sys._getframe(1), token, value)
         if failed:
             if at is None:
-                text = _text(value)
+                text = json_text(value, MOST_VALUE)
                 changed = None if text is None else tuple(Changed(n, text) for n in token.names[1])
                 at = _recording.failed(token, changed)
             in_use.dropped(token, at)
@@ -343,7 +328,7 @@ def _going_in(held: Mapping[str, object], names: tuple[str, ...]) -> tuple[Going
     for name in names:
         if name in held:
             value = held[name]
-            text = _text(value)
+            text = json_text(value, MOST_VALUE)
             if text is None:
                 return None
             values.append(GoingIn(name, text, type(value) in TRACKED_CLASSES))
@@ -356,18 +341,8 @@ def _changed(held: Mapping[str, object], names: tuple[str, ...]) -> tuple[Change
     values = []
     for name in names:
         if name in held:
-            text = _text(held[name])
+            text = json_text(held[name], MOST_VALUE)
             if text is None:
                 return None
             values.append(Changed(name, text))
     return tuple(values)
-
-
-def _text(value: object) -> str | None:
-    """The value's JSON text, or None when it is not plain JSON data or its text is not shorter
-    than `MOST_VALUE`."""
-    try:
-        text = _dumps(plain_json(value, tuples=False, most=MOST_VALUE))
-    except (TypeError, ValueError, RecursionError):
-        return None
-    return text if len(text) < MOST_VALUE else None

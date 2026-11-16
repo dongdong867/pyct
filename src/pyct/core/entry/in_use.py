@@ -37,7 +37,6 @@ from __future__ import annotations
 import contextlib
 import copy
 import dataclasses
-import json
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -45,7 +44,7 @@ from typing import cast
 
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.frames import rebind
-from pyct.core.entry.plain_json import plain_json
+from pyct.core.entry.waiting import Key, Waiting, json_text, popped
 from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site, placed_at
 from pyct.core.lists.list_state import plain
 from pyct.core.lists.lists import ConcolicList
@@ -60,8 +59,6 @@ _SCALARS = frozenset({ConcolicInt, ConcolicFloat, ConcolicStr, ConcolicBool})
 _CONTAINERS = frozenset({list, dict, ConcolicList, ConcolicDict})
 
 type _Place = tuple[str, int, int]
-# a run waiting on its end, by its frame's id and its column
-type _Key = tuple[int, int]
 # a piece's names going in and its changed names
 type _Names = tuple[tuple[str, ...], tuple[str, ...]]
 
@@ -89,7 +86,7 @@ class Run:
     __slots__ = ("drop", "entry", "key", "kept", "loop", "names", "place", "site", "written")
 
     def __init__(
-        self, place: _Place, loop: LoopInUse, names: _Names, kept: dict[str, object], key: _Key
+        self, place: _Place, loop: LoopInUse, names: _Names, kept: dict[str, object], key: Key
     ) -> None:
         self.place = place
         self.site = Site(*place)
@@ -117,17 +114,7 @@ class _Using:
 
     def clear(self) -> None:
         self.dropped: set[_Place] = set()
-        self.waiting: dict[int, dict[_Key, Run]] = {}
-
-    def pop(self, line: int, key: _Key) -> Run | None:
-        """Drop the run waiting at the line by the key, and hand it back."""
-        waiting = self.waiting.get(line)
-        if waiting is None:
-            return None
-        run = waiting.pop(key, None)
-        if not waiting:
-            del self.waiting[line]
-        return run
+        self.waiting: Waiting[Run] = {}
 
 
 USING = _Using()
@@ -154,7 +141,7 @@ def entered(frame: types.FrameType, line: int, col: int, names: _Names) -> Run |
     with contextlib.suppress(Exception):
         place = (frame.f_code.co_filename, line, col)
         key = (id(frame), col)
-        USING.pop(line, key)
+        popped(USING.waiting, line, key)
         loop = IN_USE.get(place)
         if loop is None or place in USING.dropped:
             return None
@@ -182,7 +169,7 @@ def left(frame: types.FrameType, line: int, col: int) -> Run | None:
     formula while the run was open, which only restores the names. Hands back the run when its
     formula was dropped on it, else None."""
     with contextlib.suppress(Exception):
-        run = USING.pop(line, (id(frame), col))
+        run = popped(USING.waiting, line, (id(frame), col))
         if run is None:
             return None
         if run.place in USING.dropped:
@@ -204,7 +191,7 @@ def assigned(frame: types.FrameType, run: Run, value: object) -> tuple[object, b
         waiting = USING.waiting.get(line)
         if waiting is None or waiting.get(run.key) is not run:
             return value, False
-        USING.pop(line, run.key)
+        popped(USING.waiting, line, run.key)
         if run.place in USING.dropped:
             _rebound(frame, run, {})
             return value, False
@@ -228,8 +215,8 @@ def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
         if not isinstance(got, Mapping) or name not in got:
             return _dropped(run, real, name, "", DropReason.MISSING)
         result = got[name]
-        text = _text(result)
-        if text is None or text != _text(value):
+        text = json_text(result)
+        if text is None or text != json_text(value):
             return _dropped(run, real, name, text or "", DropReason.MISMATCH)
         if type(result) in _SCALARS:
             tracked = cast(ConcolicInt, result)
@@ -243,7 +230,7 @@ def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: 
     """Drop the run's loop for the rest of the input, and keep the drop with the run for
     `dropped`."""
     USING.dropped.add(run.place)
-    value = _text(real[name]) if name in real else None
+    value = json_text(real[name]) if name in real else None
     run.drop = FormulaDrop(run.site, name, value or "", got, reason)
 
 
@@ -276,11 +263,3 @@ def _as_it_went_in(value: object) -> object:
     if type(value) in _CONTAINERS:
         return copy.copy(value)
     return value
-
-
-def _text(value: object) -> str | None:
-    """The value's JSON text, or None when JSON holds no form of it."""
-    try:
-        return json.dumps(plain_json(value, tuples=False))
-    except (TypeError, ValueError, RecursionError):
-        return None
