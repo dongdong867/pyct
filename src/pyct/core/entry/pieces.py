@@ -44,7 +44,7 @@ from __future__ import annotations
 import contextlib
 import sys
 import types
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from typing import cast
 
 from pyct.core.entry import in_use
@@ -294,9 +294,7 @@ def piece_out(
         frame = sys._getframe(1)
         failed = in_use.left(frame, line, col)
         if failed is not None:
-            if at is None:
-                at = _recording.failed(failed, _changed(frame.f_locals, changed))
-            in_use.dropped(failed, at)
+            _failed(_recording, frame, failed, at, lambda: _changed(frame.f_locals, changed))
 
 
 def piece_value[Value](
@@ -310,15 +308,37 @@ def piece_value[Value](
     elif type(token) is Run:
         entry = token.entry
         at = _recording.assigned(entry, value) if type(entry) is _Entry else None
-        stored, failed = in_use.assigned(sys._getframe(1), token, value)
+        frame = sys._getframe(1)
+        stored, failed = in_use.assigned(frame, token, value)
         if failed:
-            if at is None:
-                text = json_text(value, MOST_VALUE)
-                changed = None if text is None else tuple(Changed(n, text) for n in token.names[1])
-                at = _recording.failed(token, changed)
-            in_use.dropped(token, at)
+            _failed(_recording, frame, token, at, lambda: _stored(token, value))
         return cast(Value, stored)
     return value
+
+
+def _failed(
+    recording: _Recording,
+    frame: types.FrameType,
+    run: Run,
+    at: int | None,
+    changed: Callable[[], tuple[Changed, ...] | None],
+) -> None:
+    """A run whose formula was dropped on it ends in the frame: its names are restored and, when
+    no entry recorded it (``at`` None), it is recorded with the ``changed`` values; its drop
+    reaches the sink whatever either does."""
+    try:
+        in_use.restored(frame, run)
+        if at is None:
+            at = recording.failed(run, changed())
+    finally:
+        in_use.dropped(run, at)
+
+
+def _stored(run: Run, value: object) -> tuple[Changed, ...] | None:
+    """An assignment's changed name with the value it stores, as JSON text, or None when the
+    value is not kept."""
+    text = json_text(value, MOST_VALUE)
+    return None if text is None else tuple(Changed(name, text) for name in run.names[1])
 
 
 def _going_in(held: Mapping[str, object], names: tuple[str, ...]) -> tuple[GoingIn, ...] | None:

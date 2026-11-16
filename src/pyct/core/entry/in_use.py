@@ -22,7 +22,7 @@ value with the formula's term; another formula value leaves the loop's
 value as it is. On a mismatch, a raise, or a changed name the formula gives
 no value for, the changed names stay as the loop left them, the sink is
 handed a `FormulaDrop` once the run is recorded (`dropped`), naming that
-run, and the loop is followed as written for the rest of the input; a run of
+run, also when the restore or the record raises, and the loop is followed as written for the rest of the input; a run of
 the loop still open then, in an outer frame, ends with its names restored
 and no call. Either way each name going in that is not one of the piece's
 changed names gets its tracked value back when the frame still holds the
@@ -166,7 +166,7 @@ def over[Iterated](
 def left(frame: types.FrameType, line: int, col: int) -> Run | None:
     """A loop's run ends in the frame: its formula stands for it, unless the input dropped the
     formula while the run was open, which only restores the names. Hands back the run when its
-    formula was dropped on it, else None."""
+    formula was dropped on it, its names not yet restored (`restored`), else None."""
     with contextlib.suppress(Exception):
         run = popped(USING.waiting, line, (id(frame), col))
         if run is None:
@@ -177,14 +177,16 @@ def left(frame: types.FrameType, line: int, col: int) -> Run | None:
         held = frame.f_locals
         real = {name: held[name] for name in run.loop.changed if name in held}
         made = _finished(run, real)
-        _rebound(frame, run, made or {})
-        return run if made is None else None
+        if made is None:
+            return run
+        _rebound(frame, run, made)
     return None
 
 
 def assigned(frame: types.FrameType, run: Run, value: object) -> tuple[object, bool]:
     """An assignment's run ends in the frame with its value, as `left`: the value to store, the
-    tracked one when the formula matches, and whether the formula was dropped on it."""
+    tracked one when the formula matches, and whether the formula was dropped on it, the names
+    then not yet restored (`restored`)."""
     with contextlib.suppress(Exception):
         line = run.site.line
         waiting = USING.waiting.get(line)
@@ -196,8 +198,10 @@ def assigned(frame: types.FrameType, run: Run, value: object) -> tuple[object, b
             return value, False
         stored = run.loop.changed[0]
         made = _finished(run, {stored: value})
-        _rebound(frame, run, made or {})
-        return (value, True) if made is None else (made.get(stored, value), False)
+        if made is None:
+            return value, True
+        _rebound(frame, run, made)
+        return made.get(stored, value), False
     return value, False
 
 
@@ -233,12 +237,20 @@ def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: 
     run.drop = FormulaDrop(run.site, name, value or "", got, reason)
 
 
+def restored(frame: types.FrameType, run: Run) -> None:
+    """A run whose formula was dropped on it ends in the frame: each name going in that is not
+    one of the piece's changed names gets its tracked value back, as `_rebound` gives it."""
+    with contextlib.suppress(Exception):
+        _rebound(frame, run, {})
+
+
 def dropped(run: Run, at: int | None) -> None:
     """Hand the sink the drop of the run's formula, once the run is recorded: ``at`` is its
     position among the input's recorded runs of the loop, None when it is not recorded."""
-    drop = run.drop
-    if drop is not None and USING.sink is not None:
-        USING.sink.append(dataclasses.replace(drop, run=at))
+    with contextlib.suppress(Exception):
+        drop = run.drop
+        if drop is not None and USING.sink is not None:
+            USING.sink.append(dataclasses.replace(drop, run=at))
 
 
 def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> None:

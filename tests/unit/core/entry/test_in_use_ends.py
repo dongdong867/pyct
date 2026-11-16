@@ -3,13 +3,20 @@ calls it no more, a name the loop changes keeps the loop's value whatever object
 run that ends by a ``break``, one with an ``else`` and one inside another loop end through the
 formula."""
 
+import contextlib
+import types
 from collections.abc import Mapping
 
-from pyct.core.entry.in_use import LoopInUse
-from pyct.core.foundation.branch import Branch
+import pytest
+
+from pyct.core.entry import in_use, pieces
+from pyct.core.entry.in_use import LoopInUse, Run
+from pyct.core.foundation.branch import Branch, Changed, DropReason, FormulaDrop, Site
 from pyct.core.numbers.ints import ConcolicInt
 from tests.unit.core.entry.test_in_use import (
     COUNT_Z,
+    COUNTS,
+    GENEXP,
     LOOP,
     RECURSIVE,
     counted,
@@ -18,7 +25,7 @@ from tests.unit.core.entry.test_in_use import (
     tracked,
     using,
 )
-from tests.unit.core.entry.test_pieces import hooked
+from tests.unit.core.entry.test_pieces import FILE, hooked
 
 
 def test_a_run_open_in_an_outer_frame_does_not_call_a_formula_an_inner_frame_dropped() -> None:
@@ -148,3 +155,66 @@ def test_a_loop_in_use_inside_another_loop_uses_its_formula_on_each_run() -> Non
     assert type(total) is ConcolicInt
     assert int.__int__(total) == 4
     assert (forks(sink), drops(sink)) == ([], [])
+
+
+class _Stop(BaseException):
+    """A raise that is not an ``Exception``, as the deadline's."""
+
+
+def wrong(_: Mapping[str, object]) -> Mapping[str, object]:
+    return {"t": 99}
+
+
+@pytest.mark.parametrize("raised", [RuntimeError, _Stop], ids=["an Exception", "another raise"])
+@pytest.mark.parametrize(
+    ("source", "place", "parameters"),
+    [(COUNTS, LOOP, ("s", "t")), (GENEXP, (2, 11), ("s",))],
+    ids=["a for", "an assignment"],
+)
+def test_a_drop_reaches_the_sink_when_the_restore_after_it_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    raised: type[BaseException],
+    source: str,
+    place: tuple[int, int],
+    parameters: tuple[str, ...],
+) -> None:
+    restore = in_use._rebound
+
+    def raising(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> None:
+        if run.drop is not None:
+            raise raised
+        restore(frame, run, made)
+
+    monkeypatch.setattr(in_use, "_rebound", raising)
+    f = hooked(source)
+
+    with using({place: LoopInUse(parameters, ("t",), wrong)}) as sink, contextlib.suppress(_Stop):
+        f(tracked("az", "s", sink))
+
+    drop = FormulaDrop(Site(FILE, *place), "t", "1", "99", DropReason.MISMATCH, run=0)
+    assert drops(sink) == [drop]
+
+
+def test_a_drop_reaches_the_sink_when_the_record_of_its_run_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raising(_self: object, _run: Run, _changed: tuple[Changed, ...] | None) -> int | None:
+        raise _Stop
+
+    calls: list[Mapping[str, object]] = []
+
+    def wrong_on_the_fourth(values: Mapping[str, object]) -> Mapping[str, object]:
+        calls.append(values)
+        return wrong(values) if len(calls) == 4 else counted(values)
+
+    monkeypatch.setattr(pieces._Recording, "failed", raising)
+    f = hooked(COUNTS)
+
+    with using({LOOP: LoopInUse(("s", "t"), ("t",), wrong_on_the_fourth)}) as sink:
+        for _ in range(3):
+            f(tracked("az", "s", sink))
+        # past the first three runs, the failing run is recorded only by `failed`
+        with pytest.raises(_Stop):
+            f(tracked("az", "s", sink))
+
+    assert drops(sink) == [FormulaDrop(Site(FILE, *LOOP), "t", "1", "99", DropReason.MISMATCH)]
