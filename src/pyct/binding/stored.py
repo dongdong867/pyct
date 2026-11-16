@@ -20,6 +20,7 @@ import types
 from collections.abc import Iterable
 from typing import cast
 
+from pyct.binding.classes import mro_of, namespace_of
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
@@ -47,9 +48,6 @@ _SCALARS: tuple[type, ...] = (
 )
 # what Python's own attribute read is, which reads an instance's fields and its class's names
 _OWN_READ = vars(object)["__getattribute__"]
-# the slot ``__mro__`` and ``__dict__`` of every class are read through, so no metaclass runs
-_MRO = vars(type)["__mro__"]
-_NAMESPACE = vars(type)["__dict__"]
 # a name no namespace holds
 _NOWHERE = object()
 
@@ -85,7 +83,7 @@ def _stored(owner: object, field: str) -> object:
     it reads none. Python reads a slot or any other data descriptor before the instance's
     ``__dict__``, so a data descriptor other than a slot is the class's code."""
     cls = type(owner)
-    mro = cast(tuple[type, ...], _MRO.__get__(cls))
+    mro = mro_of(cls)
     if _class_name(mro, "__getattribute__") is not _OWN_READ:
         return _Why(BY_CODE)
     held = _class_name(mro, field)
@@ -128,7 +126,7 @@ def _own_dict(holder: types.GetSetDescriptorType, owner: object, cls: type) -> o
 def _data_descriptor(kind: type) -> bool:
     """Whether a class attribute of type ``kind`` answers a read before the instance's
     ``__dict__``: its type defines ``__get__`` and ``__set__`` or ``__delete__``."""
-    mro = cast(tuple[type, ...], _MRO.__get__(kind))
+    mro = mro_of(kind)
     reads = _class_name(mro, "__get__") is not _NOWHERE
     writes = any(_class_name(mro, name) is not _NOWHERE for name in ("__set__", "__delete__"))
     return reads and writes
@@ -137,7 +135,7 @@ def _data_descriptor(kind: type) -> bool:
 def _class_name(mro: tuple[type, ...], name: str) -> object:
     """The first value a namespace of ``mro`` holds under ``name``, or ``_NOWHERE``."""
     for each in mro:
-        space = cast(types.MappingProxyType[object, object], _NAMESPACE.__get__(each))
+        space = cast(types.MappingProxyType[object, object], namespace_of(each))
         found = _matching(types.MappingProxyType.items(space), name)
         if found is not _NOWHERE:
             return found

@@ -109,7 +109,7 @@ def plain_attribute(owner: object, name: str) -> object:
     if reader is types.ModuleType:
         spaces = [vars(types.ModuleType)["__dict__"].__get__(owner)]
     else:
-        spaces = [_namespace(each) for each in _mro(cast(type, owner))]
+        spaces = [namespace_of(each) for each in mro_of(cast(type, owner))]
     found = next((space[name] for space in spaces if name in space), Unread.ABSENT)
     if found is Unread.ABSENT and _answers_missing(owner, reader, spaces):
         return Unread.CODE
@@ -141,14 +141,18 @@ def name_of(cls: type) -> str:
 def _defining(cls: type, name: str) -> type | None:
     """The first class of ``cls``'s method resolution order whose own namespace holds ``name``,
     read so that no code runs."""
-    return next((each for each in _mro(cls) if name in _namespace(each)), None)
+    return next((each for each in mro_of(cls) if name in namespace_of(each)), None)
 
 
-def _mro(cls: type) -> tuple[type, ...]:
+def mro_of(cls: type) -> tuple[type, ...]:
+    """The ``__mro__`` of ``cls``, read through ``type``'s own descriptor, so no code of the
+    class's own type runs."""
     return type.__dict__["__mro__"].__get__(cls)
 
 
-def _namespace(cls: type) -> Mapping[str, object]:
+def namespace_of(cls: type) -> Mapping[str, object]:
+    """The namespace of ``cls``, read through ``type``'s own descriptor, so no code of the
+    class's own type runs."""
     return type.__dict__["__dict__"].__get__(cls)
 
 
