@@ -26,6 +26,7 @@ from pyct.config.llm import DEFAULT_LIMIT
 from pyct.config.plateau import Plateau
 from pyct.llm.summaries import summary_reply
 from pyct.results.coverage import Coverage
+from pyct.results.jsonl import render
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, RunResult
 from pyct.run import isolation, model_runs
@@ -92,12 +93,14 @@ class FakeSummaries:
 
 @dataclass
 class Summarized:
-    """What a run with summaries gave: its result, each input as it finished, and the stderr line
-    each note gives, in the order they came."""
+    """What a run with summaries gave: its result, each input as it finished, the stderr line each
+    note gives, in the order they came, and each input's stdout line as it was rendered when it
+    finished, with the coverage it was rendered with."""
 
     result: RunResult
     records: list[InputRecord]
     said: list[str]
+    printed: list[tuple[str, Coverage]] = field(default_factory=list)
 
     def llm_said(self) -> list[str]:
         """The ``llm:`` lines alone."""
@@ -117,10 +120,12 @@ def run_summaries(
     instead, such as in a fresh interpreter."""
     records = provider.records
     said: list[str] = []
+    printed: list[tuple[str, Coverage]] = []
 
-    def report(record: InputRecord, _coverage: Coverage) -> None:
+    def report(record: InputRecord, coverage: Coverage) -> None:
         records.append(record)
         said.append(f"input {len(records)}")
+        printed.append((render(record, coverage), coverage))
 
     def noted(note: Note) -> None:
         line = note_line(note)
@@ -131,7 +136,7 @@ def run_summaries(
     tell = Tell(report=report, noted=noted)
     with interception(spec, pieces=True):
         result = run(load_target(spec), seed, limits=limits, setup=setup, tell=tell)
-    return Summarized(result, records, said)
+    return Summarized(result, records, said, printed)
 
 
 @contextlib.contextmanager

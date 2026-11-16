@@ -12,7 +12,7 @@ from pathlib import Path
 
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
-from pyct.results.jsonl import render_summary
+from pyct.results.jsonl import render, render_summary
 from pyct.results.llm_asks import LlmUse
 from pyct.results.record import InputRecord
 from pyct.run.summaries import EarlierFormula
@@ -127,9 +127,9 @@ def test_an_input_before_the_drop_keeps_its_lines() -> None:
         if str(record.args["s"]).count("z") == 4 and four in record.covered_lines
     ]
     assert fours, [record.args for record in done.records]
-    # each input's line is printed once, as it finished, and the run keeps that input as it was
-    assert done.said.count(f"input {fours[0] + 1}") == 1
-    assert done.result.records[fours[0]] == done.records[fours[0]]
+    # the line printed as the input finished is the line its record in the run's result gives
+    line, coverage = done.printed[fours[0]]
+    assert render(done.result.records[fours[0]], coverage) == line
     assert four in done.result.coverage.covered[G]
 
 
