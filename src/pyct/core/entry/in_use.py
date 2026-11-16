@@ -20,11 +20,12 @@ formula value is a tracked int, float, str or bool holds the loop's own
 value with the formula's term; another formula value leaves the loop's
 value as it is. On a mismatch, a raise, or a changed name the formula gives
 no value for, the changed names stay as the loop left them, the sink is
-handed a `FormulaDrop`, and the loop is followed as written for the rest of
-the input; a run of the loop still open then, in an outer frame, ends with
-its names restored and no call. Either way each name going in that is not
-one of the piece's changed names gets its tracked value back when the frame
-still holds the plain value the start wrote.
+handed a `FormulaDrop` once the run is recorded (`dropped`), naming that
+run, and the loop is followed as written for the rest of the input; a run of
+the loop still open then, in an outer frame, ends with its names restored
+and no call. Either way each name going in that is not one of the piece's
+changed names gets its tracked value back when the frame still holds the
+plain value the start wrote.
 
 A raise that is not an ``Exception``, the deadline's, passes through. A run
 that ends by ``return`` or a raise reaches no end: its names stay plain,
@@ -35,6 +36,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import dataclasses
 import json
 import types
 from collections.abc import Callable, Mapping
@@ -84,7 +86,7 @@ class Run:
     it waits. ``entry`` is the token the
     recording of the piece's runs gave this run."""
 
-    __slots__ = ("entry", "key", "kept", "loop", "names", "place", "site", "written")
+    __slots__ = ("drop", "entry", "key", "kept", "loop", "names", "place", "site", "written")
 
     def __init__(
         self, place: _Place, loop: LoopInUse, names: _Names, kept: dict[str, object], key: _Key
@@ -97,6 +99,8 @@ class Run:
         self.written = {name: plain(each) for name, each in kept.items() if type(each) in _SCALARS}
         self.key = key
         self.entry: object = None
+        # the drop of the run's formula, until `dropped` hands it to the sink
+        self.drop: FormulaDrop | None = None
 
 
 class _Using:
@@ -236,11 +240,19 @@ def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
 
 
 def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: DropReason) -> None:
-    """Drop the run's loop for the rest of the input, and hand the sink the drop."""
+    """Drop the run's loop for the rest of the input, and keep the drop with the run for
+    `dropped`."""
     USING.dropped.add(run.place)
     value = _text(real[name]) if name in real else None
-    if USING.sink is not None:
-        USING.sink.append(FormulaDrop(run.site, name, value or "", got, reason))
+    run.drop = FormulaDrop(run.site, name, value or "", got, reason)
+
+
+def dropped(run: Run, at: int | None) -> None:
+    """Hand the sink the drop of the run's formula, once the run is recorded: ``at`` is its
+    position among the input's recorded runs of the loop, None when it is not recorded."""
+    drop = run.drop
+    if drop is not None and USING.sink is not None:
+        USING.sink.append(dataclasses.replace(drop, run=at))
 
 
 def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> None:

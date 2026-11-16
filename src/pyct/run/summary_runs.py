@@ -87,14 +87,13 @@ def _shown(run: PieceRun, loop: AskedLoop) -> ShownRun:
 
 
 def failed_run(drop: FormulaDrop, record: InputRecord, number: int) -> CompleteRun | None:
-    """The run of the loop an input's drop names, as the input's record holds it, the input
-    numbered ``number``: the last run of the loop there whose value of the drop's name is the
-    loop's value the drop names. None when the record holds none."""
-    for each in reversed(record.pieces):
-        values = {changed.name: changed.value for changed in each.changed}
-        if each.site == drop.site and values.get(drop.name) == drop.value:
-            return CompleteRun(number, each)
-    return None
+    """The run of the loop an input's drop names by its position, as the input's record holds
+    it, the input numbered ``number``. None when the drop names no run or the record holds
+    none there."""
+    runs = [each for each in record.pieces if each.site == drop.site]
+    if drop.run is None or not 0 <= drop.run < len(runs):
+        return None
+    return CompleteRun(number, runs[drop.run])
 
 
 def piece_at(site: Site) -> Piece | None:

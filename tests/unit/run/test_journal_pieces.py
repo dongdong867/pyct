@@ -111,7 +111,7 @@ def test_a_run_record_of_the_wrong_shape_is_a_problem(payload: bytes) -> None:
     assert reading.problem == f"could not read the input's facts at byte {RECORDS + HEAD.size + 8}"
 
 
-DROPPED = FormulaDrop(SITE, "t", "[1.5]", '"1.5"', DropReason.MISMATCH)
+DROPPED = FormulaDrop(SITE, "t", "[1.5]", '"1.5"', DropReason.MISMATCH, run=2)
 
 
 def test_a_dropped_formula_reads_back_as_it_was_written_among_the_other_facts() -> None:
@@ -132,8 +132,13 @@ def test_a_dropped_formula_reads_back_as_it_was_written_among_the_other_facts() 
 
 @pytest.mark.parametrize(
     "payload",
-    [b'["t.py", 3, 7, "t", "2", "3"]', b'["t.py", 3, 7, "t", "2", "3", "lost"]', b"[1]"],
-    ids=["too few fields", "no reason of a drop", "no fields"],
+    [
+        b'["t.py", 3, 7, "t", "2", "3", "mismatch"]',
+        b'["t.py", 3, 7, "t", "2", "3", "lost", 0]',
+        b'["t.py", 3, 7, "t", "2", "3", "mismatch", "0"]',
+        b"[1]",
+    ],
+    ids=["too few fields", "no reason of a drop", "a run that is no number", "no fields"],
 )
 def test_a_drop_record_of_the_wrong_shape_is_a_problem(payload: bytes) -> None:
     buffer = bytearray(RECORDS + 8192)

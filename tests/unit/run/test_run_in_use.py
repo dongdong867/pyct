@@ -97,6 +97,7 @@ def test_a_formula_that_does_not_match_leaves_its_drop_on_the_input_s_record(
     result = ran(counts, counted("a"), {"s": "zz"}, tmp_path, monkeypatch)
 
     site = Site(str(counts), *LOOP)
-    assert result.records[0].drops == (FormulaDrop(site, "t", "2", "0", DropReason.MISMATCH),)
+    drop = FormulaDrop(site, "t", "2", "0", DropReason.MISMATCH, run=0)
+    assert result.records[0].drops == (drop,)
     # the loop ran plain before the drop, and its value stays plain after it
     assert result.records[0].forks == ()

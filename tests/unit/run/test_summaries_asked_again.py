@@ -2,13 +2,18 @@
 request holds the dropped formula among the earlier tries with why it was dropped, and the run it
 failed on first among its runs, which the past-run check now also sees."""
 
+from collections.abc import Mapping
+from dataclasses import replace
+
 import pytest
 
-from pyct.core.entry.in_use import IN_USE
-from pyct.core.foundation.branch import DropReason, FormulaDrop, Site
+from pyct.core.entry.in_use import IN_USE, LoopInUse
+from pyct.core.foundation.branch import Changed, DropReason, FormulaDrop, PieceRun, Site
+from pyct.core.strs.strs import ConcolicStr
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, SummaryState
+from pyct.results.record import InputRecord
 from pyct.run.notes import Note, SummaryFailed
 from pyct.run.stuck import Handled, Moment
 from pyct.run.summaries import EarlierFormula, Summaries, SummaryReply
@@ -17,6 +22,8 @@ from pyct.run.summary_runs import AskedLoop, ShownRun, failed_run, piece_at, sho
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
 from tests.acceptance.llm_summaries import one_thread  # noqa: F401
+from tests.unit.core.entry.test_in_use import using
+from tests.unit.core.entry.test_pieces import hooked
 from tests.unit.run.test_summaries import (
     COUNTS,
     FILE,
@@ -29,12 +36,12 @@ from tests.unit.run.test_summaries import (
     entry,
     record,
 )
-from tests.unit.run.test_summaries_drops import capped, dropping
+from tests.unit.run.test_summaries_drops import dropping
 
 # `table` empties core's table of loops in use for each test and after it
 from tests.unit.run.test_summaries_in_use import table  # noqa: F401
 
-DROP = FormulaDrop(LOOP, "t", "5", "6", DropReason.MISMATCH)
+DROP = FormulaDrop(LOOP, "t", "5", "6", DropReason.MISMATCH, run=0)
 
 
 def test_the_same_wrong_formula_fails_on_the_run_it_was_dropped_at() -> None:
@@ -60,16 +67,49 @@ def test_the_same_wrong_formula_fails_on_the_run_it_was_dropped_at() -> None:
     assert (state.state, state.checked_on) == (SummaryState.FAILED, None)
 
 
-def test_the_run_a_drop_names_is_the_last_of_its_loop_with_the_loop_s_value() -> None:
+TWICE = """\
+def count(s):
+    t = 0
+    for c in s:
+        if c == "z" and t < 5:
+            t += 1
+    return t
+
+
+def f(a, b):
+    return count(a), count(b)
+"""
+
+
+def uncapped(values: Mapping[str, object]) -> Mapping[str, object]:
+    s, t = values["s"], values["t"]
+    assert isinstance(s, str)
+    assert isinstance(t, int)
+    return {"t": t + s.count("z")}
+
+
+def test_the_run_a_drop_names_is_its_own_when_a_later_run_ends_with_the_same_value() -> None:
+    f = hooked(TWICE)
+
+    with using({(3, 4): LoopInUse(("s", "t"), ("t",), uncapped)}) as sink:
+        f(ConcolicStr.made("zzzzzz", expression="a", sink=sink), "zzzzz")
+
+    pieces = tuple(each for each in sink if type(each) is PieceRun)
+    drops = tuple(each for each in sink if type(each) is FormulaDrop)
+    record = InputRecord({}, (), frozenset(), pieces=pieces, drops=drops)
+    # the formula gave 6 on six "z", then the loop, followed as written, counted five to 5
+    [drop] = drops
+    assert [each.changed for each in pieces] == [(Changed("t", "5"),)] * 2
+    assert failed_run(drop, record, 4) == CompleteRun(4, pieces[0])
+
+
+def test_a_drop_whose_run_is_not_in_the_record_names_none() -> None:
     held = dropping(DROP).pieces[0]
-    later = capped("ab")
-    earlier = capped("zzzzzzz")
 
-    found = failed_run(DROP, record(earlier, held, later), 9)
-
-    assert found == CompleteRun(9, held)
-    assert failed_run(DROP, record(later), 9) is None
-    elsewhere = FormulaDrop(Site(FILE, 11, 4), "t", "5", "6", DropReason.MISMATCH)
+    assert failed_run(DROP, record(held), 9) == CompleteRun(9, held)
+    assert failed_run(DROP, record(), 9) is None
+    assert failed_run(replace(DROP, run=None), record(held), 9) is None
+    elsewhere = FormulaDrop(Site(FILE, 11, 4), "t", "5", "6", DropReason.MISMATCH, run=0)
     assert failed_run(elsewhere, record(held), 9) is None
 
 

@@ -53,7 +53,8 @@ kind) and its payload, padded to 8 bytes:
   name, ``1`` or ``0`` for whether it was tracked, and its value's JSON
   text, then each changed name and its value's text, a NUL between each.
 - drop: a loop's formula dropped in the call (``FormulaDrop``), as JSON
-  ``[file, line, col, name, value, got, reason]``.
+  ``[file, line, col, name, value, got, reason, run]``, ``run`` null for a
+  run not recorded.
 
 A record's bytes go first and the committed mark moves past them after, so
 the journal holds a readable prefix at every instant. Every word the
@@ -246,7 +247,7 @@ class JournalWriter:
         """Write a loop's formula dropped in the call, among the input's own facts."""
         site = drop.site
         fields = [site.file, site.line, site.col, drop.name, drop.value, drop.got, drop.reason]
-        self._json(DROP, fields)
+        self._json(DROP, [*fields, drop.run])
 
     def bound(self, note: str) -> None:
         """Note that the call went past the forks it keeps, and go on with what it still keeps."""

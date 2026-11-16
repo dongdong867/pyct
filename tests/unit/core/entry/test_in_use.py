@@ -173,7 +173,8 @@ def test_an_assignment_past_the_first_three_runs_whose_formula_fails_is_recorded
 
     assert [type(t) for t in stored] == [ConcolicInt] * 3 + [int]
     assert [each.going_in[0].value for each in recorded(sink)] == ['"az"'] * 3 + ['"azzzz"']
-    assert drops(sink) == [FormulaDrop(Site(FILE, 2, 11), "t", "4", "5", DropReason.MISMATCH)]
+    drop = FormulaDrop(Site(FILE, 2, 11), "t", "4", "5", DropReason.MISMATCH, run=3)
+    assert drops(sink) == [drop]
 
 
 def test_a_formula_s_own_fork_is_placed_at_the_loop_before_the_later_condition() -> None:
@@ -255,7 +256,7 @@ def test_a_formula_that_fails_restores_the_names_and_is_dropped_for_the_input(
 
     # the loop's value stays plain, the str going in is tracked again, and the second run follows
     # the loop as written
-    assert drops(first) == [FormulaDrop(Site(FILE, *LOOP), "t", "2", got, reason)]
+    assert drops(first) == [FormulaDrop(Site(FILE, *LOOP), "t", "2", got, reason, run=0)]
     assert [line for _, line, _ in forks(first)] == [6]
     assert len(calls) == 1
     assert 4 in [line for _, line, _ in forks(sink[len(first) :])]
@@ -393,4 +394,5 @@ def test_a_run_past_the_first_three_whose_formula_fails_is_recorded() -> None:
 
     assert [each.going_in[0].value for each in recorded(sink)] == ['"az"'] * 3 + ['"azzzz"']
     assert recorded(sink)[-1].changed == (Changed("t", "4"),)
-    assert drops(sink) == [FormulaDrop(Site(FILE, *LOOP), "t", "4", "5", DropReason.MISMATCH)]
+    drop = FormulaDrop(Site(FILE, *LOOP), "t", "4", "5", DropReason.MISMATCH, run=3)
+    assert drops(sink) == [drop]

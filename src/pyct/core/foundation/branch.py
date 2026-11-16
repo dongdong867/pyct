@@ -229,7 +229,9 @@ class FormulaDrop:
     name the formula failed on, the first that failed or, for a raise, the
     first bound. ``value`` is the loop's own value of it as JSON text, and
     ``got`` the formula's value of it as JSON text, the raise's type name,
-    or empty when it gave none.
+    or empty when it gave none. ``run`` is the position of the run it was
+    dropped on among the input's recorded runs of the loop, from 0, or None
+    when that run is not recorded.
     """
 
     site: Site
@@ -237,6 +239,7 @@ class FormulaDrop:
     value: str
     got: str
     reason: DropReason
+    run: int | None = None
 
 
 # what a sink holds: the forks, the facts, the downgrades, the recorded runs of pieces and the

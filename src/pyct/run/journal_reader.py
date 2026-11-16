@@ -385,7 +385,8 @@ class _Facts:
         raise ValueError("a fact is [expression, taken, file, line, col, raising] and its place")
 
     def _drop(self, value: object) -> FormulaDrop:
-        """A loop's dropped formula, read from its site, its name, its two values and its reason."""
+        """A loop's dropped formula, read from its site, its name, its two values, its reason and
+        the position of its run."""
         match value:
             case [
                 str() as file,
@@ -395,9 +396,11 @@ class _Facts:
                 str() as held,
                 str() as got,
                 str() as why,
+                int() | None as run,
             ]:
-                return FormulaDrop(self._site(file, line, col), name, held, got, DropReason(why))
-        raise ValueError("a drop is [file, line, col, name, value, got, reason]")
+                site = self._site(file, line, col)
+                return FormulaDrop(site, name, held, got, DropReason(why), run)
+        raise ValueError("a drop is [file, line, col, name, value, got, reason, run]")
 
     def _site(self, file: str, line: int, col: int) -> Site:
         """The one ``Site`` for this place, made the first time a fork names it."""

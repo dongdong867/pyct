@@ -88,7 +88,7 @@ class _Entry:
 class _Recording:
     """The live input's recording: where its runs go, and how far each piece has come."""
 
-    __slots__ = ("done", "runs", "sink", "text", "waiting")
+    __slots__ = ("done", "recorded", "runs", "sink", "text", "waiting")
 
     def __init__(self) -> None:
         self.sink: BranchSink | None = None
@@ -97,6 +97,8 @@ class _Recording:
     def clear(self) -> None:
         # the runs started of each piece, by its site
         self.runs: dict[_Site, int] = {}
+        # the runs recorded of each piece, by its site
+        self.recorded: dict[Site, int] = {}
         # by line, a piece whose runs are all started: the one tuple of its names its calls are
         # given, and its column
         self.done: dict[int, tuple[tuple[str, ...], int]] = {}
@@ -133,49 +135,56 @@ class _Recording:
             return entry
         return None
 
-    def left(self, frame: types.FrameType, line: int, col: int, changed: tuple[str, ...]) -> bool:
-        """A loop's run ends in the frame: its run is recorded, when its entry waits on it.
-        Whether one did."""
+    def left(
+        self, frame: types.FrameType, line: int, col: int, changed: tuple[str, ...]
+    ) -> int | None:
+        """A loop's run ends in the frame: its run is recorded, when its entry waits on it. Its
+        position among the piece's recorded runs, or None when it is not recorded."""
         with contextlib.suppress(Exception):
             entry = self._drop(line, (id(frame), col))
             if entry is None:
-                return False
+                return None
             values = _changed(frame.f_locals, changed)
             if values is not None:
-                self._record(PieceRun(entry.site, entry.going_in, values))
-            return True
-        return False
+                return self._record(PieceRun(entry.site, entry.going_in, values))
+        return None
 
-    def assigned(self, entry: _Entry, value: object) -> bool:
+    def assigned(self, entry: _Entry, value: object) -> int | None:
         """An assignment's run ends with its value: its run is recorded, when its entry is still
-        the one waiting. Whether it was."""
+        the one waiting. Its position among the piece's recorded runs, or None when it is not
+        recorded."""
         with contextlib.suppress(Exception):
             waiting = self.waiting.get(entry.site.line)
             if waiting is None or waiting.get(entry.key) is not entry:
-                return False
+                return None
             self._drop(entry.site.line, entry.key)
             text = _text(value)
             if text is not None:
                 changed = tuple(Changed(name, text) for name in entry.changed)
-                self._record(PieceRun(entry.site, entry.going_in, changed))
-            return True
-        return False
+                return self._record(PieceRun(entry.site, entry.going_in, changed))
+        return None
 
-    def failed(self, run: Run, changed: tuple[Changed, ...] | None) -> None:
-        """A run of a loop in use whose formula was dropped on it, past the runs recorded as
-        they start: its run is recorded, from the values that went in and the ``changed``."""
+    def failed(self, run: Run, changed: tuple[Changed, ...] | None) -> int | None:
+        """A run of a loop in use whose formula was dropped on it, that no entry recorded: its run
+        is recorded, from the values that went in and the ``changed``. Its position among the
+        piece's recorded runs, or None when it is not recorded."""
         with contextlib.suppress(Exception):
             going_in = _going_in(run.kept, run.names[0])
             if going_in is not None and changed is not None:
-                self._record(PieceRun(run.site, going_in, changed))
+                return self._record(PieceRun(run.site, going_in, changed))
+        return None
 
-    def _record(self, run: PieceRun) -> None:
-        """Append a run to the sink, when it fits in what the input's runs may count."""
+    def _record(self, run: PieceRun) -> int | None:
+        """Append a run to the sink, when it fits in what the input's runs may count: its
+        position among its piece's recorded runs, or None when it does not fit."""
         counted = size(run)
         if self.sink is None or self.text + counted > MOST_TEXT:
-            return
+            return None
         self.text += counted
+        at = self.recorded.get(run.site, 0)
+        self.recorded[run.site] = at + 1
         self.sink.append(run)
+        return at
 
     def _drop(self, line: int, key: _Key) -> _Entry | None:
         """Drop the entry waiting at the line by the key, and hand it back."""
@@ -291,12 +300,18 @@ def piece_out(
     called once per run, after its last pass and before its ``else`` runs, or right before the
     ``break``. A run that ends by ``return`` or a raise calls it not at all, and a ``while True``
     only at a ``break``. It hands back None, which the caller drops."""
-    recorded = line in _recording.waiting and _recording.left(sys._getframe(1), line, col, changed)
+    at = (
+        _recording.left(sys._getframe(1), line, col, changed)
+        if line in _recording.waiting
+        else None
+    )
     if line in USING.waiting:
         frame = sys._getframe(1)
         failed = in_use.left(frame, line, col)
-        if failed is not None and not recorded:
-            _recording.failed(failed, _changed(frame.f_locals, changed))
+        if failed is not None:
+            if at is None:
+                at = _recording.failed(failed, _changed(frame.f_locals, changed))
+            in_use.dropped(failed, at)
 
 
 def piece_value[Value](
@@ -309,12 +324,14 @@ def piece_value[Value](
         _recording.assigned(token, value)
     elif type(token) is Run:
         entry = token.entry
-        recorded = type(entry) is _Entry and _recording.assigned(entry, value)
+        at = _recording.assigned(entry, value) if type(entry) is _Entry else None
         stored, failed = in_use.assigned(sys._getframe(1), token, value)
-        if failed and not recorded:
-            text = _text(value)
-            changed = None if text is None else tuple(Changed(n, text) for n in token.names[1])
-            _recording.failed(token, changed)
+        if failed:
+            if at is None:
+                text = _text(value)
+                changed = None if text is None else tuple(Changed(n, text) for n in token.names[1])
+                at = _recording.failed(token, changed)
+            in_use.dropped(token, at)
         return cast(Value, stored)
     return value
 
