@@ -27,7 +27,17 @@ import struct
 from collections.abc import Buffer
 from dataclasses import dataclass, field
 
-from pyct.core.foundation.branch import Branch, Changed, Expression, Fact, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Changed,
+    DropReason,
+    Expression,
+    Fact,
+    FormulaDrop,
+    GoingIn,
+    PieceRun,
+    Site,
+)
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -37,6 +47,7 @@ from pyct.run.journal import (
     COMMITTED,
     COUNTED,
     DOWNGRADE,
+    DROP,
     END,
     ENTERED,
     FACT,
@@ -91,8 +102,9 @@ class Reading:
     fault: the writer met a fact it could not encode, or a record could not
     be read. ``bound`` says the writer stopped at the bound on what pyct
     keeps for one input, which is the input's own ending. ``reach`` is the
-    functions the call entered and the ways their branches went, and
-    ``pieces`` the recorded runs of the pieces of the target's code.
+    functions the call entered and the ways their branches went,
+    ``pieces`` the recorded runs of the pieces of the target's code, and
+    ``drops`` the loops' formulas dropped in the call.
     """
 
     lines: frozenset[int]
@@ -106,6 +118,7 @@ class Reading:
     bound: str | None = None
     reach: Reach = field(default_factory=Reach)
     pieces: tuple[PieceRun, ...] = ()
+    drops: tuple[FormulaDrop, ...] = ()
 
 
 def read(buffer: Journal) -> Reading:
@@ -220,6 +233,7 @@ class _Facts:
     facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
     pieces: list[PieceRun] = field(default_factory=list)
+    drops: list[FormulaDrop] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
     sites: dict[tuple[str, int, int], Site] = field(default_factory=dict)
     started: bool = False
@@ -255,7 +269,7 @@ class _Facts:
 
     def _take(self, at: int, kind: int, payload: memoryview) -> None:
         """Add one record's fact. A record of an unknown kind or the wrong shape is unreadable."""
-        if kind in (PART, FORK, FACT):
+        if kind in (PART, FORK, FACT, DROP):
             self._written(kind, _decoded(payload))
         elif kind == LINE:
             self.lines.add(NUMBER.unpack(payload)[0])
@@ -286,14 +300,16 @@ class _Facts:
         self.entered_branches.update(branches)
 
     def _written(self, kind: int, value: object) -> None:
-        """Add a record written as JSON: a part, a fork or a fact."""
+        """Add a record written as JSON: a part, a fork, a fact or a dropped formula."""
         if kind == PART:
             number, items = _numbered(value)
             self.parts[number] = [self._expression(item) for item in items]
         elif kind == FORK:
             self.branches.append(self._fork(value))
-        else:
+        elif kind == FACT:
             self.facts.append(self._fact(value))
+        else:
+            self.drops.append(self._drop(value))
 
     def _downgrade(self, payload: bytes, *, carries_on: bool) -> None:
         """Start an entry, or carry the last one on when this record is its later count.
@@ -368,6 +384,21 @@ class _Facts:
                 return fact.placed_after(len(self.branches))
         raise ValueError("a fact is [expression, taken, file, line, col, raising] and its place")
 
+    def _drop(self, value: object) -> FormulaDrop:
+        """A loop's dropped formula, read from its site, its name, its two values and its reason."""
+        match value:
+            case [
+                str() as file,
+                int() as line,
+                int() as col,
+                str() as name,
+                str() as held,
+                str() as got,
+                str() as why,
+            ]:
+                return FormulaDrop(self._site(file, line, col), name, held, got, DropReason(why))
+        raise ValueError("a drop is [file, line, col, name, value, got, reason]")
+
     def _site(self, file: str, line: int, col: int) -> Site:
         """The one ``Site`` for this place, made the first time a fork names it."""
         key = (file, line, col)
@@ -392,6 +423,7 @@ class _Facts:
             downgrades=tuple(self.downgrades),
             facts=tuple(self.facts),
             pieces=tuple(self.pieces),
+            drops=tuple(self.drops),
             started=self.started,
             ended=self.ended,
             end=self.end,

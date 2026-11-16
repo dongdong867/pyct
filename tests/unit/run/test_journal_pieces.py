@@ -1,13 +1,14 @@
 """A recorded run of a piece crosses the journal in a room of its own: it reads back as written,
-and it never takes the room of the input's own facts nor stops the writer."""
+and it never takes the room of the input's own facts nor stops the writer. A loop's dropped
+formula crosses it among the input's own facts."""
 
 import struct
 
 import pytest
 
 from pyct.core.entry import pieces
-from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
-from pyct.run.journal import HEAD, PIECE, PIECE_ROOM, RECORDS, JournalWriter
+from pyct.core.foundation.branch import Changed, DropReason, FormulaDrop, GoingIn, PieceRun, Site
+from pyct.run.journal import DROP, HEAD, PIECE, PIECE_ROOM, RECORDS, JournalWriter
 from pyct.run.journal_reader import read
 
 SITE = Site(file="té.py", line=3, col=7)
@@ -107,4 +108,39 @@ def test_a_run_record_of_the_wrong_shape_is_a_problem(payload: bytes) -> None:
 
     reading = read(buffer)
     assert reading.lines == frozenset({2})
+    assert reading.problem == f"could not read the input's facts at byte {RECORDS + HEAD.size + 8}"
+
+
+DROPPED = FormulaDrop(SITE, "t", "[1.5]", '"1.5"', DropReason.MISMATCH)
+
+
+def test_a_dropped_formula_reads_back_as_it_was_written_among_the_other_facts() -> None:
+    buffer = bytearray(RECORDS + 8192 + ROOM)
+    writer = JournalWriter(buffer, pieces=ROOM)
+    raised = FormulaDrop(Site("u.py", 9, 0), "é", "", "ZeroDivisionError", DropReason.RAISED)
+
+    writer.line(2)
+    writer.drop(DROPPED)
+    writer.piece(RUN)
+    writer.drop(raised)
+
+    reading = read(buffer)
+    assert reading.drops == (DROPPED, raised)
+    assert (reading.pieces, reading.lines) == ((RUN,), frozenset({2}))
+    assert (reading.problem, reading.bound) == (None, None)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b'["t.py", 3, 7, "t", "2", "3"]', b'["t.py", 3, 7, "t", "2", "3", "lost"]', b"[1]"],
+    ids=["too few fields", "no reason of a drop", "no fields"],
+)
+def test_a_drop_record_of_the_wrong_shape_is_a_problem(payload: bytes) -> None:
+    buffer = bytearray(RECORDS + 8192)
+    writer = JournalWriter(buffer)
+    writer.line(2)
+    writer._record(DROP, payload)  # noqa: SLF001
+
+    reading = read(buffer)
+    assert (reading.drops, reading.lines) == ((), frozenset({2}))
     assert reading.problem == f"could not read the input's facts at byte {RECORDS + HEAD.size + 8}"

@@ -56,7 +56,8 @@ class Watch(Protocol):
     last entry grew by one. The tally decides what an entry is; a watch only
     mirrors it. ``bound`` comes once, when the call goes past the forks it
     keeps, with the words its line ends on. A recorded run of a piece of the
-    target's code comes as the hooks record it (`pyct.core.entry.pieces`).
+    target's code comes as the hooks record it (`pyct.core.entry.pieces`), and a loop's
+    formula dropped in the call as the hooks drop it (`pyct.core.entry.in_use`).
     """
 
     def fork(self, branch: Branch) -> None: ...
@@ -74,6 +75,8 @@ class Watch(Protocol):
     def bound(self, note: str) -> None: ...
 
     def piece(self, run: PieceRun) -> None: ...
+
+    def drop(self, drop: FormulaDrop) -> None: ...
 
 
 class Tally:
@@ -147,9 +150,11 @@ class Tally:
         self._downgrade(item.name, item.site)
 
     def _piece(self, item: PieceRun | FormulaDrop) -> None:
-        """Keep a recorded run or a dropped formula, and tell the watch of a run."""
+        """Keep a recorded run or a dropped formula, and tell the watch."""
         if isinstance(item, FormulaDrop):
             self.drops.append(item)
+            if self.watch is not None:
+                self.watch.drop(item)
             return
         self.pieces.append(item)
         if self.watch is not None:
