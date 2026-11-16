@@ -138,7 +138,7 @@ def _tools(
     return (
         None
         if summaries is None
-        else Summaries(summaries, target, told, limit, lambda: inputs.isolated),
+        else Summaries(summaries, target, told, limit, isolated=lambda: inputs.isolated),
         None if rewrites is None else Rewrites(rewrites, target, told, limit),
     )
 

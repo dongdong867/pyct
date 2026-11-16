@@ -182,14 +182,14 @@ class Summaries:
         target: Target,
         told: Told,
         limit: TokenLimit | None = None,
-        isolated: Callable[[], bool] | None = None,
+        *,
+        isolated: Callable[[], bool],
     ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
-        # whether the run's inputs run in a process of their own; None when the run does not
-        # say, and then no formula comes into use and nothing is said of it
+        # whether the run's inputs run in a process of their own
         self.isolated = isolated
         self.loops: dict[Site, LoopState] = {}
         self.in_use = LoopsInUse()
@@ -315,11 +315,8 @@ class Summaries:
 
     def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
         """A formula that passed both checks, from its text, its code objects' file name and its
-        code: in use when it can be, else kept as checked and, when the tool was told where the
-        run's inputs run, said with why."""
+        code: in use when it can be, else kept as checked and said with why."""
         changed = loop.piece.changed
-        if self.isolated is None:
-            return SummaryState.CHECKED
         reason = unused_because(loop.site, loop.runs, changed, self.isolated())
         if reason is not None:
             self._say_once(SummaryNotUsed(loop.site, reason))
@@ -335,7 +332,7 @@ class Summaries:
         for drop in record.drops:
             if drop.site in self.in_use.sites:
                 self._dropped(drop, record, number)
-        if self.isolated is None or not self.in_use.sites or self.isolated():
+        if not self.in_use.sites or self.isolated():
             return
         for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
             self.in_use.stop(site)

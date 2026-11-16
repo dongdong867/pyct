@@ -161,21 +161,6 @@ def test_closing_takes_the_run_s_loops_out_of_use(
     assert summaries.states()[0].state is SummaryState.IN_USE
 
 
-def test_a_tool_told_nothing_of_where_inputs_run_keeps_a_formula_checked(
-    table: dict[tuple[str, int, int], LoopInUse],
-) -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    summaries = Summaries(Fake(SummaryReply(FORMULA, AskCost(1))), load_target(COUNTS), told)
-
-    taken(summaries)
-
-    assert summaries.states()[0].state is SummaryState.CHECKED
-    assert table == {}
-    # nothing is known of where the inputs run, so nothing is said of it
-    assert notes == [SummaryRead(LOOP, 't = t + s.count("z")'), SummaryChecked(LOOP, 2)]
-
-
 def test_the_run_takes_its_loops_out_of_use_when_it_ends(
     table: dict[tuple[str, int, int], LoopInUse],
 ) -> None:
