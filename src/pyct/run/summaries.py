@@ -64,11 +64,12 @@ from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
+from pyct.run.formula_runner import FormulaText
 from pyct.run.loops_in_use import (
     IN_PYCT_S_PROCESS,
-    FormulaInUse,
     LoopsInUse,
     dropped_because,
+    place_of,
     unused_because,
 )
 from pyct.run.model_runs import CANNOT_FORK, can_fork
@@ -323,7 +324,8 @@ class Summaries:
         if reason is not None:
             self._say_once(SummaryNotUsed(loop.site, reason))
             return SummaryState.CHECKED
-        self.in_use.use(FormulaInUse(text, loop.parameters, changed, loop.site, file, code))
+        formula = FormulaText(text, loop.parameters, changed, place_of(loop.site), file)
+        self.in_use.use(formula, code)
         return SummaryState.IN_USE
 
     def heard(self, record: InputRecord, number: int) -> None:
@@ -331,11 +333,11 @@ class Summaries:
         dropped goes out of use, said with why; then, once the run's inputs run in pyct's own
         process, each loop still in use goes out of use, kept as checked."""
         for drop in record.drops:
-            if drop.site in self.in_use.formulas:
+            if drop.site in self.in_use.sites:
                 self._dropped(drop, record, number)
-        if self.isolated is None or not self.in_use.formulas or self.isolated():
+        if self.isolated is None or not self.in_use.sites or self.isolated():
             return
-        for site in list(self.in_use.formulas):
+        for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
             self.in_use.stop(site)
             self.loops[site].last = SummaryState.CHECKED
             self._say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS))

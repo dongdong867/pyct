@@ -55,7 +55,7 @@ def text_of(place: tuple[str, int, int], text: str = COUNT) -> FormulaText:
 
 
 def test_the_formulas_in_use_are_read_as_text_from_core_s_table() -> None:
-    LoopsInUse().use(formula_at(FEW_Z))
+    LoopsInUse().use(*formula_at(FEW_Z))
 
     assert handed_formulas() == (text_of((G, 45, 4)),)
     # a table filled by hand with a call of another kind hands nothing on for it
@@ -65,7 +65,7 @@ def test_the_formulas_in_use_are_read_as_text_from_core_s_table() -> None:
 
 def test_a_fresh_interpreter_s_request_carries_the_formulas_in_use() -> None:
     target = load_target("targets.summaries.loops::few_z")
-    LoopsInUse().use(formula_at(FEW_Z))
+    LoopsInUse().use(*formula_at(FEW_Z))
 
     with (
         _request(target.spec, target.file, {"s": "ab"}, None) as request,
@@ -147,7 +147,7 @@ def records_of(result: RunResult) -> list[tuple[object, ...]]:
 def test_inputs_in_fresh_interpreters_give_the_records_forked_inputs_give(
     counts: Path, tmp_path: Path
 ) -> None:
-    LoopsInUse().use(formula_at(Site(str(counts), *LOOP)))
+    LoopsInUse().use(*formula_at(Site(str(counts), *LOOP)))
 
     forked = ran(Isolation.FORK, tmp_path)
     fresh = ran(Isolation.FRESH, tmp_path)

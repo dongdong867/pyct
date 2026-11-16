@@ -60,7 +60,7 @@ def test_a_drop_takes_the_loop_out_of_use_and_says_why(drop: FormulaDrop, reason
 
     assert notes == [SummaryDropped(LOOP, 9, reason)]
     assert IN_USE == {}
-    assert summaries.in_use.formulas == {}
+    assert summaries.in_use.sites == set()
     # the item keeps the formula, the tries and the runs of its check
     assert summaries.states() == (
         LoopSummary(FILE, 10, 4, ("t",), FORMULA, SummaryState.DROPPED, 1, 2),
@@ -110,7 +110,7 @@ def test_inputs_that_fall_back_to_pyct_s_process_take_each_loop_out_of_use() -> 
     summaries.heard(record(counted("ab")), 10)
 
     assert IN_USE == {}
-    assert summaries.in_use.formulas == {}
+    assert summaries.in_use.sites == set()
     assert notes == [SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS)]
     assert summaries.states()[0].state is SummaryState.CHECKED
     assert summaries.states()[0].checked_on == 2

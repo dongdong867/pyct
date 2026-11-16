@@ -19,7 +19,6 @@ import ast
 import json
 import types
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from pyct.core.entry.in_use import IN_USE, LoopInUse
 from pyct.core.foundation.branch import DropReason, FormulaDrop, Site
@@ -42,45 +41,29 @@ _KINDS = (int, float, str, bool)
 _OTHER_KINDS: dict[type, str] = {list: "a list", dict: "a dict", type(None): "None"}
 
 
-@dataclass(frozen=True)
-class FormulaInUse:
-    """A loop's formula in use: its text as the reply wrote it, its parameters, the names it gives
-    a value, the loop's site, the file name its code objects carry, and its code as pyct's process
-    compiled it."""
-
-    text: str
-    parameters: tuple[str, ...]
-    changed: tuple[str, ...]
-    site: Site
-    file: str
-    code: types.CodeType
-
-
 class LoopsInUse:
-    """A run's formulas in use, by their loops' sites, each in core's table until `close`."""
+    """A run's loops in use, by their sites, each in core's table until `close`."""
 
     def __init__(self) -> None:
-        self.formulas: dict[Site, FormulaInUse] = {}
+        self.sites: set[Site] = set()
 
-    def use(self, formula: FormulaInUse) -> None:
-        """Put the formula's loop in use from the next input on."""
-        site = formula.site
-        self.formulas[site] = formula
-        place = _place(site)
-        text = FormulaText(formula.text, formula.parameters, formula.changed, place, formula.file)
-        runner = FormulaRunner(formula.code, text)
-        IN_USE[place] = LoopInUse(formula.parameters, formula.changed, runner)
+    def use(self, text: FormulaText, code: types.CodeType) -> None:
+        """Put the formula's loop in use from the next input on: its text, and its code as pyct's
+        process compiled it."""
+        self.sites.add(Site(*text.place))
+        runner = FormulaRunner(code, text)
+        IN_USE[text.place] = LoopInUse(text.parameters, text.changed, runner)
 
     def stop(self, site: Site) -> None:
         """Take the loop at ``site`` out of use from the next input on."""
-        self.formulas.pop(site, None)
-        IN_USE.pop(_place(site), None)
+        self.sites.discard(site)
+        IN_USE.pop(place_of(site), None)
 
     def close(self) -> None:
         """Take each of the run's loops out of core's table, as the run ends."""
-        for site in self.formulas:
-            IN_USE.pop(_place(site), None)
-        self.formulas.clear()
+        for site in self.sites:
+            IN_USE.pop(place_of(site), None)
+        self.sites.clear()
 
 
 def dropped_because(drop: FormulaDrop) -> str:
@@ -163,5 +146,6 @@ def _kind(text: str) -> str | None:
     return _OTHER_KINDS[type(value)]
 
 
-def _place(site: Site) -> tuple[str, int, int]:
+def place_of(site: Site) -> tuple[str, int, int]:
+    """The site as core's table keys a loop in use: its file, line and column."""
     return (site.file, site.line, site.col)

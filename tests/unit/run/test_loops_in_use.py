@@ -4,6 +4,7 @@ use only for inputs in a process of their own, a loop that cannot leave part way
 values of the kinds a loop in use hands on."""
 
 import ast
+import types
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -19,7 +20,6 @@ from pyct.run.formula_runner import FormulaInPyctProcessError, FormulaRunner, Fo
 from pyct.run.isolation import Isolation
 from pyct.run.loops_in_use import (
     IN_PYCT_S_PROCESS,
-    FormulaInUse,
     LoopsInUse,
     leaving_by,
     unused_because,
@@ -45,9 +45,12 @@ def compiled(text: str, file: str = "<summary m:3:4>") -> Formula:
     return formula
 
 
-def formula_at(site: Site, text: str = COUNT) -> FormulaInUse:
+def formula_at(site: Site, text: str = COUNT) -> tuple[FormulaText, types.CodeType]:
+    """A formula of a loop at ``site``: its text, and its code as pyct's process compiles it."""
     file = "<summary m:3:4>"
-    return FormulaInUse(text, ("s", "t"), ("t",), site, file, compiled(text, file).code)
+    place = (site.file, site.line, site.col)
+    formula = FormulaText(text, ("s", "t"), ("t",), place, file)
+    return formula, compiled(text, file).code
 
 
 @pytest.fixture
@@ -72,17 +75,18 @@ def test_a_loop_put_in_use_runs_nothing_and_takes_its_place_in_core_s_table(
     table: dict[tuple[str, int, int], LoopInUse],
 ) -> None:
     code = compile("raise SystemExit('ran')", "<summary m:3:4>", "exec")
-    formula = FormulaInUse("", ("s", "t"), ("t",), FEW_Z, "<summary m:3:4>", code)
+    formula = FormulaText("", ("s", "t"), ("t",), (G, 45, 4), "<summary m:3:4>")
     loops = LoopsInUse()
 
-    loops.use(formula)
+    loops.use(formula, code)
 
     loop = table[(G, 45, 4)]
     assert (loop.parameters, loop.changed) == (("s", "t"), ("t",))
     assert isinstance(loop.formula, FormulaRunner)
     assert loop.formula.code is code
     assert loop.formula.summary is None
-    assert loops.formulas == {FEW_Z: formula}
+    assert loop.formula.text is formula
+    assert loops.sites == {FEW_Z}
 
 
 def test_closing_takes_out_the_run_s_own_loops_alone(
@@ -91,12 +95,12 @@ def test_closing_takes_out_the_run_s_own_loops_alone(
     other = LoopInUse(("s",), ("t",), lambda values: values)
     table[("other.py", 3, 4)] = other
     loops = LoopsInUse()
-    loops.use(formula_at(FEW_Z))
+    loops.use(*formula_at(FEW_Z))
 
     loops.close()
 
     assert table == {("other.py", 3, 4): other}
-    assert loops.formulas == {}
+    assert loops.sites == set()
 
 
 @pytest.fixture
@@ -115,7 +119,7 @@ def test_a_forked_input_runs_the_compiled_formula_and_pyct_s_process_does_not(
     counts: Path, tmp_path: Path, table: dict[tuple[str, int, int], LoopInUse]
 ) -> None:
     loops = LoopsInUse()
-    loops.use(formula_at(Site(str(counts), *LOOP)))
+    loops.use(*formula_at(Site(str(counts), *LOOP)))
     runner = table[(str(counts), *LOOP)].formula
     assert isinstance(runner, FormulaRunner)
     interception = Interception(module="formula_loops.counts", cache=tmp_path / "c", pieces=True)

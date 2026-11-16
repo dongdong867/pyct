@@ -11,9 +11,10 @@ from pyct.core.entry.in_use import LoopInUse
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState
 from pyct.run import loop
+from pyct.run.formula_runner import FormulaRunner
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.loops_in_use import IN_PYCT_S_PROCESS, FormulaInUse
+from pyct.run.loops_in_use import IN_PYCT_S_PROCESS
 from pyct.run.notes import Note, SummaryChecked, SummaryNotUsed, SummaryRead
 from pyct.run.run import run
 from pyct.run.setup import Setup
@@ -83,13 +84,14 @@ def test_a_formula_that_passes_comes_into_use_for_inputs_in_a_process_of_their_o
     )
     assert list(table) == [PLACE]
     assert (table[PLACE].parameters, table[PLACE].changed) == (("s", "t"), ("t",))
-    [formula] = summaries.in_use.formulas.values()
-    assert (formula.text, formula.site, formula.file) == (
+    assert summaries.in_use.sites == {LOOP}
+    runner = table[PLACE].formula
+    assert isinstance(runner, FormulaRunner)
+    assert (runner.text.text, runner.text.place, runner.text.file) == (
         FORMULA,
-        LOOP,
+        PLACE,
         "<summary targets.why.stuck:10:4>",
     )
-    assert isinstance(formula, FormulaInUse)
 
 
 def test_a_formula_that_passes_stays_checked_for_inputs_in_pyct_s_process(
@@ -154,7 +156,7 @@ def test_closing_takes_the_run_s_loops_out_of_use(
     summaries.close()
 
     assert table == {}
-    assert summaries.in_use.formulas == {}
+    assert summaries.in_use.sites == set()
     # the summary line still says what came of the ask
     assert summaries.states()[0].state is SummaryState.IN_USE
 
