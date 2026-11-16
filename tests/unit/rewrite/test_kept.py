@@ -13,6 +13,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
+from tests.unit.rewrite.orders import Order
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -79,11 +80,6 @@ def test_a_rewrite_is_used_where_a_name_it_does_not_read_holds_an_object() -> No
     assert reused is not None
     assert reused.conditions == (CONDITION,)
     assert handed == [{"s": "0"}]
-
-
-class Order:
-    def __init__(self, code: str) -> None:
-        self.code = code
 
 
 # llm-rewrite-hint-built-object-kept-only-where-the-input-holds-no-object

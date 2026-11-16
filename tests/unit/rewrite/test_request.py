@@ -14,6 +14,7 @@ from pyct.results.record import MissWhy
 from pyct.rewrite.ask import GivenUp
 from pyct.rewrite.kinds import Kinds
 from pyct.rewrite.request import EARLIER, VALUE_SIZE, About, condition_text, request_for
+from tests.unit.rewrite.orders import Order
 from tests.unit.rewrite.test_kinds import guarded_instance
 
 ABOUT = About("m:2:7", "code", {"nowhere.py": "nowhere"})
@@ -44,7 +45,8 @@ def test_each_condition_is_named_by_the_module_about_gives_its_file(tmp_path: Pa
     given = GivenUp(Condition(aimed.site, True), wanted, Seed.of({"n": 0}), MissWhy.UNKNOWN)
     modules = {str(tmp_path / f"{name}.py"): f"pkg.{name}" for name in "abc"}
 
-    request = request_for(given, About("pkg.c:7:8", "code", modules), ())
+    about = About("pkg.c:7:8", "code", modules)
+    request = request_for(given, about, (), (), Kinds.of_seed(given.origin))
 
     assert [each.text for each in request.earlier] == [
         "the condition at pkg.a:3:4",
@@ -62,7 +64,7 @@ def test_the_path_s_earlier_conditions_are_distinct_the_nearest_kept() -> None:
     assert wanted is not None
     given = GivenUp(Condition(aimed.site, True), wanted, Seed.of({"n": 0}), MissWhy.UNKNOWN)
 
-    request = request_for(given, ABOUT, ())
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(given.origin))
 
     lines = [each.text.rpartition(":")[0].rpartition(":")[2] for each in request.earlier]
     assert lines == [str(at) for at in range(5, EARLIER + 5)]
@@ -77,7 +79,7 @@ def test_a_condition_the_path_took_early_and_again_near_the_aim_is_kept_at_its_l
     assert wanted is not None
     given = GivenUp(Condition(aimed.site, True), wanted, Seed.of({"n": 0}), MissWhy.UNKNOWN)
 
-    request = request_for(given, ABOUT, ())
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(given.origin))
 
     lines = [each.text.rpartition(":")[0].rpartition(":")[2] for each in request.earlier]
     # the guard, taken at the start and again just before the aim, is the nearest
@@ -91,7 +93,7 @@ def test_each_value_is_json_cut_or_python_s_words_for_one_json_cannot_write() ->
     origin = Seed.of({"n": 0, "s": "x" * (VALUE_SIZE * 2), "d": {(1, 2): 3}})
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
-    args = dict(request_for(given, ABOUT, ()).args)
+    args = dict(request_for(given, ABOUT, (), (), Kinds.of_seed(origin)).args)
 
     assert args["n"] == "0"
     assert len(args["s"]) == VALUE_SIZE
@@ -116,7 +118,7 @@ def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_cod
     origin = Seed.of({"n": 0, "o": Loud(), "l": [1, Loud()], "f": form})
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
-    request = request_for(given, ABOUT, ())
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(given.origin))
 
     assert dict(request.args) == {
         "n": "0",
@@ -125,11 +127,6 @@ def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_cod
         "f": "<holds an object>",
     }
     assert "hunter2" not in request_text(request)
-
-
-class Order:
-    def __init__(self, code: str) -> None:
-        self.code = code
 
 
 # llm-rewrite-hint-built-object-each-built-object-counts
@@ -142,7 +139,7 @@ def test_an_object_a_hint_or_a_method_s_self_builds_is_a_placeholder_not_json() 
     origin = Seed.of(seed, checks)
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
-    request = request_for(given, ABOUT, (), kinds=Kinds.of_seed(origin, "self"))
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(origin, "self"))
 
     assert dict(request.args) == {
         "n": "0",
@@ -157,8 +154,11 @@ def test_an_instance_is_named_by_its_class_with_no_metaclass_hook_run() -> None:
     aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
     wanted = plan((aimed,))
     assert wanted is not None
-    # made by hand: the seed walk's own type tests are not this check's
+    # made by hand: Seed.of's walk runs the metaclass's __hash__ itself (binding/walk.py), which
+    # this test does not cover; it checks that the kinds and the request text run no metaclass code
     origin = Seed({"n": 0, "o": guarded_instance()}, {})
     given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
 
-    assert dict(request_for(given, ABOUT, ()).args)["o"] == "<Guarded object>"
+    request = request_for(given, ABOUT, (), (), Kinds.of_seed(origin))
+
+    assert dict(request.args)["o"] == "<Guarded object>"

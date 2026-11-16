@@ -9,12 +9,7 @@ import pytest
 from pyct.binding.annotations import Builds, Check, Fields, Items, NoOneClass
 from pyct.binding.bind import Seed
 from pyct.rewrite.kinds import Kind, Kinds, kind_of
-
-
-class Order:
-    def __init__(self, code: str) -> None:
-        self.code = code
-
+from tests.unit.rewrite.orders import Order
 
 ORDER = Builds(Order)
 LIST_OF_ORDERS = Items(list, ORDER, fixed=True)
@@ -95,6 +90,7 @@ def test_a_value_no_hint_builds_and_that_holds_no_object_is_plain(
     assert kind_of(value, check) is Kind.PLAIN
 
 
+# llm-rewrite-hint-built-object-runs-no-metaclass-code: deciding the kinds runs no metaclass code
 def test_an_instance_whose_metaclass_hooks_raise_is_told_apart_with_none_run() -> None:
     guarded = guarded_instance()
 

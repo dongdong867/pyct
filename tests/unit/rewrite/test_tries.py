@@ -33,6 +33,7 @@ from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.rewrite.request import VALUE_SIZE, About
 from pyct.rewrite.tries import Asking, Tried
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
+from tests.unit.rewrite.orders import Order
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -241,11 +242,6 @@ def test_a_rewrite_beside_an_argument_that_holds_an_object_runs_without_it() -> 
 
     assert Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake) == Tried(True, True)
     assert fake.handed == [{"s": "0"}]
-
-
-class Order:
-    def __init__(self, code: str) -> None:
-        self.code = code
 
 
 # llm-rewrite-hint-built-object-in-a-list-is-not-read

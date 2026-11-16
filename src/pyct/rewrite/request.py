@@ -41,13 +41,12 @@ def request_for(
     given: GivenUp,
     about: About,
     tries: tuple[EarlierTry, ...],
-    unreadable: tuple[str, ...] = (),
-    kinds: Kinds | None = None,
+    unreadable: tuple[str, ...],
+    kinds: Kinds,
 ) -> RewriteRequest:
     """The request for a condition the solver gave up on, with this moment's earlier tries and
     the parameters a rewrite may not read, since each is or holds an object. ``kinds`` tells the
-    input's objects apart, by default under the hints its seed was made with."""
-    told = Kinds.of_seed(given.origin) if kinds is None else kinds
+    input's objects apart, the method's ``self`` among them."""
     plan = given.plan
     earlier = [fork for fork in plan.prefix[:-1] if not fork.raising]
     # each condition at its last place on the path, so the nearest ones stay
@@ -58,7 +57,7 @@ def request_for(
         condition=Side(_text(given.condition.site, about), given.condition.side),
         earlier=tuple(Side(_text(site, about), side) for site, side in sides),
         code=about.code,
-        args=args_text(given.origin.args, told),
+        args=args_text(given.origin.args, kinds),
         answer=given.answer.value,
         tries=tries,
         unreadable=unreadable,

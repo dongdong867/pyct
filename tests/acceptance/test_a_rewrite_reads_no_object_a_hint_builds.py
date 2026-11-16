@@ -64,15 +64,23 @@ def replayed(tmp_path: Path, spec: str, seed: str, replay: Path) -> tuple[int, s
 
 
 # llm-rewrite-hint-built-object-is-not-read-as-a-dict
-def test_a_reply_that_reads_a_hint_built_object_as_a_dict_ends_no_run(tmp_path: Path) -> None:
+def test_a_condition_on_a_hint_built_object_is_given_up_unasked(tmp_path: Path) -> None:
+    # the replies that ended the run with a traceback when the object read as a dict; the
+    # condition is now given up before any of them is asked for
     replay = recording(tmp_path / "hinted.jsonl", f"{MODULE}:2:7", [READS_A_KEY] * 4)
 
     code, stdout, stderr = replayed(tmp_path, PAY, '{"order": {"code": "0"}}', replay)
 
     assert code == 0, stderr
     assert "Traceback" not in stderr
-    stopped = summary_line(stdout)["stopped"]
-    assert f"stopped: {stopped}" in stderr_lines(stderr)
+    at = f"llm: rewrite for {file_of('hinted')}:2:7"
+    said = [line for line in stderr_lines(stderr) if line.startswith(at)]
+    assert said == [f"{at} given up: no argument a rewrite may read"]
+    summary = summary_line(stdout)
+    llm = summary["llm"]
+    assert isinstance(llm, dict)
+    assert (llm["asks"], llm["replayed"], llm["skipped"]) == (0, 0, 0)
+    assert f"stopped: {summary['stopped']}" in stderr_lines(stderr)
 
 
 # llm-rewrite-hint-built-object-in-a-list-is-not-read

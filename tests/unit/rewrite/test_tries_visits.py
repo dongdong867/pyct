@@ -24,14 +24,10 @@ from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteSkipped, RewriteTook
 from pyct.rewrite.tries import Asking, Tried
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
+from tests.unit.rewrite.orders import Order
 from tests.unit.rewrite.test_tries import ABOUT, CONDITION, FORK, SITE, Fake, failed, own
 
 GUARD = Site("m.py", 2, 4)
-
-
-class Order:
-    def __init__(self, code: str) -> None:
-        self.code = code
 
 
 def visit_on(
