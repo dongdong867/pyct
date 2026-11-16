@@ -12,9 +12,9 @@ own copy, which keeps a tracked one tracked while its form still describes
 it. The loop then runs on plain values and records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
-each list or dict as the copy the start made,
-each fork and fact it records placed at the loop's site, and each changed
-name the frame has bound is compared with the formula's value of it by
+each list or dict as the copy the start made, each fork and fact it records
+placed at the loop's site, and each changed name the frame has bound is
+compared with the formula's value of it by
 their JSON text, which records nothing. On a match each changed name whose
 formula value is a tracked int, float, str or bool holds the loop's own
 value with the formula's term; another formula value leaves the loop's
@@ -22,8 +22,9 @@ value as it is. On a mismatch, a raise, or a changed name the formula gives
 no value for, the changed names stay as the loop left them, the sink is
 handed a `FormulaDrop`, and the loop is followed as written for the rest of
 the input; a run of the loop still open then, in an outer frame, ends with
-its names restored and no call. Either way each other name going in gets its tracked value back
-when the frame still holds the plain value the start wrote.
+its names restored and no call. Either way each name going in that is not
+one of the piece's changed names gets its tracked value back when the frame
+still holds the plain value the start wrote.
 
 A raise that is not an ``Exception``, the deadline's, passes through. A run
 that ends by ``return`` or a raise reaches no end: its names stay plain,
@@ -243,12 +244,15 @@ def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: 
 
 
 def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> None:
-    """Bind each changed name the formula gave a tracked value, and give each other name that
-    went in its tracked value back where the frame still holds the plain value the start wrote."""
+    """Bind each changed name the formula gave a tracked value, and give each name going in that
+    is not one of the piece's changed names its tracked value back where the frame still holds
+    the plain value the start wrote. A changed name the formula gave none keeps the loop's
+    value."""
     held = frame.f_locals
     back = dict(made)
+    changed = run.names[1]
     for name, written in run.written.items():
-        if name not in made and name in held and held[name] is written:
+        if name not in changed and name in held and held[name] is written:
             back[name] = run.kept[name]
     rebind(frame, back)
 
