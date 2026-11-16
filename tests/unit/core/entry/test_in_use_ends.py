@@ -27,6 +27,7 @@ from tests.unit.core.entry.test_in_use import (
     COUNTS,
     GENEXP,
     LOOP,
+    Stopped,
     counted,
     drops,
     forks,
@@ -210,15 +211,11 @@ def test_a_loop_in_use_inside_another_loop_uses_its_formula_on_each_run() -> Non
     assert (forks(sink), drops(sink)) == ([], [])
 
 
-class _Stop(BaseException):
-    """A raise that is not an ``Exception``, as the deadline's."""
-
-
 def wrong(_: Mapping[str, object]) -> Mapping[str, object]:
     return {"t": 99}
 
 
-@pytest.mark.parametrize("raised", [RuntimeError, _Stop], ids=["an Exception", "another raise"])
+@pytest.mark.parametrize("raised", [RuntimeError, Stopped], ids=["an Exception", "another raise"])
 @pytest.mark.parametrize(
     ("source", "place", "parameters"),
     [(COUNTS, LOOP, ("s", "t")), (GENEXP, (2, 11), ("s",))],
@@ -241,7 +238,10 @@ def test_a_drop_reaches_the_sink_when_the_restore_after_it_raises(
     monkeypatch.setattr(in_use, "_rebound", raising)
     f = hooked(source)
 
-    with using({place: LoopInUse(parameters, ("t",), wrong)}) as sink, contextlib.suppress(_Stop):
+    passed: contextlib.AbstractContextManager[object] = (
+        pytest.raises(Stopped) if raised is Stopped else contextlib.nullcontext()
+    )
+    with using({place: LoopInUse(parameters, ("t",), wrong)}) as sink, passed:
         f(tracked("az", "s", sink))
 
     drop = FormulaDrop(Site(FILE, *place), "t", "1", "99", DropReason.MISMATCH, run=0)
@@ -252,7 +252,7 @@ def test_a_drop_reaches_the_sink_when_the_record_of_its_run_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def raising(_self: object, _run: Run, _changed: tuple[Changed, ...] | None) -> int | None:
-        raise _Stop
+        raise Stopped
 
     calls: list[Mapping[str, object]] = []
 
@@ -267,7 +267,7 @@ def test_a_drop_reaches_the_sink_when_the_record_of_its_run_raises(
         for _ in range(3):
             f(tracked("az", "s", sink))
         # past the first three runs, the failing run is recorded only by `failed`
-        with pytest.raises(_Stop):
+        with pytest.raises(Stopped):
             f(tracked("az", "s", sink))
 
     assert drops(sink) == [FormulaDrop(Site(FILE, *LOOP), "t", "1", "99", DropReason.MISMATCH)]

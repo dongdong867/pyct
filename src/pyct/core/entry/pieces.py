@@ -292,9 +292,11 @@ def piece_out(
     )
     if line in USING.waiting:
         frame = sys._getframe(1)
-        failed = in_use.left(frame, line, col)
-        if failed is not None:
-            _failed(_recording, frame, failed, at, lambda: _changed(frame.f_locals, changed))
+        dropped_run = in_use.left(frame, line, col)
+        if dropped_run is not None:
+            _ended_dropped(
+                _recording, frame, dropped_run, at, lambda: _changed(frame.f_locals, changed)
+            )
 
 
 def piece_value[Value](
@@ -309,27 +311,27 @@ def piece_value[Value](
         entry = token.entry
         at = _recording.assigned(entry, value) if type(entry) is _Entry else None
         frame = sys._getframe(1)
-        stored, failed = in_use.assigned(frame, token, value)
-        if failed:
-            _failed(_recording, frame, token, at, lambda: _stored(token, value))
+        stored, was_dropped = in_use.assigned(frame, token, value)
+        if was_dropped:
+            _ended_dropped(_recording, frame, token, at, lambda: _stored(token, value))
         return cast(Value, stored)
     return value
 
 
-def _failed(
+def _ended_dropped(
     recording: _Recording,
     frame: types.FrameType,
     run: Run,
     at: int | None,
-    changed: Callable[[], tuple[Changed, ...] | None],
+    changed_values: Callable[[], tuple[Changed, ...] | None],
 ) -> None:
     """A run whose formula was dropped on it ends in the frame: its names are restored and, when
-    no entry recorded it (``at`` None), it is recorded with the ``changed`` values; its drop
-    reaches the sink whatever either does."""
+    no entry recorded it (``at`` None), it is recorded with the values ``changed_values`` gives;
+    its drop reaches the sink whatever either does."""
     try:
         in_use.restored(frame, run)
         if at is None:
-            at = recording.failed(run, changed())
+            at = recording.failed(run, changed_values())
     finally:
         in_use.dropped(run, at)
 
