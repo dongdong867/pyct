@@ -5,6 +5,7 @@ fork there."""
 import types
 from collections.abc import Mapping
 
+from pyct.binding.annotations import Builds
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.core.foundation.branch import Branch, Site
@@ -78,3 +79,21 @@ def test_a_rewrite_is_used_where_a_name_it_does_not_read_holds_an_object() -> No
     assert reused is not None
     assert reused.conditions == (CONDITION,)
     assert handed == [{"s": "0"}]
+
+
+class Order:
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
+# llm-rewrite-hint-built-object-kept-only-where-the-input-holds-no-object
+def test_an_input_where_a_hint_builds_a_name_the_rewrite_reads_takes_no_rewrite() -> None:
+    rewrite = rewrite_code('order == None and s == "1e-30"', ("order", "s"), FILE)
+    assert isinstance(rewrite, Rewrite)
+    found = Kept()
+    found.keep(CONDITION, rewrite)
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
+    assert wanted is not None
+    origin = Seed.of({"order": {"code": "0"}, "s": "0"}, {"order": Builds(Order)})
+
+    assert found.reused(wanted, origin, never) is None

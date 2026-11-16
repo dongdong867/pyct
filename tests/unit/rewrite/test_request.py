@@ -4,6 +4,7 @@ that holds an object as a placeholder."""
 
 from pathlib import Path
 
+from pyct.binding.annotations import Builds, Items
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.core.foundation.branch import Branch, Site
@@ -11,7 +12,9 @@ from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition
 from pyct.results.record import MissWhy
 from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.kinds import Kinds
 from pyct.rewrite.request import EARLIER, VALUE_SIZE, About, condition_text, request_for
+from tests.unit.rewrite.test_kinds import guarded_instance
 
 ABOUT = About("m:2:7", "code", {"nowhere.py": "nowhere"})
 
@@ -122,3 +125,40 @@ def test_a_value_that_holds_an_object_is_a_placeholder_that_runs_none_of_its_cod
         "f": "<holds an object>",
     }
     assert "hunter2" not in request_text(request)
+
+
+class Order:
+    def __init__(self, code: str) -> None:
+        self.code = code
+
+
+# llm-rewrite-hint-built-object-each-built-object-counts
+def test_an_object_a_hint_or_a_method_s_self_builds_is_a_placeholder_not_json() -> None:
+    aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
+    wanted = plan((aimed,))
+    assert wanted is not None
+    seed = {"n": 0, "o": {"code": "0"}, "l": [{"code": "0"}], "self": {"code": "0"}}
+    checks = {"o": Builds(Order), "l": Items(list, Builds(Order), fixed=True)}
+    origin = Seed.of(seed, checks)
+    given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
+
+    request = request_for(given, ABOUT, (), kinds=Kinds.of_seed(origin, "self"))
+
+    assert dict(request.args) == {
+        "n": "0",
+        "o": "<holds an object>",
+        "l": "<holds an object>",
+        "self": "<holds an object>",
+    }
+
+
+# llm-rewrite-hint-built-object-runs-no-metaclass-code
+def test_an_instance_is_named_by_its_class_with_no_metaclass_hook_run() -> None:
+    aimed = Branch([">", "n", 0], False, Site("nowhere.py", 1, 4))
+    wanted = plan((aimed,))
+    assert wanted is not None
+    # made by hand: the seed walk's own type tests are not this check's
+    origin = Seed({"n": 0, "o": guarded_instance()}, {})
+    given = GivenUp(Condition(aimed.site, True), wanted, origin, MissWhy.TIMEOUT)
+
+    assert dict(request_for(given, ABOUT, ()).args)["o"] == "<Guarded object>"

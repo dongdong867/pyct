@@ -16,7 +16,9 @@ runs another thread, before an ask or when the rewrite would run, the
 condition is skipped at this moment
 (decision llm-model-written-code-runs-only-in-a-forked-child-or-not-at-all).
 A condition with no parameter a rewrite may read is given up at this
-moment, unasked, so a later tool may take it.
+moment, unasked, so a later tool may take it. A parameter each input builds
+as an object, from a seed's form, under a class hint or as a method's
+``self``, is one a rewrite may not read (``pyct.rewrite.kinds``).
 A rewrite's run, as each solver ask, gets the solver timeout, or less when
 the budget has less.
 
@@ -161,7 +163,7 @@ class Rewrites(Asker):
         )
         self_name = self.target.self_name
         parameters = tuple(name for name in given.origin.args if name != self_name)
-        return Asking(self.provider, given, about, parameters, self.kept)
+        return Asking(self.provider, given, about, parameters, self.kept, self_name)
 
     def _outcome(self, tried: Tried) -> Outcome:
         """What the tries come to, said: an ask that got no answer is skipped, and once the
