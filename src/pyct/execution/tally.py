@@ -144,21 +144,25 @@ class Tally:
             if not self.past_bound:
                 self._fact(item)
             return
-        if isinstance(item, PieceRun | FormulaDrop):
+        if isinstance(item, PieceRun):
             self._piece(item)
+            return
+        if isinstance(item, FormulaDrop):
+            self._drop(item)
             return
         self._downgrade(item.name, item.site)
 
-    def _piece(self, item: PieceRun | FormulaDrop) -> None:
-        """Keep a recorded run or a dropped formula, and tell the watch."""
-        if isinstance(item, FormulaDrop):
-            self.drops.append(item)
-            if self.watch is not None:
-                self.watch.drop(item)
-            return
-        self.pieces.append(item)
+    def _piece(self, run: PieceRun) -> None:
+        """Keep a recorded run, and tell the watch."""
+        self.pieces.append(run)
         if self.watch is not None:
-            self.watch.piece(item)
+            self.watch.piece(run)
+
+    def _drop(self, drop: FormulaDrop) -> None:
+        """Keep a dropped formula, and tell the watch."""
+        self.drops.append(drop)
+        if self.watch is not None:
+            self.watch.drop(drop)
 
     def _fork(self, fork: Branch) -> None:
         """Keep a fork, up to `MOST_FORKS`, and tell the watch. Past the bound, the fork is
