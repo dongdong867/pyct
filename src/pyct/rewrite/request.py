@@ -156,14 +156,14 @@ def built_text(value: dict[str, object] | list[object], cls: str | None) -> str:
 def value_text(value: object, kind: Kind) -> str:
     """A parameter's value as JSON, or as Python writes it when JSON cannot, cut to
     ``VALUE_SIZE`` characters. A value of another ``kind`` than plain is never handed to
-    ``json`` or ``repr``, which can run the target's code: an instance of ``Name`` is
-    ``<Name object>``, its name read through ``type``'s own descriptor, and any other such
-    value ``HOLDS_OBJECT``."""
-    if kind is not Kind.PLAIN:
-        held = type(value)
-        if kind is Kind.HOLDS_OBJECT or held is dict or held is list:
-            return HOLDS_OBJECT
-        return f"<{name_of(held)} object>"
+    ``json`` or ``repr``, which can run the target's code: an instance a ``run()`` caller hands
+    in, of the class ``Name``, is ``<Name object>``, its name read through ``type``'s own
+    descriptor, and a value that holds an object ``HOLDS_OBJECT``. An object the input builds
+    from a dict or list is ``built_text``'s."""
+    if kind is Kind.HOLDS_OBJECT:
+        return HOLDS_OBJECT
+    if kind is Kind.OBJECT:
+        return f"<{name_of(type(value))} object>"
     try:
         return json.dumps(value)[:VALUE_SIZE]
     except (TypeError, ValueError, RecursionError):

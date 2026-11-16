@@ -32,8 +32,8 @@ from pyct.rewrite.kinds import Kinds
 
 # why a rewrite that records no fork of its own and no downgrade is refused
 READS_NO_ARGUMENT = "it reads no argument"
-# why a rewrite that reads fields records no fork of its own and no downgrade: each field holds
-# the same value on every input, since no constructor argument reaches it
+# why a rewrite that reads fields records no fork of its own and no downgrade; the reason names
+# the fields it read
 READS_NO_INPUT = "it reads no value an input sets"
 
 # the parts of expressions one plan's path may compare, over all its earlier forks, to tell

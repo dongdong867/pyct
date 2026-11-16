@@ -13,9 +13,9 @@ target's home module, hints and the build of a method's ``self``, which it
 passes by its name, so the constructor runs in the child as in each input. A raise
 of one of the call's own ending errors ends the call with that error's text,
 which the asking tool reads as why its code read nothing. Whatever the call
-changes in its own process goes with the child; what it does outside the
-process, such as writing a file, only the asking tool's form check and the
-names it hands in bound.
+changes in its own process goes with the child. What a constructor it runs
+does outside the process, such as writing a file, stays done, as it does for
+each input.
 
 A child forks only while pyct's process runs one thread, counted as
 isolation counts them; otherwise the call does not run, and the tool that
