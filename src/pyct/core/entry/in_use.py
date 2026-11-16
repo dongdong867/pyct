@@ -6,10 +6,13 @@ column, before an input starts; `start` reads it then. While the input is
 live and its call runs alone, each run of a loop in use starts plain: each
 name going in that is bound and holds a tracked int, float, str or bool is
 rebound to its plain value, and a ``for`` over a tracked str walks the plain
-str. Lists and dicts stay as they are. The loop then runs on plain values
-and records no fork.
+str. Lists and dicts stay as they are; the run keeps a copy of each list
+or dict going in, Python's own or a tracked one, made one level deep by its
+own copy, which keeps a tracked one tracked while its form still describes
+it. The loop then runs on plain values and records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
+each list or dict as the copy the start made,
 each fork and fact it records placed at the loop's site, and each changed
 name the frame has bound is compared with the formula's value of it by
 their JSON text, which records nothing. On a match each changed name whose
@@ -29,17 +32,20 @@ and the next start of the loop in that frame drops it.
 from __future__ import annotations
 
 import contextlib
+import copy
 import json
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
+from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.frames import rebind
 from pyct.core.entry.plain_json import plain_json
 from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site
 from pyct.core.foundation.values import placed_at
 from pyct.core.lists.list_state import plain
+from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
@@ -47,6 +53,8 @@ from pyct.core.strs.strs import ConcolicStr
 
 # the tracked values a loop in use runs on plain, and a formula's value hands on
 _SCALARS = frozenset({ConcolicInt, ConcolicFloat, ConcolicStr, ConcolicBool})
+# the lists and dicts going in that a run keeps a copy of
+_CONTAINERS = frozenset({list, dict, ConcolicList, ConcolicDict})
 
 type _Place = tuple[str, int, int]
 # a run waiting on its end, by its frame's id and its column
@@ -71,7 +79,8 @@ IN_USE: dict[_Place, LoopInUse] = {}
 
 class Run:
     """A run of a loop in use, waiting on its end: the loop, the piece's names, the values that
-    went in, the plain values its start wrote, and where it waits. ``entry`` is the token the
+    went in, each list or dict as a copy made then, the plain values its start wrote, and where
+    it waits. ``entry`` is the token the
     recording of the piece's runs gave this run."""
 
     __slots__ = ("entry", "key", "kept", "loop", "names", "place", "site", "written")
@@ -83,7 +92,7 @@ class Run:
         self.site = Site(*place)
         self.loop = loop
         self.names = names
-        self.kept = kept
+        self.kept = {name: _as_it_went_in(each) for name, each in kept.items()}
         self.written = {name: plain(each) for name, each in kept.items() if type(each) in _SCALARS}
         self.key = key
         self.entry: object = None
@@ -234,6 +243,15 @@ def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> No
         if name not in made and name in held and held[name] is written:
             back[name] = run.kept[name]
     rebind(frame, back)
+
+
+def _as_it_went_in(value: object) -> object:
+    """A list or dict going in as its own copy makes it, one level deep, so a loop that changes
+    it leaves the copy as it went in; a tracked one's copy is tracked by the same form and records
+    no fork. Any other value as it is."""
+    if type(value) in _CONTAINERS:
+        return copy.copy(value)
+    return value
 
 
 def _text(value: object) -> str | None:
