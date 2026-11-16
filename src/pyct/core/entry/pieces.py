@@ -44,8 +44,11 @@ import json
 import sys
 import types
 from collections.abc import Mapping
+from typing import cast
 
+from pyct.core.entry import in_use
 from pyct.core.entry.bases import TRACKED_CLASSES
+from pyct.core.entry.in_use import USING, Run
 from pyct.core.entry.plain_json import plain_json
 from pyct.core.foundation.branch import BranchSink, Changed, GoingIn, PieceRun, Site
 
@@ -128,28 +131,41 @@ class _Recording:
             return entry
         return None
 
-    def left(self, frame: types.FrameType, line: int, col: int, changed: tuple[str, ...]) -> None:
-        """A loop's run ends in the frame: its run is recorded, when its entry waits on it."""
+    def left(self, frame: types.FrameType, line: int, col: int, changed: tuple[str, ...]) -> bool:
+        """A loop's run ends in the frame: its run is recorded, when its entry waits on it.
+        Whether one did."""
         with contextlib.suppress(Exception):
             entry = self._drop(line, (id(frame), col))
             if entry is None:
-                return
+                return False
             values = _changed(frame.f_locals, changed)
             if values is not None:
                 self._record(PieceRun(entry.site, entry.going_in, values))
+            return True
+        return False
 
-    def assigned(self, entry: _Entry, value: object) -> None:
+    def assigned(self, entry: _Entry, value: object) -> bool:
         """An assignment's run ends with its value: its run is recorded, when its entry is still
-        the one waiting."""
+        the one waiting. Whether it was."""
         with contextlib.suppress(Exception):
             waiting = self.waiting.get(entry.site.line)
             if waiting is None or waiting.get(entry.key) is not entry:
-                return
+                return False
             self._drop(entry.site.line, entry.key)
             text = _text(value)
             if text is not None:
                 changed = tuple(Changed(name, text) for name in entry.changed)
                 self._record(PieceRun(entry.site, entry.going_in, changed))
+            return True
+        return False
+
+    def failed(self, run: Run, changed: tuple[Changed, ...] | None) -> None:
+        """A run of a loop in use whose formula was dropped on it, past the runs recorded as
+        they start: its run is recorded, from the values that went in and the ``changed``."""
+        with contextlib.suppress(Exception):
+            going_in = _going_in(run.kept, run.names[0])
+            if going_in is not None and changed is not None:
+                self._record(PieceRun(run.site, going_in, changed))
 
     def _record(self, run: PieceRun) -> None:
         """Append a run to the sink, when it fits in what the input's runs may count."""
@@ -173,16 +189,20 @@ class _Recording:
 _RECORDING = _Recording()
 
 
-def start(sink: BranchSink) -> None:
-    """An input goes live: from now on the hooks record its runs into ``sink``, from none."""
+def start(sink: BranchSink, *, alone: bool = False) -> None:
+    """An input goes live: from now on the hooks record its runs into ``sink``, from none, and,
+    when its call runs ``alone`` in a process of its own, use the loops in use
+    (`pyct.core.entry.in_use`)."""
     _RECORDING.clear()
     _RECORDING.sink = sink
+    in_use.start(sink, alone=alone)
 
 
 def forget() -> None:
     """The live input ends: the hooks record nothing until the next `start`."""
     _RECORDING.sink = None
     _RECORDING.clear()
+    in_use.forget()
 
 
 def size(run: PieceRun) -> int:
@@ -219,6 +239,8 @@ def piece_over[Iterated](
         or line in _recording.waiting
     ):
         _recording.entered(sys._getframe(1), line, col, going_in, changed)
+    if USING.active:
+        return in_use.over(iterable, sys._getframe(1), line, col, (going_in, changed))
     return iterable
 
 
@@ -233,10 +255,11 @@ def piece_in(
 ) -> object:
     """A ``while`` or an assignment of a comprehension starts: called once per run, a
     ``while``'s before its test is first evaluated, an assignment's before its value is. It hands
-    back a token, which an assignment hands to `piece_value` and a ``while`` drops: the run's
-    entry, or None for a run that records nothing."""
+    back a token, which an assignment hands to `piece_value` and a ``while`` drops: the run of
+    a loop in use, the run's entry, or None for a run that records nothing."""
     if _recording.sink is None:
         return None
+    entry = None
     done = _recording.done.get(line)
     if (
         done is None
@@ -244,8 +267,13 @@ def piece_in(
         or done[1] != col
         or line in _recording.waiting
     ):
-        return _recording.entered(sys._getframe(1), line, col, going_in, changed)
-    return None
+        entry = _recording.entered(sys._getframe(1), line, col, going_in, changed)
+    if USING.active:
+        run = in_use.entered(sys._getframe(1), line, col, (going_in, changed))
+        if run is not None:
+            run.entry = entry
+            return run
+    return entry
 
 
 def piece_out(
@@ -261,8 +289,12 @@ def piece_out(
     called once per run, after its last pass and before its ``else`` runs, or right before the
     ``break``. A run that ends by ``return`` or a raise calls it not at all, and a ``while True``
     only at a ``break``. It hands back None, which the caller drops."""
-    if line in _recording.waiting:
-        _recording.left(sys._getframe(1), line, col, changed)
+    recorded = line in _recording.waiting and _recording.left(sys._getframe(1), line, col, changed)
+    if line in USING.waiting:
+        frame = sys._getframe(1)
+        failed = in_use.left(frame, line, col)
+        if failed is not None and not recorded:
+            _recording.failed(failed, _changed(frame.f_locals, changed))
 
 
 def piece_value[Value](
@@ -270,9 +302,18 @@ def piece_value[Value](
 ) -> Value:
     """An assignment of a comprehension ends: called once per run, with the token `piece_in` gave
     for this run and the value, before it is stored into the target, which is the piece's one
-    changed name. It hands back the value to store."""
+    changed name. It hands back the value to store, a tracked one for a loop in use."""
     if token is not None and type(token) is _Entry:
         _recording.assigned(token, value)
+    elif type(token) is Run:
+        entry = token.entry
+        recorded = type(entry) is _Entry and _recording.assigned(entry, value)
+        stored, failed = in_use.assigned(sys._getframe(1), token, value)
+        if failed and not recorded:
+            text = _text(value)
+            changed = None if text is None else tuple(Changed(n, text) for n in token.names[1])
+            _recording.failed(token, changed)
+        return cast(Value, stored)
     return value
 
 

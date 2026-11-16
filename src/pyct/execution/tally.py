@@ -13,7 +13,15 @@ from typing import Protocol
 
 from pyct.core.entry import pieces, watch
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Branch, Downgrade, Fact, PieceRun, SinkItem, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Downgrade,
+    Fact,
+    FormulaDrop,
+    PieceRun,
+    SinkItem,
+    Site,
+)
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -97,6 +105,8 @@ class Tally:
         # each fact as the path came to hold it, placed after the forks recorded before it
         self.facts: list[Fact] = []
         self.pieces: list[PieceRun] = []
+        # each loop's formula dropped in the call (`pyct.core.entry.in_use`)
+        self.drops: list[FormulaDrop] = []
         self.watch = watch
         self.sealed = False
         self.past_bound = False
@@ -114,7 +124,7 @@ class Tally:
         that took it: a truth test's `__bool__`, a walk's `__iter__`, an index's `__getitem__`.
         """
         if self.sealed:
-            if isinstance(item, PieceRun):
+            if isinstance(item, PieceRun | FormulaDrop):
                 return
             live = _LIVE[0]
             # a place names no check the target ran, so it names no loss
@@ -131,12 +141,19 @@ class Tally:
             if not self.past_bound:
                 self._fact(item)
             return
-        if isinstance(item, PieceRun):
-            self.pieces.append(item)
-            if self.watch is not None:
-                self.watch.piece(item)
+        if isinstance(item, PieceRun | FormulaDrop):
+            self._piece(item)
             return
         self._downgrade(item.name, item.site)
+
+    def _piece(self, item: PieceRun | FormulaDrop) -> None:
+        """Keep a recorded run or a dropped formula, and tell the watch of a run."""
+        if isinstance(item, FormulaDrop):
+            self.drops.append(item)
+            return
+        self.pieces.append(item)
+        if self.watch is not None:
+            self.watch.piece(item)
 
     def _fork(self, fork: Branch) -> None:
         """Keep a fork, up to `MOST_FORKS`, and tell the watch. Past the bound, the fork is
@@ -194,14 +211,15 @@ class Tally:
             went=frozenset(self._went),
         )
 
-    def go_live(self) -> None:
+    def go_live(self, *, alone: bool = False) -> None:
         """Make this the tally of the call running now, which a value from a call that is over
         names its loss to, and the hooks around the target's pieces record into. The walk keys
-        an earlier call handed out are no keys of its path."""
+        an earlier call handed out are no keys of its path. A call that runs ``alone`` in a
+        process of its own uses the loops in use (`pyct.core.entry.in_use`)."""
         _LIVE[0] = self
         escapes.forget()
         watch.forget()
-        pieces.start(self)
+        pieces.start(self, alone=alone)
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""

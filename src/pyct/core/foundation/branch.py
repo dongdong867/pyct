@@ -9,6 +9,7 @@ import types
 import weakref
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
@@ -210,9 +211,37 @@ class PieceRun:
     changed: tuple[Changed, ...]
 
 
-# what a sink holds: the forks, the facts, the downgrades and the recorded runs of pieces, in the
-# order they happened
-type SinkItem = Branch | Fact | Downgrade | PieceRun
+class DropReason(StrEnum):
+    """Why a loop's formula was dropped in an input: a changed value it gave is not the loop's,
+    it raised, or it gave no value for a changed name."""
+
+    MISMATCH = "mismatch"
+    RAISED = "raised"
+    MISSING = "missing"
+
+
+@dataclass(frozen=True)
+class FormulaDrop:
+    """A loop's formula dropped in an input, at the end of a run of the loop
+    (`pyct.core.entry.in_use`).
+
+    ``site`` is the loop's file, line and column, and ``name`` the changed
+    name the formula failed on, the first that failed or, for a raise, the
+    first bound. ``value`` is the loop's own value of it as JSON text, and
+    ``got`` the formula's value of it as JSON text, the raise's type name,
+    or empty when it gave none.
+    """
+
+    site: Site
+    name: str
+    value: str
+    got: str
+    reason: DropReason
+
+
+# what a sink holds: the forks, the facts, the downgrades, the recorded runs of pieces and the
+# formulas dropped, in the order they happened
+type SinkItem = Branch | Fact | Downgrade | PieceRun | FormulaDrop
 
 
 class BranchSink(Protocol):

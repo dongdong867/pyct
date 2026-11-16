@@ -1,0 +1,244 @@
+"""The loops in use: a loop whose runs a checked formula stands for, in a call that runs in a
+process of its own (`pyct.core.entry.pieces` calls this module from its hooks).
+
+An upper layer puts each loop in use in `IN_USE`, by its file, line and
+column, before an input starts; `start` reads it then. While the input is
+live and its call runs alone, each run of a loop in use starts plain: each
+name going in that is bound and holds a tracked int, float, str or bool is
+rebound to its plain value, and a ``for`` over a tracked str walks the plain
+str. Lists and dicts stay as they are. The loop then runs on plain values
+and records no fork.
+
+At the run's end the formula is called on the tracked values that went in,
+each fork and fact it records placed at the loop's site, and each changed
+name the frame has bound is compared with the formula's value of it by
+their JSON text, which records nothing. On a match each changed name whose
+formula value is a tracked int, float, str or bool holds the loop's own
+value with the formula's term; another formula value leaves the loop's
+value as it is. On a mismatch, a raise, or a changed name the formula gives
+no value for, the changed names stay as the loop left them, the sink is
+handed a `FormulaDrop`, and the loop is followed as written for the rest of
+the input. Either way each other name going in gets its tracked value back
+when the frame still holds the plain value the start wrote.
+
+A raise that is not an ``Exception``, the deadline's, passes through. A run
+that ends by ``return`` or a raise reaches no end: its names stay plain,
+and the next start of the loop in that frame drops it.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import json
+import types
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import cast
+
+from pyct.core.entry.frames import rebind
+from pyct.core.entry.plain_json import plain_json
+from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site
+from pyct.core.foundation.values import placed_at
+from pyct.core.lists.list_state import plain
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
+
+# the tracked values a loop in use runs on plain, and a formula's value hands on
+_SCALARS = frozenset({ConcolicInt, ConcolicFloat, ConcolicStr, ConcolicBool})
+
+type _Place = tuple[str, int, int]
+# a run waiting on its end, by its frame's id and its column
+type _Key = tuple[int, int]
+# a piece's names going in and its changed names
+type _Names = tuple[tuple[str, ...], tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class LoopInUse:
+    """A loop's formula: its parameters, the names it gives a value, and the call that takes
+    each parameter's value by name and answers each changed name's value by name."""
+
+    parameters: tuple[str, ...]
+    changed: tuple[str, ...]
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]]
+
+
+# the loops in use, by the file, line and column of each
+IN_USE: dict[_Place, LoopInUse] = {}
+
+
+class Run:
+    """A run of a loop in use, waiting on its end: the loop, the piece's names, the values that
+    went in, the plain values its start wrote, and where it waits. ``entry`` is the token the
+    recording of the piece's runs gave this run."""
+
+    __slots__ = ("entry", "key", "kept", "loop", "names", "place", "site", "written")
+
+    def __init__(
+        self, place: _Place, loop: LoopInUse, names: _Names, kept: dict[str, object], key: _Key
+    ) -> None:
+        self.place = place
+        self.site = Site(*place)
+        self.loop = loop
+        self.names = names
+        self.kept = kept
+        self.written = {name: plain(each) for name, each in kept.items() if type(each) in _SCALARS}
+        self.key = key
+        self.entry: object = None
+
+
+class _Using:
+    """The live input's loops in use: whether its call uses them, where its drops go, the loops
+    dropped in it, and each run waiting on its end, by line."""
+
+    __slots__ = ("active", "dropped", "sink", "waiting")
+
+    def __init__(self) -> None:
+        self.active = False
+        self.sink: BranchSink | None = None
+        self.clear()
+
+    def clear(self) -> None:
+        self.dropped: set[_Place] = set()
+        self.waiting: dict[int, dict[_Key, Run]] = {}
+
+    def pop(self, line: int, key: _Key) -> Run | None:
+        """Drop the run waiting at the line by the key, and hand it back."""
+        waiting = self.waiting.get(line)
+        if waiting is None:
+            return None
+        run = waiting.pop(key, None)
+        if not waiting:
+            del self.waiting[line]
+        return run
+
+
+USING = _Using()
+
+
+def start(sink: BranchSink, *, alone: bool) -> None:
+    """An input goes live: its call uses the loops in `IN_USE` now when it runs ``alone`` in a
+    process of its own, and hands its drops to ``sink``."""
+    USING.clear()
+    USING.sink = sink
+    USING.active = alone and bool(IN_USE)
+
+
+def forget() -> None:
+    """The live input ends: no loop is in use until the next `start`."""
+    USING.active = False
+    USING.sink = None
+    USING.clear()
+
+
+def entered(frame: types.FrameType, line: int, col: int, names: _Names) -> Run | None:
+    """A run of a piece starts in the frame: when the piece is a loop in use, its run, its
+    tracked values going in rebound plain."""
+    with contextlib.suppress(Exception):
+        place = (frame.f_code.co_filename, line, col)
+        key = (id(frame), col)
+        USING.pop(line, key)
+        loop = IN_USE.get(place)
+        if loop is None or place in USING.dropped:
+            return None
+        held = frame.f_locals
+        run = Run(place, loop, names, {name: held[name] for name in names[0] if name in held}, key)
+        rebind(frame, run.written)
+        USING.waiting.setdefault(line, {})[key] = run
+        return run
+    return None
+
+
+def over[Iterated](
+    iterable: Iterated, frame: types.FrameType, line: int, col: int, names: _Names
+) -> Iterated:
+    """A ``for`` starts in the frame, as `entered`: what it iterates over, a tracked str plain
+    when the loop is in use."""
+    run = entered(frame, line, col, names)
+    if run is not None and type(iterable) is ConcolicStr:
+        return cast(Iterated, plain(iterable))
+    return iterable
+
+
+def left(frame: types.FrameType, line: int, col: int) -> Run | None:
+    """A loop's run ends in the frame: its formula stands for it. Hands back the run when its
+    formula was dropped on it, else None."""
+    with contextlib.suppress(Exception):
+        run = USING.pop(line, (id(frame), col))
+        if run is None:
+            return None
+        held = frame.f_locals
+        real = {name: held[name] for name in run.loop.changed if name in held}
+        made = _finished(run, real)
+        _rebound(frame, run, made or {})
+        return run if made is None else None
+    return None
+
+
+def assigned(frame: types.FrameType, run: Run, value: object) -> tuple[object, bool]:
+    """An assignment's run ends in the frame with its value: the value to store, the tracked
+    one when the formula matches, and whether the formula was dropped on it."""
+    with contextlib.suppress(Exception):
+        line = run.site.line
+        waiting = USING.waiting.get(line)
+        if waiting is None or waiting.get(run.key) is not run:
+            return value, False
+        USING.pop(line, run.key)
+        stored = run.loop.changed[0]
+        made = _finished(run, {stored: value})
+        _rebound(frame, run, made or {})
+        return (value, True) if made is None else (made.get(stored, value), False)
+    return value, False
+
+
+def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
+    """Each changed name's tracked value the formula gives, or None when it is dropped."""
+    loop = run.loop
+    given = {name: run.kept[name] for name in loop.parameters if name in run.kept}
+    try:
+        got = placed_at(run.site, lambda: loop.formula(given))
+    except Exception as error:
+        return _dropped(run, real, next(iter(real), ""), type(error).__name__, DropReason.RAISED)
+    made: dict[str, object] = {}
+    for name, value in real.items():
+        if not isinstance(got, Mapping) or name not in got:
+            return _dropped(run, real, name, "", DropReason.MISSING)
+        result = got[name]
+        text = _text(result)
+        if text is None or text != _text(value):
+            return _dropped(run, real, name, text or "", DropReason.MISMATCH)
+        if type(result) in _SCALARS:
+            tracked = cast(ConcolicInt, result)
+            # the loop's value is of the formula value's kind, as their JSON texts are one
+            real_value = cast(int, plain(value))
+            made[name] = type(tracked).made(real_value, tracked.expression, tracked.sink)
+    return made
+
+
+def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: DropReason) -> None:
+    """Drop the run's loop for the rest of the input, and hand the sink the drop."""
+    USING.dropped.add(run.place)
+    value = _text(real[name]) if name in real else None
+    if USING.sink is not None:
+        USING.sink.append(FormulaDrop(run.site, name, value or "", got, reason))
+
+
+def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> None:
+    """Bind each changed name the formula gave a tracked value, and give each other name that
+    went in its tracked value back where the frame still holds the plain value the start wrote."""
+    held = frame.f_locals
+    back = dict(made)
+    for name, written in run.written.items():
+        if name not in made and name in held and held[name] is written:
+            back[name] = run.kept[name]
+    rebind(frame, back)
+
+
+def _text(value: object) -> str | None:
+    """The value's JSON text, or None when JSON holds no form of it."""
+    try:
+        return json.dumps(plain_json(value, tuples=False))
+    except (TypeError, ValueError, RecursionError):
+        return None

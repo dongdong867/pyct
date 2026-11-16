@@ -98,7 +98,7 @@ def execute(
     ends the input before any line runs, as the target's raise.
     """
     tally = Tally(watch)
-    tally.go_live()
+    tally.go_live(alone=ctx.alone)
     bound = bind_call(args, tally, ctx.checks, ctx.home)
     try:
         plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home, ctx.checks)
