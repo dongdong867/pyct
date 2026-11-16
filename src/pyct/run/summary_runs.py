@@ -2,7 +2,8 @@
 
 A complete run is a recorded run of the loop that holds every name it
 changes (`pyct.run.summary_checks.CompleteRun`). A request shows up to
-``SHOWN_RUNS`` of them, those whose values differ first.
+``SHOWN_RUNS`` of them: the run its loop's last formula was dropped on
+first, then those whose values differ.
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pyct.core.foundation.branch import PieceRun, Site
+from pyct.core.foundation.branch import FormulaDrop, PieceRun, Site
 from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
 from pyct.run.loops_in_use import statement_at
@@ -60,12 +61,12 @@ def asked_loop(site: Site, records: Sequence[InputRecord]) -> AskedLoop | None:
     return AskedLoop(site, piece, runs, parameters)
 
 
-def shown_runs(loop: AskedLoop) -> tuple[ShownRun, ...]:
-    """Up to ``SHOWN_RUNS`` of the loop's complete runs, as values: those whose values going in
-    differ from every earlier one's first, then those whose changed values differ, then the
-    rest, each group in run order."""
+def shown_runs(loop: AskedLoop, first: CompleteRun | None = None) -> tuple[ShownRun, ...]:
+    """Up to ``SHOWN_RUNS`` of the loop's complete runs, as values: ``first`` when they hold it,
+    then those whose values going in differ from every earlier one's, then those whose changed
+    values differ, then the rest, each group in run order."""
     every = [_shown(each.run, loop) for each in loop.runs]
-    picked: list[int] = []
+    picked = [loop.runs.index(first)] if first in loop.runs else []
     for part in ("going_in", "changed"):
         seen = {getattr(every[at], part) for at in picked}
         for at, each in enumerate(every):
@@ -83,6 +84,17 @@ def _shown(run: PieceRun, loop: AskedLoop) -> ShownRun:
         tuple(pair for pair in going_in if pair[0] in loop.parameters),
         tuple((name, changed[name]) for name in loop.piece.changed),
     )
+
+
+def failed_run(drop: FormulaDrop, record: InputRecord, number: int) -> CompleteRun | None:
+    """The run of the loop an input's drop names, as the input's record holds it, the input
+    numbered ``number``: the last run of the loop there whose value of the drop's name is the
+    loop's value the drop names. None when the record holds none."""
+    for each in reversed(record.pieces):
+        values = {changed.name: changed.value for changed in each.changed}
+        if each.site == drop.site and values.get(drop.name) == drop.value:
+            return CompleteRun(number, each)
+    return None
 
 
 def piece_at(site: Site) -> Piece | None:

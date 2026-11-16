@@ -2,10 +2,12 @@
 why and leaves its state ``dropped``; once the run's inputs run in pyct's own process, each loop
 in use goes out of use and is kept as checked."""
 
+import json
+
 import pytest
 
 from pyct.core.entry.in_use import IN_USE
-from pyct.core.foundation.branch import DropReason, FormulaDrop, Site
+from pyct.core.foundation.branch import Changed, DropReason, FormulaDrop, GoingIn, PieceRun, Site
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState
 from pyct.results.record import InputRecord
@@ -21,9 +23,15 @@ from tests.unit.run.test_summaries import COUNTS, FILE, FORMULA, LOOP, Fake, cou
 from tests.unit.run.test_summaries_in_use import PLACE, table, taken, tool  # noqa: F401
 
 
+def capped(s: str) -> PieceRun:
+    """A run of a loop at ``counts``'s site that counts the "z" in ``s`` up to 5."""
+    going_in = (GoingIn("s", json.dumps(s), True), GoingIn("t", "0", False))
+    return PieceRun(LOOP, going_in, (Changed("t", str(min(s.count("z"), 5))),))
+
+
 def dropping(*drops: FormulaDrop) -> InputRecord:
     """The record of an input of six "z" whose run of the loop carries ``drops``."""
-    pieces = (counted("zzzzzz"),)
+    pieces = (capped("zzzzzz"),)
     return InputRecord(args={}, forks=(), covered_lines=frozenset(), pieces=pieces, drops=drops)
 
 

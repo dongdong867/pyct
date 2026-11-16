@@ -19,18 +19,21 @@ A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
 A formula that fails a check is a failed try, said with its reason and kept
 for the loop's later asks; one that passes both is kept for its loop, and
-that loop is not asked about again. It comes into use from the next input
-on, for the rest of the run, when it can (``pyct.run.loops_in_use``); else
-it is kept as checked, and why is said right after the line that says it
-passed, once in the run for each loop and reason. A check whose child
-could not start, or that the run's deadline ended, is no try: the loop is
-skipped at this moment, and said. No input runs.
+that loop is not asked about again while it is kept. It comes into use from
+the next input on, for the rest of the run or until an input drops it, when
+it can (``pyct.run.loops_in_use``); else it is kept as checked, and why is
+said right after the line that says it passed, once in the run for each loop
+and reason. A check whose child could not start, or that the run's deadline
+ended, is no try: the loop is skipped at this moment, and said. No input
+runs.
 
 The tool hears each input the run keeps. A loop in use that an input's
 record says was dropped goes out of use from the next input on, and its
-drop is said with the input's number and why. Once the run's inputs run in
-pyct's own process, each loop in use goes out of use and is kept as
-checked, said once for each loop.
+drop is said with the input's number and why. A later moment's entry that
+names the loop asks about it again, its dropped formula among the earlier
+tries with why, and the run it failed on first among the runs shown. Once
+the run's inputs run in pyct's own process, each loop in use goes out of use
+and is kept as checked, said once for each loop.
 
 The summary line lists each loop an ask was sent for with what came of its
 last ask sent (``SummaryState``): its formula in use, checked and not used,
@@ -52,7 +55,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from pyct.config.llm import SUMMARIES_TOOL
-from pyct.core.foundation.branch import Site
+from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
@@ -77,8 +80,8 @@ from pyct.run.notes import (
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.summary_checks import Ended, check_formula, formula_code
-from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, shown_runs
+from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
+from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, failed_run, shown_runs
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
@@ -143,10 +146,10 @@ class Asked(enum.Enum):
 @dataclass
 class LoopState:
     """One loop an ask was sent for, across the run: the names it changes, the connection's last
-    try number, the earlier tries that failed, the last formula the model gave, the runs a
-    formula was checked on once one is checked, and what came of the last ask sent for it,
-    unanswered until its answer is read. An ask the token limit refused sent nothing and changes
-    none of these."""
+    try number, the earlier tries that failed or were dropped, the last formula the model gave,
+    the runs a formula was checked on once one is checked, what came of the last ask sent for
+    it, unanswered until its answer is read, and the run its last formula was dropped on. An ask
+    the token limit refused sent nothing and changes none of these."""
 
     changes: tuple[str, ...]
     attempts: int = 0
@@ -154,6 +157,7 @@ class LoopState:
     formula: str | None = None
     checked_on: int | None = None
     last: SummaryState = SummaryState.UNANSWERED
+    failed_on: CompleteRun | None = None
 
 
 class Summaries:
@@ -208,7 +212,7 @@ class Summaries:
     def _turn(self, site: Site, run: Running) -> tuple[Asked, bool]:
         """One loop's turn at this moment, and whether the model was asked."""
         state = self.loops.get(site)
-        if state is not None and state.checked_on is not None:
+        if state is not None and state.last in (SummaryState.IN_USE, SummaryState.CHECKED):
             return Asked.CHECKED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
@@ -289,15 +293,27 @@ class Summaries:
         process, each loop still in use goes out of use, kept as checked."""
         for drop in record.drops:
             if drop.site in self.in_use.formulas:
-                self.in_use.stop(drop.site)
-                self.loops[drop.site].last = SummaryState.DROPPED
-                self.told.note(SummaryDropped(drop.site, number, dropped_because(drop)))
+                self._dropped(drop, record, number)
         if self.isolated is None or not self.in_use.formulas or self.isolated():
             return
         for site in list(self.in_use.formulas):
             self.in_use.stop(site)
             self.loops[site].last = SummaryState.CHECKED
             self._say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS))
+
+    def _dropped(self, drop: FormulaDrop, record: InputRecord, number: int) -> None:
+        """The loop in use the input ``number`` dropped: out of use, said, and its formula kept
+        among its earlier tries with why, and the run it failed on, for its next ask."""
+        site = drop.site
+        self.in_use.stop(site)
+        state = self.loops[site]
+        state.last = SummaryState.DROPPED
+        reason = dropped_because(drop)
+        state.tries.append(
+            EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
+        )
+        state.failed_on = failed_run(drop, record, number)
+        self.told.note(SummaryDropped(site, number, reason))
 
     def close(self) -> None:
         """The run ends: no loop of its is in use any more."""
@@ -320,7 +336,7 @@ class Summaries:
             code=code_with_piece(self.target, site.file, loop.piece.lines),
             parameters=loop.parameters,
             changed=loop.piece.changed,
-            runs=shown_runs(loop),
+            runs=shown_runs(loop, state.failed_on),
             tries=tuple(state.tries),
         )
 
@@ -335,10 +351,12 @@ class Summaries:
         self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
 
     def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
-        """The loop's state kept once an ask for it was sent, with the connection's try number;
-        an answer that leaves no token under the limit reaches the run's limit."""
+        """The loop's state kept once an ask for it was sent, with the connection's try number,
+        and no formula checked until its answer is; an answer that leaves no token under the
+        limit reaches the run's limit."""
         self.loops[site] = state
         state.attempts = cost.attempt
+        state.checked_on = None
         self.limit.heard(cost)
 
     def states(self) -> tuple[LoopSummary, ...]:
