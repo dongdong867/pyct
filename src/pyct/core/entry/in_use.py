@@ -23,10 +23,11 @@ value as it is. On a mismatch, a raise, or a changed name the formula gives
 no value for, the changed names stay as the loop left them, the sink is
 handed a `FormulaDrop` once the run is recorded (`dropped`), naming that
 run, also when the restore or the record raises, and the loop is followed as written for the rest of the input; a run of
-the loop still open then, in an outer frame, ends with its names restored
-and no call. Either way each name going in that is not one of the piece's
-changed names gets its tracked value back when the frame still holds the
-plain value the start wrote.
+the loop still open then, in an outer frame, ends with no call: its names
+going in that it does not change get their tracked values back, and its
+changed names keep the loop's values. Either way each name going in that is
+not one of the piece's changed names gets its tracked value back when the
+frame still holds the plain value the start wrote.
 
 A raise that is not an ``Exception``, the deadline's, passes through. A run
 that ends by ``return`` or a raise reaches no end: its names stay plain,

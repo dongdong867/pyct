@@ -6,19 +6,27 @@ formula."""
 import contextlib
 import types
 from collections.abc import Mapping
+from typing import Any, cast
 
 import pytest
 
 from pyct.core.entry import in_use, pieces
 from pyct.core.entry.in_use import LoopInUse, Run
-from pyct.core.foundation.branch import Branch, Changed, DropReason, FormulaDrop, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Changed,
+    DropReason,
+    FormulaDrop,
+    SinkItem,
+    Site,
+)
 from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.entry.test_in_use import (
     COUNT_Z,
     COUNTS,
     GENEXP,
     LOOP,
-    RECURSIVE,
     counted,
     drops,
     forks,
@@ -28,6 +36,21 @@ from tests.unit.core.entry.test_in_use import (
 from tests.unit.core.entry.test_pieces import FILE, hooked
 
 
+def tracked_int(value: int, name: str, sink: list[SinkItem]) -> ConcolicInt:
+    return ConcolicInt.made(value, expression=name, sink=sink)
+
+
+TRACKED_IN = """\
+def f(s, t, depth):
+    for c in s:
+        if depth:
+            f(s, t, 0)
+        if c == "z":
+            t += 1
+    return t, s
+"""
+
+
 def test_a_run_open_in_an_outer_frame_does_not_call_a_formula_an_inner_frame_dropped() -> None:
     calls: list[Mapping[str, object]] = []
 
@@ -35,15 +58,17 @@ def test_a_run_open_in_an_outer_frame_does_not_call_a_formula_an_inner_frame_dro
         calls.append(values)
         return {"t": 99} if len(calls) == 1 else counted(values)
 
-    f = hooked(RECURSIVE)
+    f = hooked(TRACKED_IN)
 
-    with using({LOOP: LoopInUse(("s", "t"), ("t",), wrong_at_first)}) as sink:
-        t = f(tracked("zz", "s", sink), 1)
+    with using({(2, 4): LoopInUse(("s", "t"), ("t",), wrong_at_first)}) as sink:
+        t, s = cast(tuple[Any, ...], f(tracked("zz", "s", sink), tracked_int(0, "t", sink), 1))
 
-    # the first inner call drops it; the outer run's end leaves the loop's own value
+    # the first inner call drops it; the outer run's end leaves t, which went in tracked and the
+    # loop changes, as the loop left it, and gives s, which it does not change, its tracked value
     assert len(calls) == 1
     assert len(drops(sink)) == 1
     assert (type(t), t) == (int, 2)
+    assert type(s) is ConcolicStr
 
 
 RECURSIVE_ASSIGNMENT = """\
