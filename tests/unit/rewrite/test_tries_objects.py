@@ -94,7 +94,7 @@ def test_a_field_the_reader_reads_nothing_of_fails_the_try_with_its_reason() -> 
     assert failed(fake) == [reason] * 4
 
 
-def test_a_rewrite_beside_an_argument_that_holds_an_object_runs_without_it() -> None:
+def test_a_rewrite_beside_an_object_it_does_not_read_is_handed_none_of_it() -> None:
     origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
     given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
     fake = Fake()
@@ -131,7 +131,7 @@ def test_a_rewrite_reading_an_object_a_hint_builds_as_a_dict_fails() -> None:
 
 
 # llm-rewrite-hint-built-object-each-built-object-counts
-def test_the_dict_a_method_s_self_is_built_from_is_shown_as_an_object() -> None:
+def test_self_of_no_known_class_is_shown_as_holding_an_object_in_the_ask_and_the_reason() -> None:
     origin = Seed.of({"self": {"code": "0"}, "s": "0"})
     given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
     fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
