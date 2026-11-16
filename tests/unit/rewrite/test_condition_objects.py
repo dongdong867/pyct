@@ -8,7 +8,15 @@ import pytest
 
 from pyct.binding.stored import read_field
 from pyct.intercept.model_code import Refused
-from pyct.rewrite.condition import FUNCTION, HELD_COL, HELD_LINE, READER, Rewrite, rewrite_code
+from pyct.rewrite.condition import (
+    ARGUMENTS,
+    FUNCTION,
+    HELD_COL,
+    HELD_LINE,
+    READER,
+    Rewrite,
+    rewrite_code,
+)
 from pyct.run import model_runs
 from pyct.run.model_runs import ModelCall, ModelRun, run_model
 from tests.unit.rewrite.orders import Order
@@ -127,7 +135,7 @@ def test_a_field_read_runs_through_the_reader_on_the_object() -> None:
     assert own.taken is False
 
 
-class Callable:
+class CallRaises:
     """An object with a field, whose ``__call__`` raises, so a call of it shows."""
 
     def __init__(self) -> None:
@@ -137,11 +145,11 @@ class Callable:
         raise RuntimeError("the parameter's __call__ ran")
 
 
-@pytest.mark.parametrize("name", ["bool", READER, "__held__"])
+@pytest.mark.parametrize("name", ["bool", READER, "__held__", ARGUMENTS])
 def test_a_parameter_named_as_a_name_pyct_writes_in_does_not_replace_it(name: str) -> None:
     rewrite = rewrite_code(f'{name}.x == 1 and s == "1"', (name, "s"), FILE, (), (name,))
     assert isinstance(rewrite, Rewrite), rewrite
-    call = ModelCall(rewrite.code, FUNCTION, {name: Callable(), "s": "1"}, {READER: read_field})
+    call = ModelCall(rewrite.code, FUNCTION, {name: CallRaises(), "s": "1"}, {READER: read_field})
 
     done = run_model(call, time.monotonic() + 5)
 
@@ -150,10 +158,11 @@ def test_a_parameter_named_as_a_name_pyct_writes_in_does_not_replace_it(name: st
     assert done.answer == "true"
 
 
-def test_a_plain_parameter_named_bool_is_read_as_its_value() -> None:
-    rewrite = rewrite_code("bool == 1 and s > 0", ("bool", "s"), FILE)
+@pytest.mark.parametrize("name", ["bool", ARGUMENTS])
+def test_a_plain_parameter_named_as_a_name_pyct_writes_in_is_read_as_its_value(name: str) -> None:
+    rewrite = rewrite_code(f"{name} == 1 and s > 0", (name, "s"), FILE)
     assert isinstance(rewrite, Rewrite), rewrite
-    call = ModelCall(rewrite.code, FUNCTION, {"bool": 1, "s": 2})
+    call = ModelCall(rewrite.code, FUNCTION, {name: 1, "s": 2})
 
     done = run_model(call, time.monotonic() + 5)
 

@@ -345,12 +345,12 @@ class _AsReads(ast.NodeTransformer):
             self.generic_visit(node)
             return node
         self.read.append(f"{value.id}.{node.attr}")
-        arguments: list[ast.expr] = [
+        reader_args: list[ast.expr] = [
             ast.copy_location(_argument(value.id), value),
             ast.Constant(value.id),
             ast.Constant(node.attr),
         ]
-        return ast.copy_location(ast.Call(ast.Name(READER, ast.Load()), arguments, []), node)
+        return ast.copy_location(ast.Call(ast.Name(READER, ast.Load()), reader_args, []), node)
 
 
 def _argument(name: str) -> ast.expr:

@@ -11,6 +11,7 @@ import pytest
 from pyct.binding.stored import (
     ABSENT,
     AN_OBJECT,
+    BORROWED,
     BY_CODE,
     FieldUnreadError,
     plain_data,
@@ -60,21 +61,18 @@ def test_a_slot_is_read_and_an_empty_one_holds_no_field() -> None:
         lambda: tricky.PropOverSlot("1"),
         lambda: tricky.DictProp("1"),
         tricky.DataDesc,
-        tricky.BorrowedSlot,
-        tricky.BorrowedDict,
     ],
-    ids=[
-        "property",
-        "own __getattribute__",
-        "property over a slot",
-        "__dict__ property",
-        "data",
-        "another class's slot",
-        "another class's __dict__",
-    ],
+    ids=["property", "own __getattribute__", "property over a slot", "__dict__ property", "data"],
 )
 def test_a_name_the_class_answers_with_code_is_not_read(built: Callable[[], object]) -> None:
     assert refused(built()) == f"it cannot read order.code: {BY_CODE}"
+
+
+@pytest.mark.parametrize(
+    "built", [tricky.BorrowedSlot, tricky.BorrowedDict], ids=["slot", "__dict__"]
+)
+def test_a_field_behind_another_class_s_descriptor_is_not_read(built: Callable[[], object]) -> None:
+    assert refused(built()) == f"it cannot read order.code: {BORROWED}"
 
 
 def test_a_c_type_s_own_getter_is_not_read() -> None:

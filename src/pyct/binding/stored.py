@@ -28,9 +28,11 @@ from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 
-# why a field is not read: the class answers the name with code of its own, the instance stores
-# no such field, or the field's value is not plain data
+# why a field is not read: the class answers the name with code of its own, the class holds
+# another class's slot or __dict__ getter, which Python refuses to read this instance with, the
+# instance stores no such field, or the field's value is not plain data
 BY_CODE = "the class reads it with code"
+BORROWED = "the class reads it with another class's descriptor"
 ABSENT = "the object holds no such field"
 AN_OBJECT = "it holds an object"
 
@@ -97,6 +99,8 @@ def _stored(owner: object, field: str) -> object:
     if type(holder) is not types.GetSetDescriptorType:
         return _Why(BY_CODE)
     fields = _own_dict(cast(types.GetSetDescriptorType, holder), owner, cls)
+    if fields is None:
+        return _Why(BORROWED)
     if type(fields) is not dict:
         return _Why(BY_CODE)
     found = _matching(dict.items(cast(dict[object, object], fields)), field)
@@ -111,16 +115,16 @@ def _slot(held: types.MemberDescriptorType, owner: object, cls: type) -> object:
     except AttributeError:
         return _Why(ABSENT)
     except TypeError:
-        return _Why(BY_CODE)
+        return _Why(BORROWED)
 
 
-def _own_dict(holder: types.GetSetDescriptorType, owner: object, cls: type) -> object:
-    """The instance's ``__dict__``, read by Python's own C code, or ``_Why`` when the getter is
+def _own_dict(holder: types.GetSetDescriptorType, owner: object, cls: type) -> object | None:
+    """The instance's ``__dict__``, read by Python's own C code, or None when the getter is
     another class's, which reads no instance of this one."""
     try:
         return holder.__get__(owner, cls)
     except TypeError:
-        return _Why(BY_CODE)
+        return None
 
 
 def _data_descriptor(kind: type) -> bool:
