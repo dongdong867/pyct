@@ -1,9 +1,11 @@
 """A kept rewrite takes its condition's place only in a plan that holds it, on an input that holds
-every name it reads, none of them holding an object, and only when it runs and records its own
-fork there."""
+every name it reads, each an object where the rewrite reads its fields and plain otherwise, and
+only when it runs and records its own fork there."""
 
 import types
 from collections.abc import Mapping
+
+import pytest
 
 from pyct.binding.annotations import Builds
 from pyct.binding.bind import Seed
@@ -93,3 +95,39 @@ def test_an_input_where_a_hint_builds_a_name_the_rewrite_reads_takes_no_rewrite(
     origin = Seed.of({"order": {"code": "0"}, "s": "0"}, {"order": Builds(Order)})
 
     assert found.reused(wanted, origin, never) is None
+
+
+def kept_field_read() -> Kept:
+    """A kept rewrite that reads ``order.code``, checked where ``order`` was an object."""
+    rewrite = rewrite_code('order.code == "1e-30"', ("order",), FILE, (), ("order",))
+    assert isinstance(rewrite, Rewrite)
+    found = Kept()
+    found.keep(CONDITION, rewrite)
+    return found
+
+
+# llm-rewrite-object-fields-kept-only-where-the-input-holds-the-object
+@pytest.mark.parametrize("order", [None, {"code": "0"}, [{"__class__": "m::Order"}]])
+def test_an_input_where_a_field_read_s_name_is_no_object_takes_no_rewrite(order: object) -> None:
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
+    assert wanted is not None
+
+    assert kept_field_read().reused(wanted, Seed.of({"order": order}), never) is None
+
+
+# llm-rewrite-object-fields-kept-reused
+def test_a_field_read_is_used_where_its_name_is_an_object_again() -> None:
+    wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, SITE),))
+    assert wanted is not None
+    form = {"__class__": "m::Order", "code": "2"}
+    handed: list[Mapping[str, object]] = []
+
+    def run(code: types.CodeType, args: Mapping[str, object]) -> ExecutionResult:
+        handed.append(dict(args))
+        own = Branch(["==", "s", "'1e-30'"], False, Site(FILE, HELD_LINE, HELD_COL))
+        return ExecutionResult(frozenset(), (own,))
+
+    reused = kept_field_read().reused(wanted, Seed.of({"order": form}), run)
+
+    assert reused is not None
+    assert handed == [{"order": form}]

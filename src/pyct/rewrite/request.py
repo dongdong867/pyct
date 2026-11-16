@@ -49,8 +49,8 @@ def request_for(
     kinds: Kinds,
 ) -> RewriteRequest:
     """The request for a condition the solver gave up on, with this moment's earlier tries and
-    the parameters a rewrite may not read, since each is or holds an object. ``kinds`` tells the
-    input's objects apart, the method's ``self`` among them."""
+    the parameters a rewrite may not read, since each holds an object inside a list, tuple or
+    dict. ``kinds`` tells the input's objects apart, the method's ``self`` among them."""
     plan = given.plan
     earlier = [fork for fork in plan.prefix[:-1] if not fork.raising]
     # each condition at its last place on the path, so the nearest ones stay

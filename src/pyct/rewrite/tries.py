@@ -14,8 +14,8 @@ condition's place, or the input already meets it.
 A parameter that is an object on the input is read only as ``name.field``
 (``pyct.rewrite.condition``); one that holds an object inside a list, tuple
 or dict is not read at all. A try fails, and the next ask carries it with
-its reason, when the reply holds no expression, the rewrite breaks the form
-or reads a parameter that holds an object, pyct's reader reads no field it
+its reason, when the reply holds no expression, the rewrite breaks the form,
+which covers how it reads objects, pyct's reader reads no field it
 names, pyct follows no value through an operation in it, it reads no
 argument or no value an input sets, it raised on the input, the input whose
 path it extends already meets it, the solver failed or gave no input for it
