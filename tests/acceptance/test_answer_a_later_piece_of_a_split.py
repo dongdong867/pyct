@@ -28,3 +28,16 @@ def test_answers_each_ask_about_the_last_of_twenty_lines() -> None:
         if " timeout" in missed and any(at in missed for at in at_lines)
     ]
     assert timed_out == [], timed_out
+
+
+# later-split-piece-answered-counts-as-before: two calls on a string the target builds twice
+# read one string's lines, so the line no input can make "y" after "x" is answered unsat at once
+def test_answers_a_line_read_on_a_string_built_twice_at_once() -> None:
+    seed = json.dumps({"s": "HEAD\na\nb"})
+
+    result = run_pyct(f"{LENGTHS}::sliced_twice", seed, "--budget", "30", timeout=60)
+
+    assert result.returncode == 0, result.stderr
+    second = line_of('if s[1:].splitlines()[1] == "y":')
+    missed = [line for line in missed_lines(result.stderr) if f":{second}:" in line]
+    assert missed and all(" unsat" in line for line in missed), missed

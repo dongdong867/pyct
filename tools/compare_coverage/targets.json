@@ -876,6 +876,7 @@
     {"set": "v2", "target": "targets.strs.split_lengths::joined_after", "seed": {"s": "a,b", "xs": ["x"]}},
     {"set": "v2", "target": "targets.strs.split_lengths::joined_before", "seed": {"s": "a,b", "xs": ["x"]}},
     {"set": "v2", "target": "targets.strs.split_lengths::found_beside_a_loop", "seed": {"s": "a\na\na"}},
+    {"set": "v2", "target": "targets.strs.split_lengths::sliced_twice", "seed": {"s": "HEAD\na\nb"}},
     {"set": "v2", "target": "targets.strs.split_lengths::mapped_pieces", "seed": {"s": "1,2"}},
     {"set": "v2", "target": "targets.strs.split_ranges::truth", "seed": {"s": "a,b"}},
     {"set": "v2", "target": "targets.strs.split_ranges::counted_again", "seed": {"s": "a,b"}},

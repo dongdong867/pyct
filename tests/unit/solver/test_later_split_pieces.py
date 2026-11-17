@@ -98,27 +98,54 @@ def test_a_later_line_is_answered_within_a_second(
     assert found[19] == wanted and "END" not in found[:19], found
 
 
-def _two_calls(at: int) -> tuple[Branch, ...]:
-    """Line ``at`` read on one call of splitlines, then the same line flipped on another."""
-    one: Expression = ["splitlines", "s"]
-    two: Expression = ["splitlines", "s"]
+def _stripped() -> Expression:
+    return ["strip", "s"]
+
+
+def _sliced() -> Expression:
+    return ["[:]", "s", 1, None]
+
+
+def _two_calls(at: int, string: Callable[[], Expression] = lambda: "s") -> tuple[Branch, ...]:
+    """Line ``at`` read on one call of splitlines, then the same line flipped on another, each
+    call on the string ``string`` builds, one object a call."""
+    one: Expression = ["splitlines", string()]
+    two: Expression = ["splitlines", string()]
     return fork(["==", _line(one, at), "'a'"], taken=True), fork(
         ["==", _line(two, at), "'a'"], taken=False
     )
 
 
-def _line_beside_a_count() -> tuple[Branch, ...]:
+def _line_beside_a_count(string: Callable[[], Expression] = lambda: "s") -> tuple[Branch, ...]:
     """Line 2 read on one call of splitlines, beside a count of 2 on another."""
-    one: Expression = ["splitlines", "s"]
-    two: Expression = ["splitlines", "s"]
+    one: Expression = ["splitlines", string()]
+    two: Expression = ["splitlines", string()]
     return fork(["==", _line(one, 2), "'a'"], taken=True), fork(["==", ["len", two], 2], taken=True)
 
 
 @needs_cvc5
 @pytest.mark.parametrize(
     "path",
-    [_two_calls(1), _two_calls(2), _two_calls(5), _line_beside_a_count()],
-    ids=["line 1 twice", "line 2 twice", "line 5 twice", "a line beside a count"],
+    [
+        _two_calls(1),
+        _two_calls(2),
+        _two_calls(5),
+        _line_beside_a_count(),
+        _two_calls(1, _stripped),
+        _two_calls(5, _stripped),
+        _line_beside_a_count(_stripped),
+        _two_calls(1, _sliced),
+    ],
+    ids=[
+        "line 1 twice",
+        "line 2 twice",
+        "line 5 twice",
+        "a line beside a count",
+        "line 1 twice of a strip built twice",
+        "line 5 twice of a strip built twice",
+        "a line beside a count of a strip built twice",
+        "line 1 twice of a slice built twice",
+    ],
 )
 def test_two_calls_on_one_string_answer_an_unsat_at_once(path: tuple[Branch, ...]) -> None:
     # each call's lines are the string's, so the second contradicts the first

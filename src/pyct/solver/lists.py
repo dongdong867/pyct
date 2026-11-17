@@ -296,7 +296,6 @@ class ListTerms(ListTyping, PositionPins):
         # the value the input holds for a part it names as it is, a split's string say
         names = {constant: name for name, constant in constants.items()}
         self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))
-        self.splits.leaf = lambda part: self.constant(part)
 
     def _context(self) -> Context:
         return Context(

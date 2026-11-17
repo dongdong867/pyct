@@ -10,7 +10,7 @@ import pytest
 
 from pyct.core.foundation.branch import Expression
 from pyct.solver.list_terms import Lin
-from pyct.solver.split_counts import windowed, windows_past
+from pyct.solver.split_counts import Keys, shape, windowed, windows_past
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.split_paths import Splits
 from tests.unit.solver.test_render import fork
@@ -254,3 +254,31 @@ def test_every_splitlines_call_on_a_string_shares_its_lines_where_one_reads_a_li
     # another string's lines, and a split on a separator, keep the walk
     assert splits.made(["splitlines", "t"], "t", declared).glued is None
     assert splits.made(["split", "s", "','"], "s", declared).glued is None
+
+
+def test_a_string_built_twice_shares_its_lines_and_another_string_does_not() -> None:
+    read: list[Expression] = ["splitlines", ["strip", "s"]]
+    splits = Splits()
+    splits.learn((fork(["==", ["[]", read, 1], "'a'"], taken=True),))
+    declared: list[str] = []
+
+    first = splits.made(read, "e!0", declared).glued
+    again = splits.made(["splitlines", ["strip", "s"]], "e!1", declared).glued
+
+    assert first is not None and again is first
+    assert splits.made(["splitlines", ["[:]", "s", 1, None]], "e!2", declared).glued is None
+
+
+def test_a_shape_tells_apart_leaves_python_holds_equal_and_keys_a_shared_part_once() -> None:
+    keys: Keys = {}
+    shapes: dict[tuple[object, ...], int] = {}
+    parts: list[Expression] = [["[:]", "s", value, None] for value in (1, True, 1.0, 0.0, -0.0)]
+    parts.append(["[:]", "s", 1, None])
+    keyed = [shape(part, keys, shapes) for part in parts]
+    assert len(set(keyed)) == 5 and keyed[5] == keyed[0]
+    # 2 ** 200 paths through the form, and 201 parts
+    doubled: list[Expression] = ["strip", "s"]
+    for _ in range(200):
+        doubled = ["+", doubled, doubled]
+    shape(doubled, keys, shapes)
+    assert len(keys) == 5 + 1 + 201

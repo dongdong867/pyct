@@ -12,9 +12,11 @@ from pyct.solver.list_terms import Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_counts import (
     FARTHEST,
+    Keys,
     condition,
     input_value,
     pieces_read,
+    shape,
     windowed,
     windows_past,
 )
@@ -43,9 +45,8 @@ class Splits:
         # input's values give c*
         self.values: dict[str, int] = {}
         self.emitted: list[str] = []
-        # the input's value of a part it names as it is, a split's string say; a leaf's constant
+        # the value the input holds for a part it names as it is, a split's string say
         self.given: Callable[[Expression], object] = lambda part: None
-        self.leaf: Callable[[Expression], str | None] = lambda part: None
         # whether a piece read from the end, where no walk of the reversed string reads it,
         # holds its string to c* pieces, and whether a read did
         self.fixed_reads = True
@@ -63,9 +64,10 @@ class Splits:
         # each slice's length, by name: the split and the slices it is cut by, in turn
         self.starts: dict[str, tuple[SplitList, slice]] = {}
         self.cuts: dict[str, tuple[SplitList, tuple[slice, ...]]] = {}
-        # each string a fork reads a line of from the start, and its glued lines, by its term
-        self.lines_read: list[Expression] = []
-        self.glued: dict[str, Glued] = {}
+        # each string a fork reads a line of from the start, and its glued lines, by its shape
+        self.lines_read: set[object] = set()
+        self.glued: dict[object, Glued] = {}
+        self.shapes: tuple[Keys, dict[tuple[object, ...], int]] = ({}, {})
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
@@ -79,7 +81,7 @@ class Splits:
         for split, farthest in pieces_read(fork.expression for fork in prefix).values():
             self.walked[id(split)] = max(farthest, self.walked.get(id(split), -1))
             if glues(str(split[0])):
-                self.lines_read.append(split[1])
+                self.lines_read.add(shape(split[1], *self.shapes))
 
     def made(self, node: list[Expression], term: str, declared: list[str]) -> SplitList:
         """A split's list, its string's term ``term``, with how many pieces Python makes of the
@@ -109,13 +111,13 @@ class Splits:
 
     def _glued(self, node: list[Expression], term: str, declared: list[str]) -> Glued | None:
         """The string's lines glued together, one writing for every splitlines call on it,
-        where a fork reads a line of one of them from the start; None for any other split."""
-        if not glues(str(node[0])):
+        where a fork reads a line of one of them from the start; None for any other split. A
+        string the target builds twice is one string (``split_counts.shape``): its lines are
+        written on the term of the call made first, whose value the other's term holds."""
+        string = shape(node[1], *self.shapes)
+        if not glues(str(node[0])) or string not in self.lines_read:
             return None
-        string = node[1]
-        if not any(read is string or self.leaf(read) == term for read in self.lines_read):
-            return None
-        return self.glued.setdefault(term, Glued(term, declared))
+        return self.glued.setdefault(string, Glued(term, declared))
 
     def _read_count(self, node: list[Expression], held: int | None) -> int | None:
         """c*: the input's own count, or the count nearest it that every fork on the split's
