@@ -7,11 +7,13 @@ live and its call runs alone, each run of a loop in use starts plain: each
 name going in that is bound and holds a tracked int, float, str or bool is
 rebound to its plain value, and a ``for`` over a tracked str walks the plain
 str. Lists and dicts stay as they are; the run keeps a copy of each list
-or dict going in, Python's own or a tracked one, one level deep. A tracked
-one's copy is tracked while it has a form and its length is the one pyct
-last saw, and plain, its items plain too, otherwise; either copy records
-nothing and leaves the target's own as it is. The loop then runs on plain
-values and records no fork.
+or dict going in. A copy of Python's own is one level deep. A tracked one's
+copy is tracked, one level deep, while it has a form and its length is the
+one pyct last saw. Otherwise its copy is plain, each tracked list or dict
+inside it at every depth is a plain copy too, and each tracked int, float,
+str or bool in them is its plain value. Either copy records nothing and
+leaves the target's own as it is. The loop then runs on plain values and
+records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
 each list or dict as the copy the start made, each fork, fact and downgrade
@@ -273,21 +275,44 @@ def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> No
 def _as_it_went_in(value: object) -> object:
     """A list or dict going in as a copy of the list or dict itself, one level deep, taken on
     every run of a loop in use: a loop that adds, removes or replaces its items leaves the copy
-    as it went in. A tracked one's copy is tracked by the same form and records no fork; one
-    with no form, or whose length is not the one pyct last saw, gets a plain copy whose items
-    are plain, which records nothing and leaves the target's own as it is. The copy costs about
-    4 microseconds for a tracked list of 100 items and 40 for 1,000. Any other value as it is."""
+    as it went in. A tracked one's copy is tracked by the same form and records no fork. One
+    with no form, or whose length is not the one pyct last saw, gets a plain copy
+    (`_plain_copy`), which records nothing and leaves the target's own as it is. The copy costs
+    about 4 microseconds for a tracked list of 100 items and 40 for 1,000. Any other value as it
+    is."""
     kind = type(value)
     if kind is ConcolicList:
         items = cast(ConcolicList, value)
         current = items.expression is not None and items.length() == len(items.shadow)
-        return copy.copy(items) if current else [plain(item) for item in items.storage()]
+        return copy.copy(items) if current else _plain_copy(items, {})
     if kind is ConcolicDict:
         pairs = cast(ConcolicDict, value)
         current = pairs.expression is not None and pairs.size() == len(pairs.shadow)
-        if current:
-            return copy.copy(pairs)
-        return {key: plain(each) for key, each in pairs.storage().items()}
+        return copy.copy(pairs) if current else _plain_copy(pairs, {})
     if kind is list or kind is dict:
         return copy.copy(value)
     return value
+
+
+def _plain_copy(value: object, made: dict[int, object]) -> object:
+    """A tracked list or dict as a new plain one, and each tracked list or dict it holds, at
+    every depth, as one too, each made once by its id in ``made``, so a list that holds itself
+    holds its copy. Each tracked int, float, str and bool in them is its plain value, and any
+    other item is the one the tracked list or dict holds. Each is read through its storage, so
+    nothing is recorded."""
+    kind = type(value)
+    if kind is not ConcolicList and kind is not ConcolicDict:
+        return plain(value)
+    copied = made.get(id(value))
+    if copied is not None:
+        return copied
+    if kind is ConcolicList:
+        items: list[object] = []
+        made[id(value)] = items
+        items.extend(_plain_copy(item, made) for item in cast(ConcolicList, value).storage())
+        return items
+    pairs: dict[object, object] = {}
+    made[id(value)] = pairs
+    for key, each in cast(ConcolicDict, value).storage().items():
+        pairs[key] = _plain_copy(each, made)
+    return pairs

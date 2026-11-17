@@ -1,8 +1,8 @@
 """A loop in use keeps, as it starts, a copy of each list or dict going in, of the list or dict
-itself, one level deep: its formula, and the record of a run it fails on, read the list or dict as
-it went in after the loop removes its items. A tracked one reaches the formula as a tracked copy,
-or as a plain one when its length changed from C, and the plain one records what the loop as
-written records."""
+itself: its formula, and the record of a run it fails on, read the list or dict as it went in
+after the loop removes its items. A tracked one reaches the formula as a tracked copy one level
+deep, or, when its length changed from C, as a plain copy whose tracked lists and dicts inside are
+plain copies too, at every depth. The plain one records what the loop as written records."""
 
 from collections.abc import Callable, Mapping
 from typing import Any, cast
@@ -152,6 +152,61 @@ def compares_a(values: Mapping[str, object]) -> Mapping[str, object]:
     return lengthened(values)
 
 
+HEAP_OF_LISTS = """\
+import heapq
+def f(xs, s):
+    heapq.heappush(xs, [0])
+    t = 0
+    for c in s:
+        t += 1
+        len(xs)
+    return t
+"""
+STORED_LISTS = """\
+def f(d, s):
+    dict.__setitem__(d, "k", [])
+    t = 0
+    for c in s:
+        t += 1
+        len(d)
+    return t
+"""
+
+
+def compares_the_largest_first(values: Mapping[str, object]) -> Mapping[str, object]:
+    """HEAP_OF_LISTS's formula, comparing the first item of each list in the list going in."""
+    xs = values["xs"]
+    assert isinstance(xs, list)
+    assert max(each[0] for each in cast(list[list[int]], xs)) > 4
+    return lengthened(values)
+
+
+def compares_a_s_first_b(values: Mapping[str, object]) -> Mapping[str, object]:
+    """STORED_LISTS's formula, comparing ``b`` in the first dict of the list at the key ``a``."""
+    d = values["d"]
+    assert isinstance(d, dict)
+    assert cast(dict[str, list[dict[str, int]]], d)["a"][0]["b"] > 0
+    return lengthened(values)
+
+
+# a list or dict going in that C code changed, where its loop is, and a formula comparing an item
+CHANGED_FROM_C = {
+    "a list changed from C": (HEAP, {"xs": [3, 5]}, (5, 4), compares_the_largest),
+    "a dict changed from C": (STORED, {"d": {"a": 1}}, (4, 4), compares_a),
+    "a list of lists changed from C": (
+        HEAP_OF_LISTS,
+        {"xs": [[3], [5]]},
+        (5, 4),
+        compares_the_largest_first,
+    ),
+    "a dict of a list of dicts changed from C": (
+        STORED_LISTS,
+        {"d": {"a": [{"b": 1}]}},
+        (4, 4),
+        compares_a_s_first_b,
+    ),
+}
+
 type _Judged = list[Branch | Fact | Downgrade]
 
 
@@ -180,14 +235,11 @@ def written_and_in_use(
     return written, in_use, len(calls)
 
 
-CHANGED_FROM_C = pytest.mark.parametrize(
+@pytest.mark.parametrize(
     ("source", "going_in", "loop"),
-    [(HEAP, {"xs": [3, 5]}, (5, 4)), (STORED, {"d": {"a": 1}}, (4, 4))],
-    ids=["a list changed from C", "a dict changed from C"],
+    [row[:3] for row in CHANGED_FROM_C.values()],
+    ids=list(CHANGED_FROM_C),
 )
-
-
-@CHANGED_FROM_C
 def test_the_copy_of_a_list_or_dict_changed_from_c_leaves_the_target_s_own_alone(
     source: str, going_in: Mapping[str, object], loop: tuple[int, int]
 ) -> None:
@@ -201,11 +253,8 @@ def test_the_copy_of_a_list_or_dict_changed_from_c_leaves_the_target_s_own_alone
 
 @pytest.mark.parametrize(
     ("source", "going_in", "loop", "formula"),
-    [
-        (HEAP, {"xs": [3, 5]}, (5, 4), compares_the_largest),
-        (STORED, {"d": {"a": 1}}, (4, 4), compares_a),
-    ],
-    ids=["a list changed from C", "a dict changed from C"],
+    list(CHANGED_FROM_C.values()),
+    ids=list(CHANGED_FROM_C),
 )
 def test_a_formula_comparing_an_item_of_such_a_copy_records_what_the_loop_records(
     source: str,
@@ -217,3 +266,31 @@ def test_a_formula_comparing_an_item_of_such_a_copy_records_what_the_loop_record
 
     assert calls == 1
     assert in_use == written
+
+
+HOLDS_ITSELF = """\
+def f(xs, s):
+    list.append(xs, xs)
+    t = 0
+    for c in s:
+        t += 1
+        len(xs)
+    return t
+"""
+
+
+def test_the_copy_of_a_list_c_made_hold_itself_is_plain_and_holds_itself() -> None:
+    seen: list[object] = []
+
+    def keeping(values: Mapping[str, object]) -> Mapping[str, object]:
+        seen.append(values["xs"])
+        return lengthened(values)
+
+    written, in_use, calls = written_and_in_use(HOLDS_ITSELF, {"xs": [[3]]}, (4, 4), keeping)
+
+    (xs,) = seen
+    assert (calls, in_use) == (1, written)
+    assert type(xs) is list
+    inner, itself = cast(list[Any], xs)
+    assert (type(inner), type(inner[0])) == (list, int)
+    assert itself is xs
