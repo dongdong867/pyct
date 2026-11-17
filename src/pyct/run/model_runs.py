@@ -7,9 +7,15 @@ not even its ``def`` statements. Each call forks a child, as an input does
 its own, with `len`, `ord` and `chr` bound as in a target's module, calls
 the function on the arguments bound to leaves named by their keys, and
 writes each fork, fact and downgrade to a journal as an input's process
-does, then the answer as JSON to a second mapping. Whatever the call
-changes in its own process goes with the child; what it does outside the
-process, such as writing a file, only the asking tool's form check bounds.
+does, then the answer as JSON to a second mapping. The child builds each
+object the arguments name as an input of the target builds it, with the
+target's home module, hints and the build of a method's ``self``, which it
+passes by its name, so the constructor runs in the child as in each input. A raise
+of one of the call's own ending errors ends the call with that error's text,
+which the asking tool reads as why its code read nothing. Whatever the call
+changes in its own process goes with the child. What a constructor it runs
+does outside the process, such as writing a file, stays done, as it does for
+each input.
 
 A child forks only while pyct's process runs one thread, counted as
 isolation counts them; otherwise the call does not run, and the tool that
@@ -28,6 +34,8 @@ import types
 from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass, field
 
+from pyct.binding.annotations import Check
+from pyct.binding.builds import SelfBuild
 from pyct.core.entry.plain_json import plain_json
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.wrap import bound_builtins
@@ -47,18 +55,33 @@ CANNOT_FORK = "cannot fork"
 
 # the answer's mapping: its state and its length, two native u64, then its bytes
 _HEAD = struct.Struct("=QQ")
-_NONE, _ANSWER, _UNENCODED = 0, 1, 2
+_NONE, _ANSWER, _UNENCODED, _ENDED = 0, 1, 2, 3
+
+
+@dataclass(frozen=True)
+class Building:
+    """How a call builds the objects its arguments name, as each input of the target does: the
+    module a bare class name is read in, what each parameter's hint asks, and how it builds the
+    instance a method runs on. Empty, a call builds only the objects seed forms name by module."""
+
+    home: str = ""
+    checks: Mapping[str, Check] = field(default_factory=dict)
+    self_build: SelfBuild | None = None
 
 
 @dataclass(frozen=True)
 class ModelCall:
     """A call on model-written code: the module code, the function it defines, the arguments,
-    bound to leaves named by their keys, and further names its module sees, such as ``math``."""
+    bound to leaves named by their keys, further names its module sees, such as ``math``, how
+    it builds the objects the arguments name, and the errors of those names' own that end the
+    call with their text (``ModelRun.ended``) rather than as a raise."""
 
     code: types.CodeType
     function: str
     args: Mapping[str, object]
     names: Mapping[str, object] = field(default_factory=dict)
+    building: Building = field(default_factory=Building)
+    ends: tuple[type[Exception], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -72,12 +95,14 @@ class ModelRun:
     does not fit.
     ``result`` holds the forks, facts and downgrades the child recorded,
     and in ``failure`` the raise that ended the call, or how the child
-    ended: past its time limit, a crash, or an exit.
+    ended: past its time limit, a crash, or an exit. ``ended`` is the text of
+    one of the call's ending errors when one ended it.
     """
 
     answer: str | None
     result: ExecutionResult
     unencoded: str | None = None
+    ended: str | None = None
 
 
 @dataclass(frozen=True)
@@ -101,8 +126,8 @@ def run_model(call: ModelCall, until: float) -> ModelRun | CannotFork:
         served = functools.partial(_serve, call, until, answers)
         waited = watched(functools.partial(forked, buffer, served), until, reader.look)
         result = ending(reader.finish(), waited)
-        answer, unencoded = _read(answers)
-    return ModelRun(answer, result, unencoded)
+        answer, unencoded, ended = _read(answers)
+    return ModelRun(answer, result, unencoded, ended)
 
 
 def can_fork() -> bool:
@@ -113,25 +138,46 @@ def can_fork() -> bool:
 def _serve(
     call: ModelCall, until: float, answers: mmap.mmap, watch: JournalWriter
 ) -> Failure | None:
-    """In the child: call the function under the time limit, then write its answer."""
+    """In the child: call the function under the time limit, then write its answer, or the
+    text of the ending error that ended it."""
     returned: list[object] = []
-    context = ExecutionContext(fn=_calling(call, returned), file=call.code.co_filename, alone=True)
+    ended: list[str] = []
+    building = call.building
+    context = ExecutionContext(
+        fn=_calling(call, returned, ended),
+        file=call.code.co_filename,
+        alone=True,
+        checks={name: check for name, check in building.checks.items() if name in call.args},
+        self_build=building.self_build,
+        home=building.home,
+    )
     failure = execute(context, call.args, until, watch=watch).failure
-    if returned:
+    if ended:
+        _written(answers, _ENDED, ended[0].encode())
+    elif returned:
         _write(answers, returned[0])
     return failure
 
 
-def _calling(call: ModelCall, returned: list[object]) -> Callable[..., None]:
+def _calling(call: ModelCall, returned: list[object], ended: list[str]) -> Callable[..., None]:
     """The call as the child makes it: the code's module run in a namespace of its own, then
-    its function called on the bound arguments, its answer kept in ``returned``."""
+    its function called on the bound arguments, each by its name, the instance a method runs on
+    under the name its build gives it wherever the function takes it, its answer kept in
+    ``returned``, or the text of an ending error in ``ended``."""
+    self_build = call.building.self_build
 
-    def called(**bound: object) -> None:
+    def called(*first: object, **bound: object) -> None:
         namespace: dict[str, object] = {"__builtins__": bound_builtins(), **call.names}
         exec(call.code, namespace)
         function = namespace[call.function]
         assert callable(function)
-        returned.append(function(**bound))
+        if self_build is not None and first:
+            bound = {self_build.name: first[0], **bound}
+            first = first[1:]
+        try:
+            returned.append(function(*first, **bound))
+        except call.ends as error:
+            ended.append(str(error))
 
     return called
 
@@ -168,10 +214,13 @@ def _written(answers: mmap.mmap, state: int, payload: bytes) -> None:
     _HEAD.pack_into(answers, 0, state, len(payload))
 
 
-def _read(answers: mmap.mmap) -> tuple[str | None, str | None]:
-    """The answer's JSON text and why it was not kept, as the child left them."""
+def _read(answers: mmap.mmap) -> tuple[str | None, str | None, str | None]:
+    """The answer's JSON text, why it was not kept, and the text of the ending error that
+    ended the call, as the child left them."""
     state, length = _HEAD.unpack_from(answers, 0)
     text = answers[_HEAD.size : _HEAD.size + length].decode("utf-8", "replace")
     if state == _ANSWER:
-        return text, None
-    return None, (text if state == _UNENCODED else None)
+        return text, None, None
+    if state == _ENDED:
+        return None, None, text
+    return None, (text if state == _UNENCODED else None), None

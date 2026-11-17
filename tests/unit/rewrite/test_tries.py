@@ -17,12 +17,12 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, MissWhy, Stop, StopKind
 from pyct.rewrite import tries
-from pyct.rewrite.ask import GivenUp
+from pyct.rewrite.ask import GivenUp, Unread
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite, rewrite_code
 from pyct.rewrite.kept import Kept
+from pyct.rewrite.kinds import Kinds
 from pyct.rewrite.notes import (
     RewriteFailed,
-    RewriteGivenUp,
     RewriteNote,
     RewriteRead,
     RewriteSkipped,
@@ -52,7 +52,7 @@ class Fake:
 
     reply: str | Unanswered = 's == "1e-30"'
     # None runs each rewrite as recording its own fork, in its own file, on the other side
-    ran: ExecutionResult | str | None = None
+    ran: ExecutionResult | Unread | str | None = None
     record: InputRecord | Stop = field(
         default_factory=lambda: InputRecord(
             {"s": "1e-30"}, (Branch(FORK.expression, True, SITE),), frozenset()
@@ -96,7 +96,7 @@ class Fake:
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         self.handed.append(dict(args))
         if self.ran is None:
             fork = Branch(
@@ -197,50 +197,6 @@ def test_a_rewrite_that_cannot_run_by_the_next_ask_ends_the_tries_unasked() -> N
     assert fake.notes[-1] == RewriteSkipped(SITE, "cannot fork")
 
 
-def test_an_input_whose_every_argument_holds_an_object_gives_up_before_any_ask() -> None:
-    origin = Seed.of({"o": {"__class__": "m::Order"}, "l": [{"__class__": "m::Order"}]})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake()
-
-    found = Asking(fake, given, ABOUT, ("o", "l"), Kept()).tries(fake)
-
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
-
-
-def test_a_method_that_takes_only_self_gives_up_before_any_ask() -> None:
-    given = GivenUp(CONDITION, PLAN, Seed.of({"self": {"__class__": "m::Order"}}), MissWhy.TIMEOUT)
-    fake = Fake()
-
-    found = Asking(fake, given, ABOUT, (), Kept()).tries(fake)
-
-    assert found == Tried(False, False)
-    assert fake.asked == 0
-    assert fake.notes == [RewriteGivenUp(SITE, "no argument a rewrite may read")]
-
-
-def test_a_rewrite_reading_an_argument_that_holds_an_object_fails_and_is_named_in_the_ask() -> None:
-    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake(reply="o.cancel() == 1")
-
-    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
-
-    assert failed(fake) == ["a rewrite may not read o, which holds an object"] * 4
-    assert [request.unreadable for request in fake.requests] == [("o",)] * 4
-    assert fake.handed == []
-
-
-def test_a_rewrite_beside_an_argument_that_holds_an_object_runs_without_it() -> None:
-    origin = Seed.of({"s": "0", "o": {"__class__": "m::Order"}})
-    given = GivenUp(CONDITION, PLAN, origin, MissWhy.TIMEOUT)
-    fake = Fake()
-
-    assert Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake) == Tried(True, True)
-    assert fake.handed == [{"s": "0"}]
-
-
 def test_a_rewrite_is_handed_and_kept_with_exactly_the_names_it_reads() -> None:
     given = GivenUp(CONDITION, PLAN, Seed.of({"s": "0", "t": "1"}), MissWhy.TIMEOUT)
     kept = Kept()
@@ -249,27 +205,6 @@ def test_a_rewrite_is_handed_and_kept_with_exactly_the_names_it_reads() -> None:
     assert Asking(fake, given, ABOUT, ("s", "t"), kept).tries(fake) == Tried(True, True)
     assert fake.handed == [{"s": "0"}]
     assert kept.rewrites[CONDITION].reads == ("s",)
-
-
-class Loud:
-    """An object whose ``__repr__`` raises, and whose contents no request may hold."""
-
-    def __init__(self) -> None:
-        self.secret = "hunter2"
-
-    def __repr__(self) -> str:
-        raise RuntimeError("repr ran")
-
-
-def test_a_try_s_reason_writes_an_object_argument_without_running_its_code() -> None:
-    given = GivenUp(CONDITION, PLAN, Seed.of({"s": "0", "o": Loud()}), MissWhy.TIMEOUT)
-    fake = Fake(ran=ExecutionResult(frozenset(), (own(True),)))
-
-    Asking(fake, given, ABOUT, ("s", "o"), Kept()).tries(fake)
-
-    reason = 'the input {"s": "0", "o": <Loud object>} already meets it, yet took the other side'
-    assert failed(fake) == [reason] * 4
-    assert dict(fake.requests[0].args)["o"] == "<Loud object>"
 
 
 def test_a_budget_spent_before_the_solver_asks_ends_the_tries() -> None:
@@ -391,7 +326,8 @@ def test_a_reply_with_no_expression_is_quoted_cut_in_the_next_ask() -> None:
 
 
 def test_a_value_json_cannot_write_is_said_as_python_writes_it() -> None:
-    assert tries._written({"s": "0", "d": {(1, 2): 3}}) == '{"s": "0", "d": {(1, 2): 3}}'
+    written = tries._written({"s": "0", "d": {(1, 2): 3}}, Kinds())
+    assert written == '{"s": "0", "d": {(1, 2): 3}}'
 
 
 def test_a_try_with_no_time_left_for_its_ask_ends_the_tries() -> None:

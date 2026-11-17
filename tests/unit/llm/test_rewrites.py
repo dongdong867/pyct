@@ -45,8 +45,10 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
     assert 'nearest last:\ns.startswith("-"): true' in text
     assert REQUEST.code in text
     assert (
-        "each value as JSON, or as Python writes it when JSON cannot hold it, and one that holds"
-        ' an object as a placeholder in angle brackets:\ns = "-1"'
+        "each value as JSON, or as Python writes it when JSON cannot hold it, an object as"
+        " <Name object, built from ARGS>, ARGS the arguments pyct builds it from, or as"
+        " <Name object>, and a value that holds an object inside a list, tuple or dict as"
+        ' <holds an object>:\ns = "-1"'
     ) in text
     assert "The solver's answer for the condition: timeout" in text
     assert "earlier rewrites" not in text
@@ -54,13 +56,23 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
 
 
 def test_the_request_names_the_parameters_a_rewrite_may_not_read() -> None:
-    request = dataclasses.replace(REQUEST, unreadable=("o", "l"))
+    request = dataclasses.replace(REQUEST, holders=("o", "l"))
 
     assert "may not read" not in request_text(REQUEST)
     assert (
-        's = "-1"\n\nParameters your condition may not read, since each holds an object: o, l'
-        in request_text(request)
+        's = "-1"\n\nParameters your condition may not read, since each holds an object inside a'
+        " list, tuple or dict: o, l" in request_text(request)
     )
+
+
+# llm-rewrite-object-fields-request-shows-a-seed-named-object
+def test_the_form_lets_a_condition_read_self_and_an_object_s_fields_only() -> None:
+    text = request_text(REQUEST)
+
+    assert "a method's self among them" in text
+    assert "a field of a parameter that is an object, written order.code, one level deep" in text
+    assert "never the object whole and never its methods" in text
+    assert "no self" not in text
 
 
 def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:

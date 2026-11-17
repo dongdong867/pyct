@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from pyct.binding.annotations import Builds, Check
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan, plan
 from pyct.core.foundation.branch import Branch, Fact, Site
@@ -18,22 +19,26 @@ from pyct.execution.execute import ExecutionResult
 from pyct.llm.rewrites import EXACT_VALUE, request_text
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount, InputRecord, MissWhy
-from pyct.rewrite.ask import GivenUp, Visit
+from pyct.rewrite.ask import GivenUp, Unread, Visit
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.notes import RewriteSkipped, RewriteTook
 from pyct.rewrite.tries import Asking, Tried
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
+from tests.unit.rewrite.orders import Order
 from tests.unit.rewrite.test_tries import ABOUT, CONDITION, FORK, SITE, Fake, failed, own
 
 GUARD = Site("m.py", 2, 4)
 
 
-def visit_on(word: str, args: Mapping[str, object]) -> Visit:
-    """A visit whose path took ``s.startswith(word)`` before the check, from ``args``."""
+def visit_on(
+    word: str, args: Mapping[str, object], checks: Mapping[str, Check] | None = None
+) -> Visit:
+    """A visit whose path took ``s.startswith(word)`` before the check, from ``args`` under the
+    hints ``checks``."""
     guard = Branch(["startswith", "s", f"'{word}'"], True, GUARD)
     made = plan((guard, FORK))
     assert made is not None
-    return Visit(made, Seed.of(dict(args)))
+    return Visit(made, Seed.of(dict(args), checks))
 
 
 FIRST = visit_on("2", {"s": "2"})
@@ -60,7 +65,7 @@ class Visits(Fake):
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         ran = self.rans.get(args.get("s"))
         if ran is None:
             return super().run_rewrite(code, args)
@@ -184,6 +189,8 @@ def test_a_solver_failure_on_a_later_visit_tries_no_other_visit() -> None:
     [
         visit_on("1", {"t": "1"}),
         visit_on("1", {"s": {"__class__": "m::Order"}}),
+        # llm-rewrite-hint-built-object-kept-only-where-the-input-holds-no-object
+        visit_on("1", {"s": {"code": "1"}}, {"s": Builds(Order)}),
         visit_on("1", {"s": "raises"}),
         visit_on("1", {"s": "unfinished"}),
         visit_on("1", {"s": "downgraded"}),
@@ -247,7 +254,7 @@ class SpentAsItRuns(Visits):
 
     def run_rewrite(
         self, code: types.CodeType, args: Mapping[str, object]
-    ) -> ExecutionResult | str:
+    ) -> ExecutionResult | Unread | str:
         if args.get("s") != self.spent_on:
             return super().run_rewrite(code, args)
         self.spent = True

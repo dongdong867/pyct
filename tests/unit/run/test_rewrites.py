@@ -29,6 +29,7 @@ from pyct.run import loop as loop_module
 from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
 from pyct.run.loop import Solved
+from pyct.run.model_runs import Building
 from pyct.run.process import InputStartError
 from pyct.run.rewrites import Rewrites, _Around, _Child
 from pyct.run.stuck import Handled, Moment, Outcome
@@ -165,7 +166,7 @@ def test_a_child_pyct_cannot_start_is_said_as_the_reason(monkeypatch: pytest.Mon
     rewrite = rewrite_code("n > 0", ("n",), "<rewrite m:1:1>")
     assert isinstance(rewrite, Rewrite)
 
-    ran = _Child(time.monotonic() + 1).run(rewrite.code, {"n": 0})
+    ran = _Child(time.monotonic() + 1, Building()).run(rewrite.code, {"n": 0})
 
     assert ran == "cannot start a child: no memory"
 
@@ -281,7 +282,7 @@ def test_a_condition_with_no_argument_a_rewrite_may_read_is_given_up_unasked() -
     wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, site),))
     assert wanted is not None
     order = {"__class__": "m::Order"}
-    origin = Seed.of({"s": order, "n": [order]})
+    origin = Seed.of({"s": [order], "n": {"k": order}})
     tool.given_up[Condition(site, True)] = GivenUp(
         Condition(site, True), wanted, origin, MissWhy.TIMEOUT
     )
@@ -299,7 +300,8 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
         bounds=types.SimpleNamespace(until=time.monotonic() - 1, solver_timeout=5.0)
     )
     file = loaded(TEXT).file
-    around = _Around(spent, Told(Scope.of_module(file), Tell()))  # pyrefly: ignore[bad-argument-type]
+    told = Told(Scope.of_module(file), Tell())
+    around = _Around(spent, told, Building())  # pyrefly: ignore[bad-argument-type]
     site = Site(file, 2, 7)
     wanted = plan((Branch([">", "n", 0], False, site),))
     assert wanted is not None

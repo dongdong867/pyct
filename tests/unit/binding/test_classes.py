@@ -213,3 +213,15 @@ def test_a_named_class_fits_a_hint_it_is_or_derives_from(
 )
 def test_a_named_class_outside_the_hint_does_not_fit(hint: Builds | NoOneClass) -> None:
     assert not fits_hint(int, hint)
+
+
+def test_a_class_s_name_is_read_with_no_hook_of_its_metaclass_run() -> None:
+    class Loud(type):
+        def __getattribute__(cls, name: str) -> object:
+            raise AssertionError(f"the metaclass's __getattribute__ ran for {name}")
+
+    class Quiet(metaclass=Loud):
+        pass
+
+    assert classes.name_of(Quiet) == "Quiet"
+    assert classes.name_of(int) == "int"
