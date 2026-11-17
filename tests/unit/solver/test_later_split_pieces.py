@@ -10,8 +10,9 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.foundation.branch import Branch, Expression
-from pyct.solver.answer import Sat
+from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.glued import Glued
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
 from pyct.solver.split_lists import SplitList
@@ -97,12 +98,47 @@ def test_a_later_line_is_answered_within_a_second(
     assert found[19] == wanted and "END" not in found[:19], found
 
 
+def _two_calls(at: int) -> tuple[Branch, ...]:
+    """Line ``at`` read on one call of splitlines, then the same line flipped on another."""
+    one: Expression = ["splitlines", "s"]
+    two: Expression = ["splitlines", "s"]
+    return fork(["==", _line(one, at), "'a'"], taken=True), fork(
+        ["==", _line(two, at), "'a'"], taken=False
+    )
+
+
+def _line_beside_a_count() -> tuple[Branch, ...]:
+    """Line 2 read on one call of splitlines, beside a count of 2 on another."""
+    one: Expression = ["splitlines", "s"]
+    two: Expression = ["splitlines", "s"]
+    return fork(["==", _line(one, 2), "'a'"], taken=True), fork(["==", ["len", two], 2], taken=True)
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    "path",
+    [_two_calls(1), _two_calls(2), _two_calls(5), _line_beside_a_count()],
+    ids=["line 1 twice", "line 2 twice", "line 5 twice", "a line beside a count"],
+)
+def test_two_calls_on_one_string_answer_an_unsat_at_once(path: tuple[Branch, ...]) -> None:
+    # each call's lines are the string's, so the second contradicts the first
+    seed = _seeded("\n".join(["a"] * 20))
+
+    started = time.perf_counter()
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+    elapsed = time.perf_counter() - started
+
+    assert isinstance(answer, Unsat), answer
+    assert elapsed < 1.0, elapsed
+
+
 def _reads(value: str, head: str, operands: tuple[object, ...]) -> tuple[list[str], list[object]]:
     """A program that reads each piece of ``value`` and the two past them, and whether each is
     there, as the glued pieces read them, and what Python says of each. One program a value:
     cvc5 answers each in hundredths of a second, and a hundred strings in one ran past a
     minute."""
-    listed = SplitList("s", head, operands, "count!0!", walked=0)
+    declared: list[str] = []
+    listed = SplitList("s", head, operands, "count!0!", walked=0, glued=Glued("s", declared))
     pieces = getattr(value, head)(*operands)
     cases: list[tuple[str, str]] = []
     python: list[object] = []
@@ -115,7 +151,7 @@ def _reads(value: str, head: str, operands: tuple[object, ...]) -> tuple[list[st
             cases.append(("String", read.value))
             python.append(pieces[index])
     lines = ["(set-logic ALL)", "(declare-const s String)", f"(assert (= s {encode(value)}))"]
-    lines += listed.declared
+    lines += declared
     lines += [f"(define-fun v{at} () {sort} {term})" for at, (sort, term) in enumerate(cases)]
     lines[1:1] = named_classes("\n".join(lines))
     lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(cases)))}))"]
@@ -163,12 +199,13 @@ def test_a_line_past_the_string_s_lines_may_be_missing_or_there() -> None:
     assert isinstance(answer, Sat), answer
     assert str(apply(seed, answer.model).args["s"]).splitlines()[19] == "END"
     # line 19 asked missing beside the glued pieces it is read from: they rule out no string
-    listed = SplitList("s0", "splitlines", (), "count!0!", walked=19)
+    declared: list[str] = []
+    listed = SplitList("s0", "splitlines", (), "count!0!", walked=19, glued=Glued("s0", declared))
     missing = f"(not {listed.past(19)})"
     text = [
         "(set-logic ALL)",
         "(declare-const s0 String)",
-        *listed.declared,
+        *declared,
         f"(assert {missing})",
         "(declare-const v0 String)",
         "(assert (= v0 s0))",

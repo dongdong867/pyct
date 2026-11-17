@@ -2,7 +2,8 @@
 
 ``split``, ``rsplit`` and ``splitlines`` hand the target a tracked list whose form is the call
 (follow-the-length-of-a-split). No term holds the list. Each piece is the term `splits` writes
-for its position, and the list's length is how many pieces the string has, which no term of
+for its position, or the string's glued lines (`glued`) where the path reads a line of it from
+the start, and the list's length is how many pieces the string has, which no term of
 SMT-LIB counts at once. So a compare of the length with a plain int, directly or through `+`,
 `-` or `*` with one, is written as whether a piece is there: ``len(parts) > 2`` is that piece 2
 is there, which `splits` already writes for each form, exact for every string. That holds
@@ -25,10 +26,9 @@ say, is read where the input's own values put it, as origin/v2 reads it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import cached_property
 
 from pyct.core.strs.str_splits import LONGEST_WALK
-from pyct.solver.glued import Glued, glues
+from pyct.solver.glued import Glued
 from pyct.solver.list_terms import FALSE, TRUE, Lin, Read, both, negated
 from pyct.solver.splits import (
     SPLITS,
@@ -69,8 +69,12 @@ class SplitList:
     known; ``read_count`` is c*, that count moved as little as the path's compares with plain
     ints need. With ``fixed`` false, a piece from the end that no walk of the reversed string
     reads is read where the input's own count puts it, with no count held. ``walked`` is the
-    farthest piece from the start the path reads, -1 for none. ``declared`` is where the
-    pieces are declared when they are glued (see ``glued``), the program's definitions.
+    farthest piece from the start the path reads, -1 for none. ``glued`` is the string's lines
+    glued together (`glued`), where the path reads a line of any splitlines call on the string
+    from the start: then each of its pieces, and each that is there, is read from them, so one
+    writing of the string's lines holds on the path. A walk's count beside glued pieces ran to
+    the limit where glued alone answered at once. None for any other split, and for a string
+    whose lines the path reads only by a count or from the end, which keep the walk.
     """
 
     term: str
@@ -81,18 +85,7 @@ class SplitList:
     read_count: int | None = None
     fixed: bool = True
     walked: int = -1
-    declared: list[str] = field(default_factory=list, compare=False, repr=False)
-
-    @cached_property
-    def glued(self) -> Glued | None:
-        """The pieces of lines glued together (`glued`), where the path reads a piece from
-        the start: then each of its pieces, and each that is there, is read from them, so one
-        writing of the pieces holds on the path. A walk's count beside glued pieces ran to the
-        limit where glued alone answered at once. None for any other split, and for one the
-        path reads only by its count or from the end, which keeps the walk."""
-        if self.walked < 0 or not glues(self.head, self.operands):
-            return None
-        return Glued(self.term, self.head, self.operands, self.declared)
+    glued: Glued | None = field(default=None, compare=False, repr=False)
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -168,7 +161,7 @@ class SplitList:
     def piece(self, index: int) -> str:
         """Piece ``index`` from the start: glued where the pieces are, else by its walk."""
         if self.glued is not None:
-            return self.glued.piece(index)
+            return self.glued.piece(index, bool((*self.operands, False)[0]))
         return SPLITS[self.head](self.term, self.operands, index)[0]
 
     def fact(self) -> str:

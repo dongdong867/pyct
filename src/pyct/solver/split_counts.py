@@ -67,14 +67,15 @@ def condition(fork: Branch) -> tuple[list[Expression], Callable[[int], bool]] | 
     return split, lambda at: test(number, value(at)) is fork.taken
 
 
-def pieces_read(expressions: Iterable[Expression]) -> dict[int, int]:
-    """The farthest piece from the start the expressions read of each split's own list, by
-    the split's part: ``["[]", <split>, k]`` with a plain ``k`` of 0 or more, at any depth.
+def pieces_read(expressions: Iterable[Expression]) -> dict[int, tuple[list[Expression], int]]:
+    """Each split whose own list the expressions read from the start, and the farthest piece
+    they read, by the split's part: ``["[]", <split>, k]`` with a plain ``k`` of 0 or more, at
+    any depth.
 
     Each part Python shares is read once, across the expressions too, so a form a loop doubles
     on every pass, or a path whose every fork extends the last one's, costs its distinct
     parts, not the parts the lines would write out."""
-    farthest: dict[int, int] = {}
+    farthest: dict[int, tuple[list[Expression], int]] = {}
     seen: set[int] = set()
     pending = list(expressions)
     while pending:
@@ -88,7 +89,9 @@ def pieces_read(expressions: Iterable[Expression]) -> dict[int, int]:
         split, index = part[1], part[2]
         listed = isinstance(split, list) and split[:1] and split[0] in LISTED_SPLITS
         if listed and type(index) is int and index >= 0:
-            farthest[id(split)] = max(index, farthest.get(id(split), -1))
+            assert isinstance(split, list)
+            known = farthest.get(id(split), (split, -1))[1]
+            farthest[id(split)] = (split, max(index, known))
     return farthest
 
 

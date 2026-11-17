@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from pyct.core.foundation.branch import Branch, Expression
+from pyct.solver.glued import Glued, glues
 from pyct.solver.list_terms import Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_counts import (
@@ -42,8 +43,9 @@ class Splits:
         # input's values give c*
         self.values: dict[str, int] = {}
         self.emitted: list[str] = []
-        # the value the input holds for a part it names as it is, a split's string say
+        # the input's value of a part it names as it is, a split's string say; a leaf's constant
         self.given: Callable[[Expression], object] = lambda part: None
+        self.leaf: Callable[[Expression], str | None] = lambda part: None
         # whether a piece read from the end, where no walk of the reversed string reads it,
         # holds its string to c* pieces, and whether a read did
         self.fixed_reads = True
@@ -61,8 +63,9 @@ class Splits:
         # each slice's length, by name: the split and the slices it is cut by, in turn
         self.starts: dict[str, tuple[SplitList, slice]] = {}
         self.cuts: dict[str, tuple[SplitList, tuple[slice, ...]]] = {}
-        # where the glued pieces of lines and of words are declared: the program's definitions
-        self.declared: list[str] = []
+        # each string a fork reads a line of from the start, and its glued lines, by its term
+        self.lines_read: list[Expression] = []
+        self.glued: dict[str, Glued] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
@@ -73,12 +76,15 @@ class Splits:
             if found is not None:
                 split, holds = found
                 self.conditions.setdefault(id(split), []).append(holds)
-        for split, farthest in pieces_read(fork.expression for fork in prefix).items():
-            self.walked[split] = max(farthest, self.walked.get(split, -1))
+        for split, farthest in pieces_read(fork.expression for fork in prefix).values():
+            self.walked[id(split)] = max(farthest, self.walked.get(id(split), -1))
+            if glues(str(split[0])):
+                self.lines_read.append(split[1])
 
-    def made(self, node: list[Expression], term: str) -> SplitList:
+    def made(self, node: list[Expression], term: str, declared: list[str]) -> SplitList:
         """A split's list, its string's term ``term``, with how many pieces Python makes of the
-        string in the input whose path this is, where its value is known, and c*."""
+        string in the input whose path this is, where its value is known, and c*. Glued lines
+        are declared in ``declared``, the program's definitions."""
         head, string, *operands = node
         plain = tuple(plain_operand(part) for part in operands)
         text = input_value(string, self.given)
@@ -92,7 +98,7 @@ class Splits:
             read_count=self._read_count(node, held),
             fixed=self.fixed_reads,
             walked=self.walked.get(id(node), -1),
-            declared=self.declared,
+            glued=self._glued(node, term, declared),
         )
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
@@ -100,6 +106,16 @@ class Splits:
         if listed.read_count is not None:
             self.values[listed.count] = listed.read_count
         return listed
+
+    def _glued(self, node: list[Expression], term: str, declared: list[str]) -> Glued | None:
+        """The string's lines glued together, one writing for every splitlines call on it,
+        where a fork reads a line of one of them from the start; None for any other split."""
+        if not glues(str(node[0])):
+            return None
+        string = node[1]
+        if not any(read is string or self.leaf(read) == term for read in self.lines_read):
+            return None
+        return self.glued.setdefault(term, Glued(term, declared))
 
     def _read_count(self, node: list[Expression], held: int | None) -> int | None:
         """c*: the input's own count, or the count nearest it that every fork on the split's

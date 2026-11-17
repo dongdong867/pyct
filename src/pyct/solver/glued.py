@@ -15,8 +15,11 @@ empty. The facts never rule out a string, so they are asserted on every path, an
 is there, something is left at step i, is a term a fork may negate; a break at the very end
 starts no line.
 
-Names follow the definitions index when a split's first piece is read, as ``e!N`` does, under
-prefixes of their own: ``piece!N!i``, ``gap!N!i`` and ``left!N!i``.
+A string's pieces are declared once, for every splitlines call on it: the facts are the same
+whether line breaks are kept, and only a piece read with them adds its gap. Names follow the
+definitions index when the first step is reached, by a read of a piece or of whether one is
+there, a count compare's among them, as ``e!N`` does, under prefixes of their own:
+``piece!N!i``, ``gap!N!i`` and ``left!N!i``.
 """
 
 from pyct.solver.checks import one_of, outside
@@ -28,30 +31,27 @@ _LINE_GAP = f'(re.union (str.to_re "") (str.to_re {encode("\r\n")}) {one_of(LINE
 _IN_A_LINE = f"(re.* {one_of(outside(LINE_BREAKS))})"
 
 
-def glues(head: str, operands: tuple[object, ...]) -> bool:
+def glues(head: str) -> bool:
     """Whether a split's pieces are read glued: ``splitlines``."""
     return head == "splitlines"
 
 
 class Glued:
-    """One split's pieces, declared in ``declared`` step by step as far as a read reaches.
+    """One string's lines, declared in ``declared`` step by step as far as a read reaches.
 
-    ``term`` is the string's term, ``head`` and ``operands`` the split as core wrote it.
+    ``term`` is the string's term.
     """
 
-    def __init__(
-        self, term: str, head: str, operands: tuple[object, ...], declared: list[str]
-    ) -> None:
+    def __init__(self, term: str, declared: list[str]) -> None:
         self.term, self.declared = term, declared
-        self.keep = bool((*operands, False)[0])
         self.prefix = ""
         self.steps = 0
 
-    def piece(self, index: int) -> str:
-        """Line ``index``, with its break where they are kept."""
+    def piece(self, index: int, keep: bool) -> str:
+        """Line ``index``, with its break where ``keep`` says they are kept."""
         self._reach(index)
         piece = self._name("piece", index)
-        if self.keep:
+        if keep:
             return f"(str.++ {piece} {self._name('gap', index)})"
         return piece
 
