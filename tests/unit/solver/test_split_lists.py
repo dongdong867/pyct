@@ -12,6 +12,7 @@ from pyct.core.foundation.branch import Expression
 from pyct.core.strs.str_splits import LONGEST_WALK, overlaps_itself
 from pyct.solver.answer import Sat, Unknown
 from pyct.solver.cvc5 import solve
+from pyct.solver.glued import Glued
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
@@ -46,11 +47,14 @@ def _pieces(value: str, head: str, operands: tuple[object, ...]) -> list[str]:
     return getattr(value, head)(*operands)
 
 
-def _program(asks: list[tuple[str, str, str]]) -> list[str]:
-    """One program: each ask's string fixed, and the value of its term, in order."""
+def _program(asks: list[tuple[str, str, str]], declared: list[str] | None = None) -> list[str]:
+    """One program: each ask's string fixed, the pieces a split declared on the first ask's
+    string, ``s0``, and the value of each ask's term, in order."""
     lines = ["(set-logic ALL)"]
-    for at, (value, sort, term) in enumerate(asks):
+    for at, (value, _, _) in enumerate(asks):
         lines += [f"(declare-const s{at} String)", f"(assert (= s{at} {encode(value)}))"]
+    lines += declared or []
+    for at, (_, sort, term) in enumerate(asks):
         lines.append(f"(define-fun v{at} () {sort} {term.replace('|s|', f's{at}')})")
     lines[1:1] = named_classes("\n".join(lines))
     lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(asks)))}))"]
@@ -286,7 +290,7 @@ def test_cvc5_counts_a_slice_of_every_split_as_python_does() -> None:
         head, operands = _form(rng)
         window = (rng.choice(bounds), rng.choice(bounds), rng.choice([None, 1, -1]))
         splits = Splits()
-        listed = splits.made([head, "s", *(_written(operand) for operand in operands)], "|s|")
+        listed = splits.made([head, "s", *(_written(operand) for operand in operands)], "|s|", [])
         cut = splits.cut(listed, (slice(*window),)).atoms[0][0]
         length = len(_pieces(value, head, operands)[slice(*window)])
         for number in range(-1, 4):
@@ -338,18 +342,23 @@ def test_a_piece_is_held_there_before_the_facts_about_what_it_becomes() -> None:
 @needs_cvc5
 def test_cvc5_counts_the_pieces_beside_a_walk_the_path_reads_as_python_does() -> None:
     rng = random.Random(6)
-    asks: list[tuple[str, str, str]] = []
-    expected: list[object] = []
+    wrong = []
     for _ in range(300):
         value = "".join(rng.choices(LETTERS, k=rng.randint(0, 7)))
         head, operands = _form(rng)
-        listed = replace(_listed(head, operands), walked=rng.randint(0, 4))
+        # the lines a path reads from the start are glued, as `Splits.made` writes them
+        declared: list[str] = []
+        glued = Glued("s0", declared) if head == "splitlines" else None
+        listed = replace(_listed(head, operands), walked=rng.randint(0, 4), term="s0", glued=glued)
         count = len(_pieces(value, head, operands))
-        for number in range(-1, 6):
-            asks.append((value, "Bool", listed.past(number)))
-            expected.append(count > number)
+        numbers = range(-1, 6)
+        asks = [(value, "Bool", listed.past(number)) for number in numbers]
+        # one program a value: the lines a path reads are declared glued, which cvc5 answers
+        # on one fixed string at once and on hundreds slowly
+        if asked(_program(asks, declared)) != [count > number for number in numbers]:
+            wrong.append((value, head, operands))
 
-    assert asked(_program(asks)) == expected
+    assert wrong == []
 
 
 @pytest.mark.parametrize(

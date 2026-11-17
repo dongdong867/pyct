@@ -32,6 +32,23 @@ def test_a_read_from_the_end_of_many_lines_writes_a_program_of_bounded_size() ->
     assert len(text) < 2_000_000, len(text)
 
 
+def test_the_first_and_the_last_of_many_lines_write_a_program_of_bounded_size() -> None:
+    # line 0 glues the lines, so the last is read from them too, each step declared once
+    lines: Expression = ["splitlines", "s"]
+    path = (
+        fork(["==", ["[]", lines, 0], "'a'"], taken=True),
+        fork([">=", ["len", lines], 1], taken=True),
+        fork(["==", ["[]", lines, -1], "'z'"], taken=True),
+    )
+    origin = Origin(values={"s": "a\n" * 300})
+
+    text = program(path, {"s": str}, origin).text
+
+    assert "piece!" in text, text[:2000]
+    # about 210 KB; with each read declaring the steps again, 660 KB
+    assert len(text) < 500_000, len(text)
+
+
 @needs_cvc5
 def test_a_count_a_tracked_int_meets_is_the_count_the_path_s_numbers_allow() -> None:
     parts: Expression = ["split", "s", "','"]
