@@ -67,14 +67,19 @@ def condition(fork: Branch) -> tuple[list[Expression], Callable[[int], bool]] | 
     return split, lambda at: test(number, value(at)) is fork.taken
 
 
-def pieces_read(expressions: Iterable[Expression]) -> dict[int, int]:
-    """The farthest piece from the start the expressions read of each split's own list, by
-    the split's part: ``["[]", <split>, k]`` with a plain ``k`` of 0 or more, at any depth.
+# each list a shape keys, by its identity, and its key
+type Keys = dict[int, tuple[list[Expression], int]]
+
+
+def pieces_read(expressions: Iterable[Expression]) -> dict[int, tuple[list[Expression], int]]:
+    """Each split whose own list the expressions read from the start, and the farthest piece
+    they read, by the split's part: ``["[]", <split>, k]`` with a plain ``k`` of 0 or more, at
+    any depth.
 
     Each part Python shares is read once, across the expressions too, so a form a loop doubles
     on every pass, or a path whose every fork extends the last one's, costs its distinct
     parts, not the parts the lines would write out."""
-    farthest: dict[int, int] = {}
+    farthest: dict[int, tuple[list[Expression], int]] = {}
     seen: set[int] = set()
     pending = list(expressions)
     while pending:
@@ -88,8 +93,43 @@ def pieces_read(expressions: Iterable[Expression]) -> dict[int, int]:
         split, index = part[1], part[2]
         listed = isinstance(split, list) and split[:1] and split[0] in LISTED_SPLITS
         if listed and type(index) is int and index >= 0:
-            farthest[id(split)] = max(index, farthest.get(id(split), -1))
+            assert isinstance(split, list)
+            known = farthest.get(id(split), (split, -1))[1]
+            farthest[id(split)] = (split, max(index, known))
     return farthest
+
+
+def shape(part: Expression, keys: Keys, shapes: dict[tuple[object, ...], int]) -> object:
+    """A key two parts share when they are written alike, the same leaves and literals under
+    the same forms, so they hold the same value: a string the target builds twice is one string.
+    A list's expression holds the changes made to it, so an item read before and after one is
+    written apart.
+
+    ``keys`` holds each list keyed so far, by its identity, with its key; holding the list keeps
+    its identity from passing to another. ``shapes`` holds each written form's key, so a part
+    Python shares is keyed once, as ``pieces_read`` reads it."""
+    pending = [part]
+    while pending:
+        node = pending[-1]
+        if not isinstance(node, list) or id(node) in keys:
+            pending.pop()
+            continue
+        unkeyed = [each for each in node if isinstance(each, list) and id(each) not in keys]
+        if unkeyed:
+            pending += unkeyed
+            continue
+        pending.pop()
+        written = tuple(
+            keys[id(each)][1] if isinstance(each, list) else _leaf(each) for each in node
+        )
+        keys[id(node)] = (node, shapes.setdefault(written, len(shapes)))
+    return keys[id(part)][1] if isinstance(part, list) else _leaf(part)
+
+
+def _leaf(part: Expression) -> tuple[str, str]:
+    """A leaf's or a literal's key: its type and its repr, so 1, True and 1.0 stay apart, and
+    so do 0.0 and -0.0."""
+    return type(part).__name__, repr(part)
 
 
 def counting(part: Expression, depth: int = SUM_DEPTH) -> Counting | None:

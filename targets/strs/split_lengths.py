@@ -179,3 +179,12 @@ def mapped_pieces(s):
     if numbers[0] == 7:
         return "seven"
     return 0
+
+
+def sliced_twice(s):
+    first = s[1:].splitlines()[1]
+    if first == "x":
+        if s[1:].splitlines()[1] == "y":
+            return 1
+        return 2
+    return 3

@@ -10,7 +10,7 @@ import pytest
 
 from pyct.core.foundation.branch import Expression
 from pyct.solver.list_terms import Lin
-from pyct.solver.split_counts import windowed, windows_past
+from pyct.solver.split_counts import Keys, shape, windowed, windows_past
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.split_paths import Splits
 from tests.unit.solver.test_render import fork
@@ -70,7 +70,7 @@ def test_a_read_from_the_end_is_put_at_the_count_the_forks_allow_nearest_the_inp
     splits.given = lambda part: TWELVE if part == "s" else None
     splits.learn(tuple(fork(expression, taken=taken) for expression, taken in forks))
 
-    listed = splits.made(PARTS, "s")
+    listed = splits.made(PARTS, "s", [])
 
     assert listed.input_count == 12
     assert listed.read_count == count
@@ -79,8 +79,8 @@ def test_a_read_from_the_end_is_put_at_the_count_the_forks_allow_nearest_the_inp
 def test_each_cut_has_a_name_of_its_own_beside_a_split_with_no_input_count() -> None:
     splits = Splits()
     splits.given = lambda part: TWELVE if part == "s" else None
-    listed = splits.made(PARTS, "s")
-    unknown = splits.made(["split", "t", "','"], "t")
+    listed = splits.made(PARTS, "s", [])
+    unknown = splits.made(["split", "t", "','"], "t", [])
     unknown_cut = splits.cut(unknown, (slice(2, None, None),)).atoms[0][0]
     cut = splits.cut(listed, (slice(2, None, None),)).atoms[0][0]
 
@@ -94,8 +94,8 @@ def test_each_cut_has_a_name_of_its_own_beside_a_split_with_no_input_count() -> 
 def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
     splits = Splits()
     splits.given = lambda part: TWELVE if part == "s" else None
-    listed = splits.made(PARTS, "s")
-    other = splits.made(["split", "t", "','"], "t")
+    listed = splits.made(PARTS, "s", [])
+    other = splits.made(["split", "t", "','"], "t", [])
     cut = splits.cut(listed, (slice(2, None, None),)).atoms[0][0]
 
     first = splits.defined([f"(> {listed.count} n)", f"(< {cut} 3)"])
@@ -143,7 +143,7 @@ def test_a_string_a_method_makes_of_the_input_s_is_counted(
     splits = Splits()
     splits.given = lambda part: f" {TWELVE} " if part == "s" else None
 
-    listed = splits.made(["split", string, "','"], "s")
+    listed = splits.made(["split", string, "','"], "s", [])
 
     assert listed.input_count == count
 
@@ -186,7 +186,7 @@ def _apply(head: str, values: list[str]) -> bool:
 
 def test_a_slice_from_the_end_of_a_split_with_no_input_count_is_a_miss() -> None:
     splits = Splits()
-    unknown = splits.made(["split", "t", "','"], "t")
+    unknown = splits.made(["split", "t", "','"], "t", [])
 
     # where c* puts the slice's start is not known: never a guess
     with pytest.raises(UnknownCountError):
@@ -196,7 +196,7 @@ def test_a_slice_from_the_end_of_a_split_with_no_input_count_is_a_miss() -> None
 def test_a_read_through_a_slice_whose_split_lost_its_input_count_is_a_miss() -> None:
     splits = Splits()
     splits.given = lambda part: TWELVE if part == "s" else None
-    listed = splits.made(PARTS, "s")
+    listed = splits.made(PARTS, "s", [])
     start, _ = splits.sliced(Lin.of(listed.count), [-2, None])
     lost = replace(listed, read_count=None, input_count=None)
 
@@ -221,9 +221,9 @@ def test_a_split_knows_the_farthest_piece_from_the_start_its_path_reads() -> Non
         )
     )
 
-    assert splits.made(PARTS, "s").walked == 3
-    assert splits.made(other, "t").walked == 5
-    assert splits.made(["split", "u", "','"], "u").walked == -1
+    assert splits.made(PARTS, "s", []).walked == 3
+    assert splits.made(other, "t", []).walked == 5
+    assert splits.made(["split", "u", "','"], "u", []).walked == -1
 
 
 def test_a_form_shared_many_times_over_is_read_once_per_part() -> None:
@@ -236,4 +236,49 @@ def test_a_form_shared_many_times_over_is_read_once_per_part() -> None:
     # 2 ** 200 paths through the form, and 201 parts
     splits.learn((fork(["==", shared, "'x'"], taken=True),))
 
-    assert splits.made(PARTS, "s").walked == 2
+    assert splits.made(PARTS, "s", []).walked == 2
+
+
+def test_every_splitlines_call_on_a_string_shares_its_lines_where_one_reads_a_line() -> None:
+    read: list[Expression] = ["splitlines", "s"]
+    counted: list[Expression] = ["splitlines", "s"]
+    kept: list[Expression] = ["splitlines", "s", True]
+    splits = Splits()
+    splits.learn((fork(["==", ["[]", read, 1], "'a'"], taken=True),))
+    declared: list[str] = []
+
+    lines = [splits.made(node, "s", declared).glued for node in (counted, read, kept)]
+
+    # the call read only by its count, and the one that keeps its breaks, share them too
+    assert lines[0] is not None and lines[1] is lines[0] and lines[2] is lines[0]
+    # another string's lines, and a split on a separator, keep the walk
+    assert splits.made(["splitlines", "t"], "t", declared).glued is None
+    assert splits.made(["split", "s", "','"], "s", declared).glued is None
+
+
+def test_a_string_built_twice_shares_its_lines_and_another_string_does_not() -> None:
+    read: list[Expression] = ["splitlines", ["strip", "s"]]
+    splits = Splits()
+    splits.learn((fork(["==", ["[]", read, 1], "'a'"], taken=True),))
+    declared: list[str] = []
+
+    first = splits.made(read, "e!0", declared).glued
+    again = splits.made(["splitlines", ["strip", "s"]], "e!1", declared).glued
+
+    assert first is not None and again is first
+    assert splits.made(["splitlines", ["[:]", "s", 1, None]], "e!2", declared).glued is None
+
+
+def test_a_shape_tells_apart_leaves_python_holds_equal_and_keys_a_shared_part_once() -> None:
+    keys: Keys = {}
+    shapes: dict[tuple[object, ...], int] = {}
+    parts: list[Expression] = [["[:]", "s", value, None] for value in (1, True, 1.0, 0.0, -0.0)]
+    parts.append(["[:]", "s", 1, None])
+    keyed = [shape(part, keys, shapes) for part in parts]
+    assert len(set(keyed)) == 5 and keyed[5] == keyed[0]
+    # 2 ** 200 paths through the form, and 201 parts
+    doubled: list[Expression] = ["strip", "s"]
+    for _ in range(200):
+        doubled = ["+", doubled, doubled]
+    shape(doubled, keys, shapes)
+    assert len(keys) == 5 + 1 + 201
