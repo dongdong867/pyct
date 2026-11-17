@@ -18,7 +18,7 @@ from pyct.solver.render import program
 from pyct.solver.split_lists import SplitList
 from pyct.solver.splits import SPLITS, named_classes
 from pyct.solver.strings import encode
-from tests.unit.solver.agreement import asked, needs_cvc5
+from tests.unit.solver.agreement import answered, asked, needs_cvc5
 from tests.unit.solver.test_render import fork
 
 # every line break splitlines knows, "\r\n" among them
@@ -132,38 +132,51 @@ def test_two_calls_on_one_string_answer_an_unsat_at_once(path: tuple[Branch, ...
     assert elapsed < 1.0, elapsed
 
 
-def _reads(value: str, head: str, operands: tuple[object, ...]) -> tuple[list[str], list[object]]:
-    """A program that reads each piece of ``value`` and the two past them, and whether each is
-    there, as the glued pieces read them, and what Python says of each. One program a value:
-    cvc5 answers each in hundredths of a second, and a hundred strings in one ran past a
-    minute."""
+def _reads(
+    value: str, head: str, operands: tuple[object, ...]
+) -> tuple[list[str], list[str], list[object]]:
+    """Two programs on ``value``: one that reads each piece and the two past them, and whether
+    each is there, as the glued pieces read them; one that asks for a reading that differs from
+    Python's anywhere, which no reading should give. Then what Python says each read is. One
+    program a value: cvc5 answers each in hundredths of a second, and a hundred strings in one
+    ran past a minute."""
     declared: list[str] = []
     listed = SplitList("s", head, operands, "count!0!", walked=0, glued=Glued("s", declared))
     pieces = getattr(value, head)(*operands)
     cases: list[tuple[str, str]] = []
     python: list[object] = []
+    differs: list[str] = []
     for index in range(len(pieces) + 2):
-        read = listed.at(index)
+        read, there = listed.at(index), index < len(pieces)
         assert read.value is not None
         cases.append(("Bool", read.guard))
-        python.append(index < len(pieces))
-        if index < len(pieces):
+        python.append(there)
+        differs.append(f"(not {read.guard})" if there else read.guard)
+        if there:
             cases.append(("String", read.value))
             python.append(pieces[index])
-    lines = ["(set-logic ALL)", "(declare-const s String)", f"(assert (= s {encode(value)}))"]
-    lines += declared
-    lines += [f"(define-fun v{at} () {sort} {term})" for at, (sort, term) in enumerate(cases)]
-    lines[1:1] = named_classes("\n".join(lines))
-    lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(cases)))}))"]
-    return lines, python
+            differs.append(f"(not (= {read.value} {encode(pieces[index])}))")
+    facts = ["(declare-const s String)", f"(assert (= s {encode(value)}))", *declared]
+    reads = [
+        *facts,
+        *(f"(define-fun v{at} () {sort} {term})" for at, (sort, term) in enumerate(cases)),
+    ]
+    reads += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(cases)))}))"]
+    other = [*facts, f"(assert (or {' '.join(differs)}))", "(check-sat)"]
+    return _classed(reads), _classed(other), python
+
+
+def _classed(lines: list[str]) -> list[str]:
+    """A program with the logic set and the character classes its lines name defined."""
+    return ["(set-logic ALL)", *named_classes("\n".join(lines)), *lines]
 
 
 def _disagreements(values: list[str], head: str, operands: tuple[object, ...]) -> list[str]:
-    """The values whose pieces cvc5 reads otherwise than Python."""
+    """The values whose pieces cvc5 reads otherwise than Python, or may read otherwise."""
     wrong = []
     for value in values:
-        lines, python = _reads(value, head, operands)
-        if asked(lines) != python:
+        reads, other, python = _reads(value, head, operands)
+        if asked(reads) != python or answered(other).strip() != "unsat":
             wrong.append(value)
     return wrong
 
