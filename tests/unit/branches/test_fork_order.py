@@ -25,9 +25,9 @@ class Rescan:
     A fork is open while no pick aimed at it and no input took its other
     side after the same prefix. A fork whose other side no input took
     anywhere comes first, oldest path first and deepest fork first, or
-    shallowest first on a path a pick turned or timed out on; then every other open
+    shallowest first on a path a pick turned or ran long on; then every other open
     fork, oldest path first and deepest fork first; each of those at a site
-    no pick timed out at. Last come the open forks at such a site, oldest
+    no pick ran long at. Last come the open forks at such a site, oldest
     path first and deepest fork first.
     """
 
@@ -39,7 +39,7 @@ class Rescan:
         self.picked: int | None = None
         self.picked_site: Site | None = None
         self.turned: set[int] = set()
-        self.timed_out_at: set[Site] = set()
+        self.ran_long_at: set[Site] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
         self.paths.append(forks)
@@ -60,9 +60,9 @@ class Rescan:
                         return plan(forks[: at + 1], path)
         return None
 
-    def timed_out(self) -> None:
+    def ran_long(self) -> None:
         if self.picked_site is not None:
-            self.timed_out_at.add(self.picked_site)
+            self.ran_long_at.add(self.picked_site)
         self.turn()
 
     def turn(self) -> None:
@@ -72,7 +72,7 @@ class Rescan:
     def _in(self, tier: str, fork: Branch) -> bool:
         if tier == "last":
             return True
-        return fork.site not in self.timed_out_at and (tier == "open" or self._new_side(fork))
+        return fork.site not in self.ran_long_at and (tier == "open" or self._new_side(fork))
 
     def _key(self, forks: tuple[Branch, ...], at: int) -> tuple[tuple[Side, ...], Site]:
         return tuple((fork.site, fork.taken) for fork in forks[:at]), forks[at].site
@@ -140,5 +140,5 @@ def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
                 reference.turn()
         elif rng.random() < 0.5:
             # the solver ran out of time on the plan
-            tree.timed_out()
-            reference.timed_out()
+            tree.ran_long()
+            reference.ran_long()
