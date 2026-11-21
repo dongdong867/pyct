@@ -81,6 +81,7 @@ class FakeTool:
     can_ask: bool = True
     handed: list[tuple[int, tuple[WhyEntry, ...]]] = field(default_factory=list)
     order: list[Kind] | None = None
+    waits: bool = False
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         self.handed.append((moment.number, entries))
@@ -88,6 +89,12 @@ class FakeTool:
             self.order.append(self.kind)
         outcomes = tuple(self.outcomes.get(entry, Outcome.SKIPPED) for entry in entries)
         return Handled(outcomes, asked=self.asks)
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        pass
+
+    def waiting(self, moment: Moment) -> bool:
+        return self.waits
 
 
 def held(tools: Sequence[FakeTool], run: FakeRun | None = None) -> FakeRun:
@@ -251,3 +258,31 @@ def test_an_entry_s_cause_names_the_tool_that_takes_it_first(
     entry: WhyEntry, expected: Kind | None
 ) -> None:
     assert owner(entry) is expected
+
+
+def test_a_waiting_tool_with_no_entry_is_handed_the_moment() -> None:
+    summaries, rewrites = FakeTool(Kind.SUMMARIES, waits=True), FakeTool(Kind.REWRITES)
+
+    held([summaries, rewrites], FakeRun(causes_given=(HANDLER,)))
+
+    assert summaries.handed == [(1, ())]
+    assert rewrites.handed == []
+
+
+@pytest.mark.parametrize(("asks", "left"), [(True, False), (False, True)])
+def test_a_waiting_tool_s_moment_counts_toward_three_only_when_it_asks(
+    asks: bool, left: bool
+) -> None:
+    stuck = Stuck([FakeTool(Kind.SUMMARIES, asks=asks, waits=True)])
+    run = FakeRun(causes_given=(HANDLER,))
+    progress = Progress(Scope(FILE, frozenset({4})), frozenset())
+
+    for _ in range(3):
+        stuck.hold(run)
+        run.records.append(InputRecord(args={}, forks=(), covered_lines=frozenset()))
+
+    assert stuck.due(run, progress, empty=True) is left
+
+
+def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
+    assert due([FakeTool(Kind.SUMMARIES, can_ask=False, waits=True)]) is False

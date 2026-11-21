@@ -83,7 +83,7 @@ def _piece(
     statement: ast.stmt, walk: _Walk, local: frozenset[str], everywhere: list[tuple[str, ast.AST]]
 ) -> Piece:
     """One piece read off its statement, given every read of the function's own scope."""
-    met = list(walk.met(_proper(statement)))
+    met = list(walk.met(proper(statement)))
     going_in = {name for bound, name, _ in met if not bound and name in local}
     going_in -= _bound_first(statement, walk)
     assigned = _assigned(statement)
@@ -105,7 +105,7 @@ def _piece(
     )
 
 
-def _proper(statement: ast.stmt) -> list[ast.AST]:
+def proper(statement: ast.stmt) -> list[ast.AST]:
     """The parts of a statement that are its piece: a loop's header and body, without its
     ``else``, and all of an assignment."""
     if isinstance(statement, ast.For | ast.AsyncFor):

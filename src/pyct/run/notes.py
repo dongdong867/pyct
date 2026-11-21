@@ -84,7 +84,29 @@ class SummarySkipped:
     reason: str
 
 
-type SummaryNote = SummaryRead | SummaryChecked | SummaryFailed | SummarySkipped
+@dataclass(frozen=True)
+class SummaryNotUsed:
+    """The formula for the loop at ``site`` passed its checks and is not put in use, or goes out
+    of use, and why: it is kept as checked. Said right after its ``SummaryChecked``, or after the
+    input on which the run's inputs fell back to pyct's own process."""
+
+    site: Site
+    reason: str
+
+
+@dataclass(frozen=True)
+class SummaryDropped:
+    """The formula in use for the loop at ``site`` is dropped at the run's input ``number``, from
+    1, and why: the loop is followed as before from the next input on."""
+
+    site: Site
+    number: int
+    reason: str
+
+
+type SummaryNote = (
+    SummaryRead | SummaryChecked | SummaryFailed | SummarySkipped | SummaryNotUsed | SummaryDropped
+)
 
 # rewrites' own notes are declared in ``pyct.rewrite.notes``, which says them below this layer
 type Note = (

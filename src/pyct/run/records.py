@@ -53,4 +53,5 @@ def record_of(
         reach=executed.reach,
         solver_seconds=seconds,
         pieces=executed.pieces,
+        drops=executed.drops,
     )

@@ -30,8 +30,10 @@ from pyct.run.notes import (
     SeedDropped,
     SeedsKept,
     SummaryChecked,
+    SummaryDropped,
     SummaryFailed,
     SummaryNote,
+    SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
 )
@@ -179,7 +181,14 @@ def note_line(note: Note) -> str | None:
             return "llm: token limit reached; no more asks"
         case SeedsKept():
             return None
-        case SummaryRead() | SummaryChecked() | SummaryFailed() | SummarySkipped():
+        case (
+            SummaryRead()
+            | SummaryChecked()
+            | SummaryFailed()
+            | SummarySkipped()
+            | SummaryNotUsed()
+            | SummaryDropped()
+        ):
             return summary_line(note)
         case _:
             return rewrite_line(note)
@@ -202,6 +211,10 @@ def summary_line(note: SummaryNote) -> str:
             return _escaped(f"{at}, try {attempt}: {reason}")
         case SummarySkipped(_, reason):
             return _escaped(f"{at} skipped: {reason}")
+        case SummaryNotUsed(_, reason):
+            return _escaped(f"{at} not used: {reason}")
+        case SummaryDropped(_, number, reason):
+            return _escaped(f"{at} dropped at input {number}: {reason}")
 
 
 def rewrite_line(note: RewriteNote) -> str:

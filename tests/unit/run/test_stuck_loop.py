@@ -47,6 +47,13 @@ class Tool:
     pauses: float = 0.0
     moments: list[tuple[int, int, tuple[WhyEntry, ...]]] = field(default_factory=list)
     ran: list[object] = field(default_factory=list)
+    told_of: list[tuple[int, InputRecord]] = field(default_factory=list)
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        self.told_of.append((number, record))
+
+    def waiting(self, moment: Moment) -> bool:
+        return False
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         self.moments.append((moment.number, len(moment.run.records), entries))
@@ -209,3 +216,21 @@ def test_an_input_run_between_passes_that_left_its_plan_turns_no_path(
     # the input took the seed's side, so it left the plan and covered no new line
     assert isinstance(record, InputRecord) and record.mismatch_at == 0
     assert turned == []
+
+
+def test_each_tool_hears_each_kept_input_with_its_number() -> None:
+    summaries = Tool(Kind.SUMMARIES, runs={"s": "zz"})
+    guesses = Tool(Kind.GUESSES)
+
+    looped = go(
+        loop_of(COUNTS, [summaries, guesses], Limits(plateau=Plateau(inputs=10)), seeds=2),
+        {"s": ""},
+        {"s": "a"},
+    )
+
+    numbered = list(enumerate(looped.records, start=1))
+    assert summaries.told_of == numbered
+    assert guesses.told_of == numbered
+    # the seeds, the passes' inputs and the moments' inputs alike
+    sources = {record.source for record in looped.records}
+    assert sources == {Source.SEED, Source.SOLVER, Source.LLM_SEED}

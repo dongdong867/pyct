@@ -110,7 +110,9 @@ class Moment:
 class StuckTool(Protocol):
     """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry;
     ``can_ask`` is false once the tool will ask no more this run, such as when the token limit is
-    reached."""
+    reached. ``heard`` takes each input the run keeps, with its number in the run, from 1.
+    ``waiting`` says whether the tool asks at the moment about something no entry it is handed
+    names: it is then handed the moment, with no entry when none is its own."""
 
     @property
     def kind(self) -> Kind: ...
@@ -119,6 +121,10 @@ class StuckTool(Protocol):
     def can_ask(self) -> bool: ...
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled: ...
+
+    def heard(self, record: InputRecord, number: int) -> None: ...
+
+    def waiting(self, moment: Moment) -> bool: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -169,6 +175,12 @@ class Stuck:
         since = run.bounds.seeds if self._ended is None else self._ended
         return inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
 
+    def heard(self, record: InputRecord, number: int) -> None:
+        """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
+        pass's, or one run between two passes."""
+        for tool in self._tools.values():
+            tool.heard(record, number)
+
     def hold(self, run: Running) -> None:
         """Hold one moment: work out the causes, within ``CAUSE_SECONDS`` of now and the run's
         deadline, then hand each tool its entries in turn, until a tool meets the run's stop.
@@ -182,7 +194,7 @@ class Stuck:
             if tool is None or run.stopped is not None:
                 continue
             entries = tuple(each for each in moment.causes if self._takes(kind, each, outcomes))
-            if entries:
+            if entries or tool.waiting(moment):
                 asked = self._handed(tool, entries, moment, outcomes) or asked
         self._asked += asked
         self._ended = len(run.records)

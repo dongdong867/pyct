@@ -28,7 +28,7 @@ from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.plain_json import plain_json
 from pyct.core.foundation.branch import PieceRun
 from pyct.execution.blame import one_line
-from pyct.intercept.model_code import Refused, compile_model_code
+from pyct.intercept.model_code import Refused
 from pyct.results.failure import FailureKind
 from pyct.run.model_runs import CANNOT_FORK, CannotFork, ModelCall, ModelRun, run_model
 from pyct.run.process import InputStartError
@@ -40,7 +40,7 @@ from pyct.run.summary_form import (
     RUNS,
     SUMMARY,
     TRACKED,
-    FormCheck,
+    compiled_formula,
     formula_body,
 )
 
@@ -101,7 +101,7 @@ def formula_code(
 ) -> Formula | Refused:
     """The formula the reply's code writes, compiled with pyct's two functions after it, each
     code object named ``file``; or why it is refused."""
-    code = compile_model_code(text, file, FormCheck(tuple(parameters), tuple(changed)))
+    code = compiled_formula(text, parameters, changed, file)
     if isinstance(code, Refused):
         return code
     function = ast.parse(text).body[0]

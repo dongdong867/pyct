@@ -18,28 +18,26 @@ from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.results.record import Source as RecordSource
 from pyct.run import model_runs, summaries
 from pyct.run.bounds import Bounds
+from pyct.run.loops_in_use import IN_PYCT_S_PROCESS
 from pyct.run.notes import (
     AskSkipped,
     Note,
     SummaryChecked,
     SummaryFailed,
+    SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.summaries import (
-    AskedLoop,
     EarlierFormula,
     LoopState,
-    ShownRun,
     Summaries,
     SummaryReply,
     SummaryRequest,
-    asked_loop,
-    piece_at,
-    shown_runs,
 )
 from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, piece_at, shown_runs
 from pyct.run.target import load_target
 from pyct.run.tell import Ask, Tell, Told
 from tests.acceptance.harness import REPO_ROOT
@@ -110,12 +108,20 @@ def one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(model_runs, "running", lambda: 1)
 
 
+def in_pyct_s_process() -> bool:
+    """Where a tool built here is told the run's inputs run: in pyct's own process, so a formula
+    that passes is kept as checked and not used."""
+    return False
+
+
 def taken(
     fake: Fake, entries: Sequence[WhyEntry], records: Sequence[InputRecord]
 ) -> tuple[Handled, list[Note], Run]:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake, load_target("targets.why.stuck::counts"), told)
+    tool = Summaries(
+        fake, load_target("targets.why.stuck::counts"), told, isolated=in_pyct_s_process
+    )
     run = Run(records)
     return tool.take(tuple(entries), Moment(1, tuple(entries), run)), notes, run
 
@@ -173,7 +179,7 @@ def test_a_loop_with_no_complete_run_is_skipped_and_said() -> None:
 def test_a_loop_skipped_at_each_moment_is_said_once() -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake := Fake(), load_target(COUNTS), told)
+    tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=in_pyct_s_process)
     run = Run([record(counted("a", changed=False))])
 
     handled = [tool.take((entry(LOOPED),), Moment(at, (), run)) for at in (1, 2, 3)]
@@ -188,7 +194,7 @@ def test_a_loop_skipped_for_another_reason_says_each_reason_once(
 ) -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake := Fake(), load_target(COUNTS), told)
+    tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=in_pyct_s_process)
     unfinished, finished = Run([record(counted("a", changed=False))]), Run([record(counted("a"))])
     monkeypatch.setattr(model_runs, "running", lambda: 2)
 
@@ -212,7 +218,7 @@ def test_a_loop_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
     failed = Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(2))
-    tool = Summaries(Fake(failed), load_target(COUNTS), told)
+    tool = Summaries(Fake(failed), load_target(COUNTS), told, isolated=in_pyct_s_process)
 
     tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
 
@@ -221,7 +227,7 @@ def test_a_loop_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
 
 def test_a_loop_whose_reply_held_no_code_block_is_listed_as_failed() -> None:
     told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(), load_target(COUNTS), told)
+    tool = Summaries(Fake(), load_target(COUNTS), told, isolated=in_pyct_s_process)
 
     tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
 
@@ -233,7 +239,9 @@ WRONG = 'def summary(s, t):\n    return {"t": len(s)}\n'
 
 def test_a_loop_whose_try_failed_and_whose_next_ask_got_no_answer_is_listed_unanswered() -> None:
     told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(SummaryReply(WRONG, AskCost(1))), load_target(COUNTS), told)
+    tool = Summaries(
+        Fake(SummaryReply(WRONG, AskCost(1))), load_target(COUNTS), told, isolated=in_pyct_s_process
+    )
     run = Run([record(counted("ab"))])
 
     tool.take((entry(LOOPED),), Moment(1, (), run))
@@ -255,7 +263,7 @@ def test_a_listed_loop_s_ask_the_token_limit_refused_leaves_its_state(
     first: SummaryReply | Unanswered, formula: str | None, state: str
 ) -> None:
     told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(first), load_target(COUNTS), told)
+    tool = Summaries(Fake(first), load_target(COUNTS), told, isolated=in_pyct_s_process)
     run = Run([record(counted("ab"))])
 
     tool.take((entry(LOOPED),), Moment(1, (), run))
@@ -282,7 +290,7 @@ def test_the_token_limit_ends_the_asks_unsaid() -> None:
 def test_a_loop_whose_only_ask_met_the_token_limit_is_not_listed() -> None:
     told = Told(scope=Scope.of_module(FILE), tell=Tell())
     limit = Unanswered(Why.LIMIT, "token limit reached", AskCost(1))
-    tool = Summaries(Fake(limit), load_target(COUNTS), told)
+    tool = Summaries(Fake(limit), load_target(COUNTS), told, isolated=in_pyct_s_process)
 
     tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
 
@@ -292,7 +300,9 @@ def test_a_loop_whose_only_ask_met_the_token_limit_is_not_listed() -> None:
 def test_no_ask_is_made_once_the_run_has_stopped() -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake := Fake(), load_target("targets.why.stuck::counts"), told)
+    tool = Summaries(
+        fake := Fake(), load_target("targets.why.stuck::counts"), told, isolated=in_pyct_s_process
+    )
     run = Run([record(counted("a"))], stopped=Stop(StopKind.BUDGET))
 
     handled = tool.take((entry(LOOPED),), Moment(1, (), run))
@@ -356,7 +366,9 @@ def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
     fake = Fake(SummaryReply(FORMULA, AskCost(1)))
-    tool = Summaries(fake, load_target("targets.why.stuck::counts"), told)
+    tool = Summaries(
+        fake, load_target("targets.why.stuck::counts"), told, isolated=in_pyct_s_process
+    )
     run = Run([record(counted("ab")), record(counted("zz"))])
 
     handled = tool.take((entry(LOOPED),), Moment(1, (), run))
@@ -365,6 +377,7 @@ def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
     assert notes == [
         SummaryRead(LOOP, 't = t + s.count("z")'),
         SummaryChecked(LOOP, 2),
+        SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS),
     ]
     checked = SummaryState.CHECKED
     assert tool.loops[LOOP] == LoopState(
@@ -377,7 +390,9 @@ def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
     wrong = 'def summary(s, t):\n    return {"t": len(s)}\n'
-    tool = Summaries(Fake(SummaryReply(wrong, AskCost(3))), load_target(COUNTS), told)
+    tool = Summaries(
+        Fake(SummaryReply(wrong, AskCost(3))), load_target(COUNTS), told, isolated=in_pyct_s_process
+    )
 
     handled = tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
 
@@ -394,7 +409,12 @@ def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
 ) -> None:
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(Fake(SummaryReply(FORMULA, AskCost(1))), load_target(COUNTS), told)
+    tool = Summaries(
+        Fake(SummaryReply(FORMULA, AskCost(1))),
+        load_target(COUNTS),
+        told,
+        isolated=in_pyct_s_process,
+    )
 
     class Thread(Fake):
         def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
@@ -413,7 +433,9 @@ def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try(
     notes: list[Note] = []
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
     slow = 'def summary(s, t):\n    return {"t": math.factorial(10 ** 7)}\n'
-    tool = Summaries(Fake(SummaryReply(slow, AskCost(1))), load_target(COUNTS), told)
+    tool = Summaries(
+        Fake(SummaryReply(slow, AskCost(1))), load_target(COUNTS), told, isolated=in_pyct_s_process
+    )
     run = Run([record(counted("ab"))], bounds=Bounds(until=time.monotonic() + 0.3))
 
     handled = tool.take((entry(LOOPED),), Moment(1, (), run))
@@ -439,9 +461,8 @@ def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try(
 def test_summaries_can_ask_until_an_answer_leaves_no_token(
     answer: SummaryReply | Unanswered, can_ask: bool
 ) -> None:
-    tool = Summaries(
-        Fake(answer), load_target(COUNTS), Told(scope=Scope.of_module(FILE), tell=Tell())
-    )
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    tool = Summaries(Fake(answer), load_target(COUNTS), told, isolated=in_pyct_s_process)
     assert tool.can_ask is True
 
     tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))

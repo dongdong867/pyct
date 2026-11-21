@@ -19,7 +19,10 @@ it in the child and call back into pyct's plain Python through ``RUNS`` and
 from __future__ import annotations
 
 import ast
+import types
+from collections.abc import Sequence
 
+from pyct.intercept.model_code import Refused, compile_model_code
 from pyct.rewrite.condition import CALLS, LITERALS, ExpressionRules, refusal
 
 # the functions a formula may call by name: a rewrite's, and those that gather a list's values
@@ -142,6 +145,16 @@ class FormCheck:
             return f"{SUMMARY} must end by returning a dict with one entry for each of {listed}"
         assert isinstance(value, ast.Dict)
         return _unread(value)
+
+
+def compiled_formula(
+    text: str, parameters: Sequence[str], changed: Sequence[str], file: str
+) -> types.CodeType | Refused:
+    """The module code of the reply's text in the form, pyct's two functions after the formula,
+    substituted and compiled with each code object named ``file``; or why it is refused. pyct's
+    process compiles a reply through it, and a fresh interpreter each formula in use it is
+    handed."""
+    return compile_model_code(text, file, FormCheck(tuple(parameters), tuple(changed)))
 
 
 def formula_body(function: ast.FunctionDef) -> list[ast.stmt]:

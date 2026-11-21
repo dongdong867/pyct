@@ -9,8 +9,10 @@ library, so it is the way only when forking is unsafe.
 
 Only the input crosses on the way in: pyct's import path, the target's name
 and file, the arguments, the deadline and the interception pyct's own
-process holds open, pickled into a file the new interpreter reads. The new
-interpreter opens the same interception before it imports the target.
+process holds open, then the text of each loop's formula in use as the
+request is made (`pyct.run.formula_runner`), pickled into a file the new
+interpreter reads. The new interpreter compiles and puts in use those
+formulas, then opens the same interception before it imports the target.
 Every fresh interpreter of one run gets the same hash seed, so a target
 whose path follows the order of a set of strings takes the same path for
 the same input in each of them. The facts
@@ -40,6 +42,7 @@ from pyct.execution.execute import ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
+from pyct.run.formula_runner import handed_formulas, install
 from pyct.run.journal import CAPACITY, PIECE_ROOM, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
@@ -102,6 +105,7 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
     with os.fdopen(request, "rb") as handed:
         sys.path[:] = pickle.load(handed)
         spec, file, args, until, interception = pickle.load(handed)
+        install(pickle.load(handed))
     with _intercepting(interception):
         target = dataclasses.replace(load_target(spec, keep_import_lines=False), file=file)
         return execute(execution_context(target, alone=True), args, until, watch=watch).failure
@@ -131,7 +135,8 @@ def _journal() -> Generator[tuple[int, mmap.mmap]]:
 def _request(
     spec: str, file: str, args: Mapping[str, object], until: float | None
 ) -> Generator[int]:
-    """The input, pickled into an unlinked file: the import path first, then the call.
+    """The input, pickled into an unlinked file: the import path first, then the call, then
+    the formulas in use.
 
     The path comes first, so the arguments unpickle where their own modules import.
     pickle recurses once per level of the arguments, so a seed nested past
@@ -142,6 +147,7 @@ def _request(
             handed = stack.enter_context(tempfile.TemporaryFile())
             pickle.dump(list(sys.path), handed)
             pickle.dump((spec, file, dict(args), until, current()), handed)
+            pickle.dump(handed_formulas(), handed)
             handed.flush()
         except (OSError, pickle.PicklingError, TypeError, AttributeError, RecursionError) as error:
             raise InputStartError(

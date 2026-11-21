@@ -3,7 +3,7 @@ lines and branches, and the way each branch went."""
 
 from collections.abc import Callable, Mapping
 
-from pyct.core.foundation.branch import Branch, Fact, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, PieceRun, Site
 from pyct.execution.execute import ExecutionContext, execute
 
 SOURCE = """\
@@ -66,6 +66,9 @@ class Heard:
 
     def piece(self, run: PieceRun) -> None:
         self.rest.append(run)
+
+    def drop(self, drop: FormulaDrop) -> None:
+        self.rest.append(drop)
 
 
 def test_execute_keeps_the_functions_the_call_entered_and_the_ways_it_went() -> None:
