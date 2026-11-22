@@ -9,10 +9,11 @@ rebound to its plain value, and a ``for`` over a tracked str walks the plain
 str. Lists and dicts stay as they are; the run keeps a copy of each list
 or dict going in. A copy of Python's own is one level deep. A tracked one's
 copy is tracked, one level deep, while it has a form and its length is the
-one pyct last saw. Otherwise its copy is plain, each tracked list or dict
-inside it at every depth is a plain copy too, and each tracked int, float,
-str or bool in them is its plain value. Either copy records nothing and
-leaves the target's own as it is. The loop then runs on plain values and
+one pyct last saw. Otherwise its copy is plain: each list, tuple and dict
+inside it, at every depth, that is tracked or holds a tracked value is a
+plain copy too, and each tracked int, float, str or bool in them, a dict's
+keys included, is its plain value. Either copy records nothing and leaves
+the target's own as it is. The loop then runs on plain values and
 records no fork.
 
 At the run's end the formula is called on the tracked values that went in,
@@ -277,42 +278,127 @@ def _as_it_went_in(value: object) -> object:
     every run of a loop in use: a loop that adds, removes or replaces its items leaves the copy
     as it went in. A tracked one's copy is tracked by the same form and records no fork. One
     with no form, or whose length is not the one pyct last saw, gets a plain copy
-    (`_plain_copy`), which records nothing and leaves the target's own as it is. The copy costs
-    about 4 microseconds for a tracked list of 100 items and 40 for 1,000. Any other value as it
-    is."""
+    (`_plain_copy`), which records nothing and leaves the target's own as it is. A tracked
+    copy costs about 4 microseconds for a list of 100 items and 30 for 1,000, a plain copy about
+    7 and 65, and 600 for a list of 1,000 one-item lists. Any other value as it is."""
     kind = type(value)
     if kind is ConcolicList:
         items = cast(ConcolicList, value)
         current = items.expression is not None and items.length() == len(items.shadow)
-        return copy.copy(items) if current else _plain_copy(items, {})
+        return copy.copy(items) if current else _plain_copy(items)
     if kind is ConcolicDict:
         pairs = cast(ConcolicDict, value)
         current = pairs.expression is not None and pairs.size() == len(pairs.shadow)
-        return copy.copy(pairs) if current else _plain_copy(pairs, {})
+        return copy.copy(pairs) if current else _plain_copy(pairs)
     if kind is list or kind is dict:
         return copy.copy(value)
     return value
 
 
-def _plain_copy(value: object, made: dict[int, object]) -> object:
-    """A tracked list or dict as a new plain one, and each tracked list or dict it holds, at
-    every depth, as one too, each made once by its id in ``made``, so a list that holds itself
-    holds its copy. Each tracked int, float, str and bool in them is its plain value, and any
-    other item is the one the tracked list or dict holds. Each is read through its storage, so
-    nothing is recorded."""
+# the containers a plain copy walks, and the tracked ones among them
+_HOLDERS = frozenset({ConcolicList, ConcolicDict, list, tuple, dict})
+_TRACKED = frozenset({ConcolicList, ConcolicDict})
+
+# what a plain copy reached, by id: the container, the items it holds, a dict's keys before
+# their values, the containers among them, and whether it is tracked or holds a tracked int,
+# float, str or bool
+type _Reached = dict[int, tuple[object, list[object], list[object], bool]]
+
+
+def _plain_copy(value: object) -> object:
+    """A tracked list or dict as a new plain one. Each list, tuple and dict it holds, at every
+    depth, that is tracked or holds a tracked value at some depth is a new plain one too, made
+    once, so a list that holds itself holds its copy; each other one is the one it holds. Each
+    tracked int, float, str and bool in them, a dict's keys included, is its plain value. A
+    tracked one is read through its storage, so nothing is recorded, and the walk keeps its own
+    stack, so no depth reaches Python's recursion limit."""
+    reached = _reached(value)
+    copies = _copies(reached)
+    filled = [key for key in copies if type(reached[key][0]) is not tuple]
+    made: dict[int, object] = {key: _empty(reached[key][0]) for key in filled}
+    for key in _tuples_in_order(reached, copies):
+        made[key] = tuple(_mapped(reached[key][1], made))
+    for key in filled:
+        items = _mapped(reached[key][1], made)
+        copied = made[key]
+        if type(copied) is list:
+            list.extend(copied, items)
+        else:
+            dict.update(cast(dict, copied), zip(items[::2], items[1::2], strict=True))
+    return made[id(value)]
+
+
+def _empty(value: object) -> object:
+    """A new empty plain dict for a dict, else a new empty plain list."""
+    return {} if type(value) is dict or type(value) is ConcolicDict else []
+
+
+def _reached(value: object) -> _Reached:
+    """Each list, tuple and dict the value is or holds, at every depth, by id."""
+    reached: _Reached = {}
+    stack = [value]
+    while stack:
+        each = stack.pop()
+        if id(each) in reached:
+            continue
+        items = _held(each)
+        inner = [item for item in items if type(item) in _HOLDERS]
+        tracked = type(each) in _TRACKED or any(type(item) in _SCALARS for item in items)
+        reached[id(each)] = (each, items, inner, tracked)
+        stack.extend(inner)
+    return reached
+
+
+def _held(value: object) -> list[object]:
+    """The items a list, tuple or dict holds, a dict's keys before their values, a tracked one's
+    read through its storage."""
     kind = type(value)
-    if kind is not ConcolicList and kind is not ConcolicDict:
-        return plain(value)
-    copied = made.get(id(value))
-    if copied is not None:
-        return copied
     if kind is ConcolicList:
-        items: list[object] = []
-        made[id(value)] = items
-        items.extend(_plain_copy(item, made) for item in cast(ConcolicList, value).storage())
-        return items
-    pairs: dict[object, object] = {}
-    made[id(value)] = pairs
-    for key, each in cast(ConcolicDict, value).storage().items():
-        pairs[key] = _plain_copy(each, made)
-    return pairs
+        return cast(ConcolicList, value).storage()
+    if kind is ConcolicDict:
+        return [each for pair in cast(ConcolicDict, value).storage().items() for each in pair]
+    if kind is dict:
+        return [each for pair in dict.items(cast(dict, value)) for each in pair]
+    return list(cast(list | tuple, value))
+
+
+def _copies(reached: _Reached) -> set[int]:
+    """The id of each container reached that is tracked or holds a tracked value at some depth."""
+    # the containers that hold each container, among those that are neither tracked nor hold a
+    # tracked int, float, str or bool
+    above: dict[int, list[int]] = {}
+    for key, (_, _, inner, tracked) in reached.items():
+        if not tracked:
+            for each in inner:
+                above.setdefault(id(each), []).append(key)
+    copies = {key for key, (_, _, _, tracked) in reached.items() if tracked}
+    marked = [key for key in copies if key in above]
+    while marked:
+        for each in above.get(marked.pop(), ()):
+            if each not in copies:
+                copies.add(each)
+                marked.append(each)
+    return copies
+
+
+def _tuples_in_order(reached: _Reached, copies: set[int]) -> list[int]:
+    """The id of each tuple to copy, each after the tuples it holds: a tuple Python code makes
+    never holds itself but through a list or dict."""
+    order: list[int] = []
+    entered: set[int] = set()
+    stack = [(key, False) for key in copies if type(reached[key][0]) is tuple]
+    while stack:
+        key, done = stack.pop()
+        if done:
+            order.append(key)
+        elif key not in entered:
+            entered.add(key)
+            stack.append((key, True))
+            held = (id(each) for each in reached[key][2] if type(each) is tuple)
+            stack.extend((each, False) for each in held if each in copies)
+    return order
+
+
+def _mapped(items: list[object], made: Mapping[int, object]) -> list[object]:
+    """The items of a plain copy: each container's copy when it has one, else the item plain."""
+    return [made.get(id(each), each) if type(each) in _HOLDERS else plain(each) for each in items]
