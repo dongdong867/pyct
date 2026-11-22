@@ -1,7 +1,8 @@
-"""The plain copy a loop in use takes of a tracked list C code changed rebuilds each subclass of a
-list, tuple, dict, set or frozenset it holds as its own type, with its items plain: a namedtuple
-keeps its fields, an OrderedDict its order and a defaultdict its default. A subclass its own copy
-cannot rebuild is a plain copy of its base type."""
+"""The plain copy a loop in use takes of a tracked list C code changed makes each list, tuple,
+dict, set and frozenset it holds plain: a subclass of tuple or frozenset, such as a namedtuple, as
+its own type, made by its base type, and Python's own OrderedDict, defaultdict and Counter as their
+own types, keeping their order and their default. Another subclass, and a tuple its base type cannot
+make, is a plain copy of its base type."""
 
 import collections
 import time
@@ -48,9 +49,13 @@ REBUILT: dict[str, tuple[str, Callable[[Any], bool]]] = {
         "frozenset([p])",
         lambda held: type(held) is frozenset and [type(each) for each in held] == [int],
     ),
-    "a list subclass keeps its type and attributes": (
+    "a list subclass the target wrote is a plain list": (
         "(lambda xs: setattr(xs, 'tag', 'x') or xs)(type('L', (list,), {})([p]))",
-        lambda held: (type(held).__name__, held.tag, type(held[0])) == ("L", "x", int),
+        lambda held: type(held) is list and [type(each) for each in held] == [int],
+    ),
+    "a set subclass the target wrote is a plain set": (
+        "type('S', (set,), {})([p])",
+        lambda held: type(held) is set and [type(each) for each in held] == [int],
     ),
     "a tuple subclass keeps its type and attributes": (
         "(lambda t: setattr(t, 'tag', 'x') or t)(type('T', (tuple,), {})((p,)))",
@@ -60,16 +65,15 @@ REBUILT: dict[str, tuple[str, Callable[[Any], bool]]] = {
         "__import__('time').struct_time((p,) * 9)",
         lambda held: type(held) is tuple and type(held[0]) is int,
     ),
-    "an OrderedDict subclass its copy cannot make is a plain dict": (
-        "(lambda d: d.update(a=p) or d)("
-        "type('O', (collections.OrderedDict,), {'__init__': lambda self, x: None})(0))",
+    "an OrderedDict subclass the target wrote is a plain dict": (
+        "type('O', (collections.OrderedDict,), {})(a=p)",
         lambda held: type(held) is dict and held == {"a": 7} and type(held["a"]) is int,
     ),
 }
 
 
 @pytest.mark.parametrize(("held", "rebuilt"), list(REBUILT.values()), ids=list(REBUILT))
-def test_the_plain_copy_rebuilds_a_held_subclass_as_its_own_type(
+def test_the_plain_copy_makes_a_held_subclass_its_own_type_or_its_base_type(
     held: str, rebuilt: Callable[[Any], bool]
 ) -> None:
     seen: list[object] = []
