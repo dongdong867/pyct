@@ -9,12 +9,16 @@ rebound to its plain value, and a ``for`` over a tracked str walks the plain
 str. Lists and dicts stay as they are; the run keeps a copy of each list
 or dict going in. A copy of Python's own is one level deep. A tracked one's
 copy is tracked, one level deep, while it has a form and its length is the
-one pyct last saw. Otherwise its copy is plain: each list, tuple and dict
-inside it, at every depth, that is tracked or holds a tracked value is a
-plain copy too, and each tracked int, float, str or bool in them, a dict's
-keys included, is its plain value. Either copy records nothing and leaves
-the target's own as it is. The loop then runs on plain values and
-records no fork.
+one pyct last saw. Otherwise its copy is plain: each list, tuple, dict,
+set and frozenset inside it, at every depth, a subclass of one included,
+that is tracked or holds a tracked value is a plain copy too, of its own
+type where it can be made, and each tracked int, float, str or bool in
+them, a dict's keys included, is its plain value; another object, such as
+a dataclass instance, stays as it is. Either copy records nothing and
+leaves the target's own as it is. The names the start rebinds hold plain
+values, so the loop records no fork on them; a list or dict going in is
+the target's own, and the loop's reads of what it holds record as the
+loop as written records them.
 
 At the run's end the formula is called on the tracked values that went in,
 each list or dict as the copy the start made, each fork, fact and downgrade
@@ -47,13 +51,14 @@ import dataclasses
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
+from pyct.core.dicts.dict_state import DictState
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.frames import rebind
 from pyct.core.entry.waiting import Key, Waiting, json_text, popped
 from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site, placed_at
-from pyct.core.lists.list_state import plain
+from pyct.core.lists.list_state import ListState, plain
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
@@ -279,8 +284,11 @@ def _as_it_went_in(value: object) -> object:
     as it went in. A tracked one's copy is tracked by the same form and records no fork. One
     with no form, or whose length is not the one pyct last saw, gets a plain copy
     (`_plain_copy`), which records nothing and leaves the target's own as it is. A tracked
-    copy costs about 4 microseconds for a list of 100 items and 30 for 1,000, a plain copy about
-    7 and 65, and 600 for a list of 1,000 one-item lists. Any other value as it is."""
+    copy costs about 4 microseconds for a list of 100 items and 30 for 1,000. A plain copy's
+    cost grows with every item it reaches through lists, tuples, dicts, sets and frozensets:
+    about 9 for a list of 100 ints and 80 for 1,000, about 1 more for each tuple or list it
+    holds, as 1,100 for a heap of 1,000 tuples, and 400 for a list that holds one list of 10,000
+    plain ints. Any other value as it is."""
     kind = type(value)
     if kind is ConcolicList:
         items = cast(ConcolicList, value)
@@ -295,9 +303,13 @@ def _as_it_went_in(value: object) -> object:
     return value
 
 
-# the containers a plain copy walks, and the tracked ones among them
-_HOLDERS = frozenset({ConcolicList, ConcolicDict, list, tuple, dict})
-_TRACKED = frozenset({ConcolicList, ConcolicDict})
+# the containers a plain copy walks, a subclass of one included, the ones among them whose copy
+# is made empty and then filled, and the tracked ones
+_HOLDERS = (list, tuple, dict, set, frozenset)
+_FILLED = (list, dict, set)
+_TRACKED = (ListState, DictState)
+# Python's own containers a plain copy reads and makes with their own type: no subclass
+_OWN = frozenset({list, tuple, set, frozenset})
 
 # what a plain copy reached, by id: the container, the items it holds, a dict's keys before
 # their values, the containers among them, and whether it is tracked or holds a tracked int,
@@ -306,35 +318,28 @@ type _Reached = dict[int, tuple[object, list[object], list[object], bool]]
 
 
 def _plain_copy(value: object) -> object:
-    """A tracked list or dict as a new plain one. Each list, tuple and dict it holds, at every
-    depth, that is tracked or holds a tracked value at some depth is a new plain one too, made
-    once, so a list that holds itself holds its copy; each other one is the one it holds. Each
-    tracked int, float, str and bool in them, a dict's keys included, is its plain value. A
-    tracked one is read through its storage, so nothing is recorded, and the walk keeps its own
-    stack, so no depth reaches Python's recursion limit."""
+    """A tracked list or dict as a new plain one. Each list, tuple, dict, set and frozenset it
+    holds, at every depth, a subclass of one included, that is tracked or holds a tracked value
+    at some depth is a new one too, made once, so a list that holds itself holds its copy; each
+    other one is the one it holds, and so is any other object, such as a dataclass instance. A
+    tracked one's copy is a plain list or dict, and a subclass's is of its own type where it can
+    be made (`_empty`, `_frozen`). Each tracked int, float, str and bool in them, a dict's keys
+    included, is its plain value. The walk records nothing (`_held`) and keeps its own stack, so
+    no depth reaches Python's recursion limit."""
     reached = _reached(value)
     copies = _copies(reached)
-    filled = [key for key in copies if type(reached[key][0]) is not tuple]
+    filled = [key for key in copies if isinstance(reached[key][0], _FILLED)]
     made: dict[int, object] = {key: _empty(reached[key][0]) for key in filled}
-    for key in _tuples_in_order(reached, copies):
-        made[key] = tuple(_mapped(reached[key][1], made))
+    for key in _frozen_in_order(reached, copies):
+        each, items, _, _ = reached[key]
+        made[key] = _frozen(cast(tuple | frozenset, each), _mapped(items, made))
     for key in filled:
-        items = _mapped(reached[key][1], made)
-        copied = made[key]
-        if type(copied) is list:
-            list.extend(copied, items)
-        else:
-            dict.update(cast(dict, copied), zip(items[::2], items[1::2], strict=True))
+        _fill(made[key], _mapped(reached[key][1], made))
     return made[id(value)]
 
 
-def _empty(value: object) -> object:
-    """A new empty plain dict for a dict, else a new empty plain list."""
-    return {} if type(value) is dict or type(value) is ConcolicDict else []
-
-
 def _reached(value: object) -> _Reached:
-    """Each list, tuple and dict the value is or holds, at every depth, by id."""
+    """Each list, tuple, dict, set and frozenset the value is or holds, at every depth, by id."""
     reached: _Reached = {}
     stack = [value]
     while stack:
@@ -342,24 +347,32 @@ def _reached(value: object) -> _Reached:
         if id(each) in reached:
             continue
         items = _held(each)
-        inner = [item for item in items if type(item) in _HOLDERS]
-        tracked = type(each) in _TRACKED or any(type(item) in _SCALARS for item in items)
+        inner: list[object] = [item for item in items if issubclass(type(item), _HOLDERS)]
+        tracked = isinstance(each, _TRACKED) or any(type(item) in _SCALARS for item in items)
         reached[id(each)] = (each, items, inner, tracked)
         stack.extend(inner)
     return reached
 
 
 def _held(value: object) -> list[object]:
-    """The items a list, tuple or dict holds, a dict's keys before their values, a tracked one's
-    read through its storage."""
+    """The items a container holds, a dict's keys before their values, read with nothing
+    recorded: a tracked one's through its storage, a dict's through its own ``items``, so an
+    OrderedDict's come in its order, and another's through its base type's iterator."""
     kind = type(value)
-    if kind is ConcolicList:
-        return cast(ConcolicList, value).storage()
-    if kind is ConcolicDict:
-        return [each for pair in cast(ConcolicDict, value).storage().items() for each in pair]
-    if kind is dict:
-        return [each for pair in dict.items(cast(dict, value)) for each in pair]
-    return list(cast(list | tuple, value))
+    if kind in _OWN:
+        return list(cast(list, value))
+    if isinstance(value, ListState):
+        return value.storage()
+    if isinstance(value, DictState):
+        return [each for pair in value.storage().items() for each in pair]
+    if isinstance(value, dict):
+        return [each for pair in type(value).items(value) for each in pair]
+    return list(cast(Any, _base(value)).__iter__(value))
+
+
+def _base(value: object) -> type:
+    """Which of list, tuple, dict, set and frozenset the container is."""
+    return next(base for base in _HOLDERS if isinstance(value, base))
 
 
 def _copies(reached: _Reached) -> set[int]:
@@ -381,12 +394,12 @@ def _copies(reached: _Reached) -> set[int]:
     return copies
 
 
-def _tuples_in_order(reached: _Reached, copies: set[int]) -> list[int]:
-    """The id of each tuple to copy, each after the tuples it holds: a tuple Python code makes
-    never holds itself but through a list or dict."""
+def _frozen_in_order(reached: _Reached, copies: set[int]) -> list[int]:
+    """The id of each tuple and frozenset to copy, each after the tuples and frozensets it
+    holds: Python code makes neither hold itself but through a list, dict or set."""
     order: list[int] = []
     entered: set[int] = set()
-    stack = [(key, False) for key in copies if type(reached[key][0]) is tuple]
+    stack = [(key, False) for key in copies if not isinstance(reached[key][0], _FILLED)]
     while stack:
         key, done = stack.pop()
         if done:
@@ -394,11 +407,61 @@ def _tuples_in_order(reached: _Reached, copies: set[int]) -> list[int]:
         elif key not in entered:
             entered.add(key)
             stack.append((key, True))
-            held = (id(each) for each in reached[key][2] if type(each) is tuple)
+            held = (id(each) for each in reached[key][2] if not isinstance(each, _FILLED))
             stack.extend((each, False) for each in held if each in copies)
     return order
 
 
+def _empty(value: object) -> object:
+    """A new empty list, dict or set for a container that is one. A subclass's is of its own
+    type, made by `copy.copy` and emptied by its own ``clear``, so a defaultdict keeps its
+    default; a tracked one's, Python's own, and one whose copy raises, a plain one of its base."""
+    base = _base(value)
+    if type(value) is base or isinstance(value, _TRACKED):
+        return base()
+    try:
+        made = copy.copy(value)
+        cast(Any, made).clear()
+    except Exception:
+        return base()
+    return made
+
+
+def _fill(copied: object, items: list[object]) -> None:
+    """Fill a new empty list, dict or set with the items, a dict's keys before their values,
+    a subclass of dict through its own item setting, so an OrderedDict keeps their order."""
+    if type(copied) is dict:
+        dict.update(copied, zip(items[::2], items[1::2], strict=True))
+    elif isinstance(copied, dict):
+        for key, each in zip(items[::2], items[1::2], strict=True):
+            copied[key] = each
+    elif isinstance(copied, list):
+        list.extend(copied, items)
+    else:
+        set.update(cast(set, copied), items)
+
+
+def _frozen(value: tuple | frozenset, items: list[object]) -> object:
+    """A new tuple or frozenset with the items. A subclass's is of its own type, made by its
+    base type's ``__new__`` as a namedtuple's ``_make`` makes one, with the attributes its
+    ``__dict__`` holds; Python's own, and one its base cannot make, as a struct_time, a plain
+    one of its base."""
+    kind = type(value)
+    if kind in _OWN:
+        return kind(items)
+    base = tuple if isinstance(value, tuple) else frozenset
+    try:
+        made = cast(Any, base).__new__(type(value), items)
+    except Exception:
+        return base(items)
+    with contextlib.suppress(AttributeError):
+        made.__dict__.update(value.__dict__)
+    return made
+
+
 def _mapped(items: list[object], made: Mapping[int, object]) -> list[object]:
     """The items of a plain copy: each container's copy when it has one, else the item plain."""
-    return [made.get(id(each), each) if type(each) in _HOLDERS else plain(each) for each in items]
+    return [
+        made.get(id(each), each) if issubclass(type(each), _HOLDERS) else plain(each)
+        for each in items
+    ]

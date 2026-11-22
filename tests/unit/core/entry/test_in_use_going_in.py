@@ -1,10 +1,10 @@
 """A loop in use keeps, as it starts, a copy of each list or dict going in, of the list or dict
 itself: its formula, and the record of a run it fails on, read the list or dict as it went in
 after the loop removes its items. A tracked one reaches the formula as a tracked copy one level
-deep, or, when its length changed from C, as a plain copy in which each list, tuple and dict that
-holds a tracked value, at any depth, is a plain copy too, and each tracked int, float, str or bool,
-a dict's keys included, is its plain value. The plain one records what the loop as written
-records."""
+deep, or, when its length changed from C, as a plain copy in which each list, tuple, dict, set and
+frozenset, a subclass of one included, that holds a tracked value at any depth is a plain copy too,
+and each tracked int, float, str or bool, a dict's keys included, is its plain value. The plain one
+records what the loop as written records."""
 
 import sys
 from collections.abc import Callable, Mapping
@@ -193,7 +193,7 @@ def compares_a_s_first_b(values: Mapping[str, object]) -> Mapping[str, object]:
 
 
 HEAP_OF_HELD = """\
-import heapq
+import collections, heapq
 def f(xs, p, s):
     heapq.heappush(xs, {held})
     t = 0
@@ -221,7 +221,7 @@ def compares_the_ints_the_first_holds(values: Mapping[str, object]) -> Mapping[s
         each = inside.pop()
         if isinstance(each, dict):
             inside.extend([*each, *each.values()])
-        elif isinstance(each, list | tuple):
+        elif isinstance(each, list | tuple | set | frozenset):
             inside.extend(each)
         elif isinstance(each, int):
             assert each > 4
@@ -236,6 +236,21 @@ def compares_the_keys(values: Mapping[str, object]) -> Mapping[str, object]:
     return lengthened(values)
 
 
+# what HEAP_OF_HELD's target pushes, by what it is
+HELD = {
+    "Python's own lists": "[p]",
+    "tuples": "(p, 'task')",
+    "tuples of a tuple and a list": "((p,), [p])",
+    "tuples of tuples nested five deep and a tuple": "(((((p,),),),), (p,))",
+    "Python's own dicts": "{p: p}",
+    "sets": "{p}",
+    "frozensets": "frozenset([p])",
+    "namedtuples": "collections.namedtuple('P', 'cost name')(p, 'task')",
+    "OrderedDicts": "collections.OrderedDict(a=p)",
+    "defaultdicts": "collections.defaultdict(int, a=p)",
+    "Counters": "collections.Counter(a=p)",
+    "lists of a list subclass": "type('L', (list,), {})([p])",
+}
 # a list or dict going in that C code changed, with the values the call takes before the str,
 # where its loop is, and a formula comparing what it holds
 CHANGED_FROM_C = {
@@ -253,30 +268,15 @@ CHANGED_FROM_C = {
         (4, 4),
         compares_a_s_first_b,
     ),
-    "a list of Python's own lists changed from C": (
-        HEAP_OF_HELD.format(held="[p]"),
-        {"xs": [], "p": 7},
-        (5, 4),
-        compares_the_ints_the_first_holds,
-    ),
-    "a list of tuples changed from C": (
-        HEAP_OF_HELD.format(held="(p, 'task')"),
-        {"xs": [], "p": 7},
-        (5, 4),
-        compares_the_ints_the_first_holds,
-    ),
-    "a list of tuples of a tuple and a list changed from C": (
-        HEAP_OF_HELD.format(held="((p,), [p])"),
-        {"xs": [], "p": 7},
-        (5, 4),
-        compares_the_ints_the_first_holds,
-    ),
-    "a list of Python's own dicts changed from C": (
-        HEAP_OF_HELD.format(held="{p: p}"),
-        {"xs": [], "p": 7},
-        (5, 4),
-        compares_the_ints_the_first_holds,
-    ),
+    **{
+        f"a list of {kind} changed from C": (
+            HEAP_OF_HELD.format(held=held),
+            {"xs": [], "p": 7},
+            (5, 4),
+            compares_the_ints_the_first_holds,
+        )
+        for kind, held in HELD.items()
+    },
     "a dict given a tracked key from C": (
         STORED_KEY,
         {"d": {"a": 1}, "k": "x"},
