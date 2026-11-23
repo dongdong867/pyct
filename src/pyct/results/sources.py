@@ -309,8 +309,9 @@ def _outside(loop: ast.For | ast.AsyncFor | ast.While) -> list[ast.AST]:
 def _bound_by(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:
     """The names one statement or expression binds, each with how."""
     yield from _assigned(node, loop)
+    # a value no loop can summarize, so even one made in a loop is no loop source
     for name in _named(node):
-        yield name, _Binding(None, loop)
+        yield name, _Binding(None, None)
 
 
 def _assigned(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:

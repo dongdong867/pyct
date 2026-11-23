@@ -131,6 +131,20 @@ def suppressed(s, f):
     return 0
 """
 
+DEFINED_IN_A_LOOP = """\
+def defined_in_a_loop(names, x):
+    for name in names:
+
+        def check(v, name=name):
+            return v == name
+
+    if check(x):
+        return 1
+    if name == x:
+        return 2
+    return 0
+"""
+
 
 @pytest.mark.parametrize(
     ("source", "function", "at", "expected"),
@@ -143,6 +157,14 @@ def suppressed(s, f):
         pytest.param(EVERY_CASE, "every_case", (10, 7), (), id="a last case _"),
         pytest.param(EVERY_CAPTURE, "every_capture", (10, 7), (), id="a last bare capture"),
         pytest.param(SUPPRESSED, "suppressed", (7, 7), (("t", 3, 4),), id="a with that suppresses"),
+        pytest.param(DEFINED_IN_A_LOOP, "defined_in_a_loop", (7, 7), (), id="a def in a loop"),
+        pytest.param(
+            DEFINED_IN_A_LOOP,
+            "defined_in_a_loop",
+            (9, 7),
+            (("name", 2, 4),),
+            id="its loop's target",
+        ),
     ],
 )
 def test_each_binder_ends_an_earlier_binding_s_reach(
