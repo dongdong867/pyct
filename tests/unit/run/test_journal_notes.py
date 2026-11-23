@@ -50,3 +50,21 @@ def test_a_fork_with_no_note_is_written_in_six_items() -> None:
     assert len(record) == 6
     assert branches == (branch,)
     assert notes == [None]
+
+
+@pytest.mark.parametrize("held", [True, False, None])
+def test_a_summary_fork_reads_back_marked_with_its_note(held: bool | None) -> None:
+    branch = Branch(["<", "x", 9], True, SITE, is_held=held, summary=True)
+
+    record, branches, notes = written(branch)
+
+    assert record[6:] == [held, True]
+    assert branches == (branch,)
+    assert notes == [held]
+    assert [each.summary for each in branches] == [True]
+
+
+def test_a_fork_with_no_mark_reads_back_unmarked() -> None:
+    _, branches, _ = written(Branch(["<", "x", 9], True, SITE, is_held=True))
+
+    assert [each.summary for each in branches] == [False]

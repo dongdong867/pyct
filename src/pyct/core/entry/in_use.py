@@ -51,6 +51,12 @@ frame still holds the plain value the start wrote.
 A raise that is not an ``Exception``, the deadline's, passes through. A run
 that ends by ``return`` or a raise reaches no end: its names stay plain,
 and the next start of the loop in that frame drops it.
+
+A fork the formula records, and a later fork of the input whose condition
+holds the term of a value a formula gave there, are marked ``summary``
+(`summed`), so that an input aimed at one says the formula gave it. A
+formula value whose term is a bare name, a parameter handed back as it
+is, has no term of its own, and the forks that read it are not marked.
 """
 
 from __future__ import annotations
@@ -59,7 +65,7 @@ import contextlib
 import copy
 import dataclasses
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -67,7 +73,15 @@ from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.frames import rebind
 from pyct.core.entry.plain_copy import SCALARS, plain_copy
 from pyct.core.entry.waiting import Key, Waiting, json_text, popped
-from pyct.core.foundation.branch import BranchSink, DropReason, FormulaDrop, Site, placed_at
+from pyct.core.foundation.branch import (
+    Branch,
+    BranchSink,
+    DropReason,
+    Expression,
+    FormulaDrop,
+    Site,
+    placed_at,
+)
 from pyct.core.lists.list_state import plain
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.ints import ConcolicInt
@@ -120,10 +134,10 @@ class Run:
 
 class _Using:
     """The live input's loops in use: the lines they start at when its call uses them, none
-    else, where its drops go, the loops dropped in it, and each run waiting on its end, by
-    line."""
+    else, where its drops go, the loops dropped in it, each run waiting on its end, by line,
+    whether a formula is running, and what `summed` knows of the input's terms."""
 
-    __slots__ = ("dropped", "lines", "sink", "waiting")
+    __slots__ = ("clean", "dropped", "forming", "lines", "reads", "sink", "waiting")
 
     def __init__(self) -> None:
         self.lines: frozenset[int] = frozenset()
@@ -133,6 +147,12 @@ class _Using:
     def clear(self) -> None:
         self.dropped: set[_Place] = set()
         self.waiting: Waiting[Run] = {}
+        self.forming = False
+        # each part of a term known to be or to hold the term of a value a formula gave in the
+        # input, by its id, the part kept so that its id stays its own
+        self.reads: dict[int, list[Expression]] = {}
+        # the ids of the parts known to hold none, each reachable from a fork the input keeps
+        self.clean: set[int] = set()
 
 
 USING = _Using()
@@ -229,7 +249,7 @@ def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
     loop = run.loop
     given = {name: run.kept[name] for name in loop.parameters if name in run.kept}
     try:
-        got = placed_at(run.site, lambda: loop.formula(given))
+        got = placed_at(run.site, lambda: _forming(loop, given))
     except Exception as error:
         return _dropped(run, real, next(iter(real), ""), type(error).__name__, DropReason.RAISED)
     made: dict[str, object] = {}
@@ -245,7 +265,66 @@ def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
             # the loop's value is of the formula value's kind, as their JSON texts are one
             real_value = cast(int, plain(value))
             made[name] = type(tracked).made(real_value, tracked.expression, tracked.sink)
+    _gave(made.values())
     return made
+
+
+def _forming(loop: LoopInUse, given: Mapping[str, object]) -> Mapping[str, object]:
+    """The formula's values for the values ``given``, each fork it records marked (`summed`)."""
+    USING.forming = True
+    try:
+        return loop.formula(given)
+    finally:
+        USING.forming = False
+
+
+def _gave(values: Iterable[object]) -> None:
+    """Keep the term of each tracked value a formula gave, for `summed`. A part known to hold none
+    may hold a term kept now, if the formula handed back one it was given, so none is known."""
+    terms = [term for each in values if isinstance(term := _term(each), list)]
+    if terms:
+        USING.reads.update((id(term), term) for term in terms)
+        USING.clean.clear()
+
+
+def _term(value: object) -> Expression:
+    return cast(ConcolicInt, value).expression
+
+
+def summed(fork: Branch) -> Branch:
+    """The fork, marked ``summary`` when a loop's formula is running, so that it recorded the fork,
+    or when its condition holds, as the very list, the term of a value a formula gave in the
+    input; else the fork itself. A part found to hold no such term is not walked again in the
+    input."""
+    reads = USING.reads
+    if not USING.forming and not reads:
+        return fork
+    if USING.forming or _reads_a_formula(fork.expression, reads, USING.clean):
+        return dataclasses.replace(fork, summary=True)
+    return fork
+
+
+def _reads_a_formula(
+    expression: Expression, reads: dict[int, list[Expression]], clean: set[int]
+) -> bool:
+    """Whether the expression is or holds a part ``reads`` keeps; a part found to hold one is kept
+    too, and the parts of an expression found to hold none join ``clean``."""
+    if not isinstance(expression, list):
+        return False
+    seen: set[int] = set()
+    pending: list[list[Expression]] = [expression]
+    while pending:
+        part = pending.pop()
+        key = id(part)
+        if key in reads:
+            reads[id(expression)] = expression
+            return True
+        if key in clean or key in seen:
+            continue
+        seen.add(key)
+        pending.extend(each for each in part if isinstance(each, list))
+    clean.update(seen)
+    return False
 
 
 def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: DropReason) -> None:
