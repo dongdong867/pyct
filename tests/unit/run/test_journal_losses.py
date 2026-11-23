@@ -18,6 +18,7 @@ from pyct.core.foundation.branch import (
 )
 from pyct.run.isolation import Inputs, Isolation
 from pyct.run.journal import HEAD, LOSS, RECORDS, JournalWriter
+from pyct.run.journal_pieces import loss_payload
 from pyct.run.journal_reader import read
 from pyct.run.target import load_target
 
@@ -78,7 +79,7 @@ def test_the_room_for_runs_holds_every_loss_run_an_input_records() -> None:
     run = LossRun(
         Site(file, 1, 0), "f", LossKind.CALL, (), (Changed("answer", "1"),), CALLED.callee
     )
-    record = HEAD.size + struct.calcsize("<qqII") + len(file.encode()) + 64
+    record = HEAD.size + len(loss_payload(run))
 
     assert record <= 4 * losses.size(run)
 
