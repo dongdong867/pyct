@@ -20,9 +20,9 @@ from tests.unit.run.test_summaries import (
 )
 
 FORMULA = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
-# `counts`'s loop on "ab" written down, and 9 for any other `s`
 # a lookup of the runs "ab" and "a" show that leaves `t` as it came in for any other `s`
 FALLS_THROUGH = 'def summary(s, t):\n    if s == "a":\n        t = 0\n    return {"t": t}\n'
+# `counts`'s loop on "ab" written down, and 9 for any other `s`
 LOOKUP = 'def summary(s, t):\n    t = 9 - (s == "ab") * 9\n    return {"t": t}\n'
 
 
