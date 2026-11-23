@@ -2,8 +2,9 @@
 its lines, and the name of each value going in (`pyct.core.entry.losses`).
 
 The site's node is the part of the code that starts at its line and column, as a no-fork
-condition's lost source finds it (`pyct.results.sources`): an operator, a call, a compare, a
-subscript or an augmented assignment. The values going in are the node's parts in the order a
+condition's lost source finds it (`pyct.results.sources`), whose kind fits the downgrade: a
+call written as the downgrade names it, or an operator, a compare, a subscript or an augmented
+assignment whose dunder it is. The values going in are the node's parts in the order a
 loss run records them: an operation's receiver, the left operand or, for a reflected
 operation, the right one, then its other operands and arguments; a `math` call's arguments, by
 position then by keyword; and a watched call's arguments that are no constant, since the watch
@@ -19,9 +20,35 @@ import ast
 from dataclasses import dataclass
 
 from pyct.core.foundation.branch import LossKind, Site
+from pyct.results.sources import written_name
 
 # the parts a loss site's node can be
 _NODES = (ast.BinOp, ast.UnaryOp, ast.Compare, ast.Call, ast.Subscript, ast.AugAssign)
+# each binary operator's word, as its dunders are written
+_OPERATORS: dict[type[ast.operator], str] = {
+    ast.Add: "add",
+    ast.Sub: "sub",
+    ast.Mult: "mul",
+    ast.MatMult: "matmul",
+    ast.Div: "truediv",
+    ast.FloorDiv: "floordiv",
+    ast.Mod: "mod",
+    ast.Pow: "pow",
+    ast.LShift: "lshift",
+    ast.RShift: "rshift",
+    ast.BitOr: "or",
+    ast.BitXor: "xor",
+    ast.BitAnd: "and",
+}
+# each unary operator's dunder
+_UNARY: dict[type[ast.unaryop], str] = {
+    ast.USub: "__neg__",
+    ast.UAdd: "__pos__",
+    ast.Invert: "__invert__",
+    ast.Not: "__bool__",
+}
+# the dunders a compare calls
+_COMPARES = frozenset(("__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__contains__"))
 # the reflected operations, whose receiver is the right operand
 _REFLECTED = frozenset(
     f"__r{name}__"
@@ -77,21 +104,44 @@ def _read(file: str) -> tuple[str, ast.Module] | None:
 
 
 def _node(tree: ast.Module, site: Site, name: str) -> ast.expr | ast.stmt | None:
-    """The innermost node that starts at the site and can be its loss: a call by its method's
-    name when it calls one by that name."""
-    found: list[ast.expr | ast.stmt] = [
-        node
+    """The node that starts at the site and whose kind fits the downgrade's name (`_fit`): a call
+    named as the downgrade names it before an operator, and the innermost of two that fit
+    alike. None when no node fits."""
+    fits = [
+        (fit, node)
         for node in ast.walk(tree)
         if isinstance(node, _NODES) and (node.lineno, node.col_offset) == (site.line, site.col)
+        for fit in [_fit(node, name)]
+        if fit is not None
     ]
-    named = [
-        node
-        for node in found
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr == name
-    ]
-    return (named or found or [None])[-1]
+    best = min((fit for fit, _ in fits), default=None)
+    return next((node for fit, node in reversed(fits) if fit == best), None)
+
+
+def _fit(node: ast.expr | ast.stmt, name: str) -> int | None:
+    """How well the node fits a downgrade of ``name``: 0 for a call whose callee is written as
+    the name, or ends in it, or in its operator's word, such as ``pow`` for ``__pow__``; 1 for
+    an operator, a compare or a subscript whose dunder is the name; None for no fit."""
+    if isinstance(node, ast.Call):
+        callee = written_name(node.func)
+        words = {name, _bare(name)}
+        return 0 if callee in words or callee.rsplit(".", 1)[-1] in words else None
+    if isinstance(node, (ast.BinOp, ast.AugAssign)):
+        word = _OPERATORS.get(type(node.op))
+        forms = {f"__{word}__", f"__r{word}__", f"__i{word}__"}
+        return 1 if name in forms else None
+    if isinstance(node, ast.UnaryOp):
+        return 1 if name == _UNARY.get(type(node.op)) else None
+    if isinstance(node, ast.Compare):
+        return 1 if name in _COMPARES else None
+    return 1 if isinstance(node, ast.Subscript) and name == "__getitem__" else None
+
+
+def _bare(name: str) -> str:
+    """A dunder's word, a reflected one's without its ``r``: ``pow`` for ``__rpow__``."""
+    if not (name.startswith("__") and name.endswith("__")):
+        return name
+    return name[3:-2] if name in _REFLECTED else name[2:-2]
 
 
 def _parts(node: ast.AST, name: str, kind: LossKind) -> list[ast.expr] | None:
