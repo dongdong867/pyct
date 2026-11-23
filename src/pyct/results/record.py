@@ -29,8 +29,8 @@ class Source(StrEnum):
     LLM_SEED = "llm_seed"
     # an input the solver gave for the LLM's rewrite of a condition it gave up on
     REWRITE = "rewrite"
-    # an input run again once a loop's formula came into use, or one the solver gave for a fork
-    # that reads a value a formula gave
+    # an input run again once a loop's formula came into use, or one the solver gave for a
+    # formula's fork: one a loop's formula recorded, or one that reads a value a formula gave
     SUMMARY = "summary"
 
 

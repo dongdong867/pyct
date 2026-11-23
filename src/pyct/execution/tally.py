@@ -166,9 +166,9 @@ class Tally:
             self.watch.drop(drop)
 
     def _fork(self, fork: Branch) -> None:
-        """Keep a fork, up to `MOST_FORKS`, marked when it reads a value a loop's formula gave
-        (`pyct.core.entry.in_use.summed`), and tell the watch. Past the bound, the fork is counted
-        alone."""
+        """Keep a fork, up to `MOST_FORKS`, marked when a loop's formula recorded it or it reads a
+        value a formula gave (`pyct.core.entry.in_use.summed`), and tell the watch. Past the bound,
+        the fork is counted alone."""
         # a watched call around the one that forked saw inside it (`pyct.core.entry.watch`)
         escapes.RECORDED[0] += 1
         if self.past_bound:
