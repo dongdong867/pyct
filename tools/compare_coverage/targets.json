@@ -934,6 +934,7 @@
     {"set": "v2", "target": "targets.summaries.loops::few_while", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::few_z", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::guarded", "seed": {"s": "ab"}},
+    {"set": "v2", "target": "targets.summaries.loops::split_z", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::stops", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::tallies", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::vowels", "seed": {"s": "ab"}},

@@ -24,6 +24,7 @@ from tests.acceptance.llm_summaries import (
     FakeSummaries,
     G,
     Summarized,
+    checked_on,
     code_reply,
     one_thread,  # noqa: F401
     run_summaries,
@@ -189,7 +190,7 @@ def test_a_dropped_loop_is_asked_about_again_with_why_and_the_run_it_failed_on()
     assert said[at + 1] == (
         f'{loop}:\n    t = t + s.count("z")\n    if t > 5:\n        t = 5\n    return {{"t": t}}'
     )
-    assert re.fullmatch(rf"{re.escape(loop)}: checked on \d+ past runs", said[at + 2])
+    assert said[at + 2] == f"{loop}: {checked_on(provider, 1)}"
     [item] = items(done)
     assert (item["state"], item["tries"]) == ("in use", 2)
 

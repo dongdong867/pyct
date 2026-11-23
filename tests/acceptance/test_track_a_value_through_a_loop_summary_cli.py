@@ -1,6 +1,6 @@
 """Acceptance tests for the track-a-value-through-a-loop-summary story through ``pyct run``: a
 formula that passes its checks comes into use when each input runs in a process of its own, and
-under ``--in-process`` it is kept as checked and stderr says why it is not used.
+under ``--in-process`` the loop is not asked about and stderr says why.
 
 Each run's base URLs point at a stub on localhost, and neither real key reaches pyct, so no
 request leaves the machine.
@@ -16,8 +16,8 @@ from tests.acceptance.test_track_a_value_through_a_loop_summary import Z, holds,
 FEW_Z = "targets.summaries.loops::few_z"
 SEED = '{"s": "ab"}'
 ARGV = ("--llm", "summaries", "--plateau", "8")
-NOT_USED = (
-    f"llm: summary for the loop at {G}:{line_of('few_z', 'for c in s:')} not used:"
+SKIPPED = (
+    f"llm: summary for the loop at {G}:{line_of('few_z', 'for c in s:')} skipped:"
     " inputs run in pyct's own process"
 )
 
@@ -39,27 +39,28 @@ def after_checked(stderr: str, stdout: str) -> list[dict[str, object]]:
 
 
 # llm-summary-for-a-stuck-loop-not-used-in-pyct-s-own-process
-def test_a_formula_for_inputs_in_pyct_s_process_is_not_used_and_says_why(
+def test_a_loop_is_not_asked_about_for_inputs_in_pyct_s_process_and_says_why(
     stub: Stub, tmp_path: Path
 ) -> None:
+    # no formula could come into use, so the loop is not asked about
+    # (refuse-a-summary-that-only-repeats-its-runs)
     stub.reply = COUNT
 
     result = llm_run(stub.port, tmp_path, SEED, *ARGV, "--in-process", target=FEW_Z)
 
     assert result.returncode == 0, result.stderr
     said = llm_lines(result.stderr)
-    checked = next(at for at, line in enumerate(said) if ": checked on " in line)
-    assert said[checked + 1] == NOT_USED
-    assert said.count(NOT_USED) == 1
-    after = after_checked(result.stderr, result.stdout)
-    assert after, result.stderr
+    assert said.count(SKIPPED) == 1
+    assert not any(": checked on " in line for line in said)
     test = line_of("few_z", 'if c == "z":')
-    for line in after:
+    for line in input_lines(result.stdout):
         forks, args = forks_of(line), line["args"]
         assert isinstance(args, dict), line
         assert len([fork for fork in forks if fork["line"] == test]) == len(args["s"]), line
         assert not any(holds(fork["expression"], Z) for fork in forks), line
-    assert state_of(result.stdout) == "checked"
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert llm["summaries"] == []
 
 
 def test_a_formula_for_inputs_in_a_process_of_their_own_comes_into_use(

@@ -205,8 +205,10 @@ def summary_line(note: SummaryNote) -> str:
             return f"{at}:" + "".join(f"\n    {_escaped(each)}" for each in formula.splitlines())
         case SummaryRead(_, formula):
             return _escaped(f"{at}: {formula}")
-        case SummaryChecked(_, runs):
+        case SummaryChecked(_, runs, 0):
             return _escaped(f"{at}: checked on {runs} past runs")
+        case SummaryChecked(_, runs, not_shown):
+            return _escaped(f"{at}: checked on {runs} past runs, {not_shown} of them not shown")
         case SummaryFailed(_, attempt, reason):
             return _escaped(f"{at}, try {attempt}: {reason}")
         case SummarySkipped(_, reason):

@@ -137,3 +137,15 @@ def encoded_z(s: str) -> str:
             return "many and loud"
         return "many"
     return "few"
+
+
+def split_z(s: str) -> str:
+    parts = [""]
+    for c in s:
+        if c == "z":
+            parts = parts + [""]
+        else:
+            parts = parts[:-1] + [parts[-1] + c]
+    if len(parts) > 3:
+        return "many"
+    return "few"

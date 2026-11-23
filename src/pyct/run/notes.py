@@ -61,10 +61,12 @@ class SummaryRead:
 @dataclass(frozen=True)
 class SummaryChecked:
     """The formula for the loop at ``site`` gave each changed value of its ``runs`` recorded runs,
-    and pyct follows the values it gives: it is kept."""
+    and pyct follows the values it gives: it is kept. ``not_shown`` of those runs had values going
+    in that no run its request showed had."""
 
     site: Site
     runs: int
+    not_shown: int = 0
 
 
 @dataclass(frozen=True)
