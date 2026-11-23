@@ -26,7 +26,8 @@ from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of, source_of
 from pyct.run.stuck import Stuck
 from pyct.run.tell import Ask, Told
-from pyct.solver.answer import Answer, Error, Sat, Timeout
+from pyct.run.waits import site_waits
+from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import taking
 
@@ -372,7 +373,8 @@ def _attempt(
     crashed ends the run as a failure, and so does an input pyct could not
     start a process for. Any other answer is an input to run, or a miss on
     that fork. ``ways.asker`` gives the answer, and the source the input
-    takes: the solver's, or a kept rewrite's (``pyct.run.rewrites``).
+    takes: the solver's, or a kept rewrite's (``pyct.run.rewrites``). After
+    a timeout or a slow ``unknown`` the site waits (``site_waits``).
     """
     left = _seconds_left(bounds.until)
     if _spent(left):
@@ -385,17 +387,27 @@ def _attempt(
     if stop is not None:
         return Attempt(stop=stop, unrun=unrun)
     origin = inputs[wanted.path]
-    solved = ways.asker.solved(wanted, origin, _solve_limit(bounds, left))
-    answer, asked = solved.answer, solved.asked
-    if isinstance(answer, Timeout):
-        tree.timed_out()
+    limit = _solve_limit(bounds, left)
+    solved = ways.asker.solved(wanted, origin, limit)
+    if site_waits(solved.answer, solved.seconds, limit):
+        tree.ran_long()
+    answer = solved.answer
+    if not isinstance(answer, Sat):
+        return _unanswered(wanted, answer, solved, unrun)
+    return _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
+
+
+def _unanswered(
+    wanted: Plan, answer: Unsat | Unknown | Timeout | Error, solved: Solved, unrun: ForkSite
+) -> Attempt:
+    """The pass for an answer that gives no input: the run's end when the solver crashed, and
+    a miss on the fork otherwise. ``answer`` is ``solved.answer``, which the caller narrowed,
+    so the type check knows it is no ``Sat``."""
     if isinstance(answer, Error):
         stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
-        return Attempt(stop=stop, unrun=unrun, asked=asked)
-    if not isinstance(answer, Sat):
-        miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, solved.seconds)
-        return Attempt(miss=miss, asked=asked)
-    return _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
+        return Attempt(stop=stop, unrun=unrun, asked=solved.asked)
+    miss = Miss(wanted.aim.site, miss_why(answer), wanted.aim.raising, solved.seconds)
+    return Attempt(miss=miss, asked=solved.asked)
 
 
 def _input(ways: Ways, wanted: Plan, found: Seed, solved: Solved, until: float | None) -> Attempt:
