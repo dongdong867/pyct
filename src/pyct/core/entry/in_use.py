@@ -279,11 +279,13 @@ def _forming(loop: LoopInUse, given: Mapping[str, object]) -> Mapping[str, objec
 
 
 def _gave(values: Iterable[object]) -> None:
-    """Keep the term of each tracked value a formula gave, for `summed`. A part known to hold none
-    may hold a term kept now, if the formula handed back one it was given, so none is known."""
+    """Keep the term of each tracked value a formula gave, for `summed`. A walk that finds no term
+    adds every part it reached to the clean parts, so a clean part can hold a term kept now only
+    when that term is itself clean, as when the formula hands back a term it was given; only
+    then is no part known clean any more."""
     terms = [term for each in values if isinstance(term := _term(each), list)]
-    if terms:
-        USING.reads.update((id(term), term) for term in terms)
+    USING.reads.update((id(term), term) for term in terms)
+    if any(id(term) in USING.clean for term in terms):
         USING.clean.clear()
 
 
@@ -295,7 +297,7 @@ def summed(fork: Branch) -> Branch:
     """The fork, marked ``summary`` when a loop's formula is running, so that it recorded the fork,
     or when its condition holds, as the very list, the term of a value a formula gave in the
     input; else the fork itself. A part found to hold no such term is not walked again in the
-    input."""
+    input, unless a later formula hands back a term it was given that is such a part."""
     reads = USING.reads
     if not USING.forming and not reads:
         return fork
