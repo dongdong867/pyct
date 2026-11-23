@@ -77,6 +77,21 @@ def test_the_summary_line_lists_a_loss_site_with_its_checked_formula(
     ]
 
 
+# llm-summary-for-a-call-pyct-cannot-follow-wait-not-counted, as the summary's `llm` entry counts it
+def test_the_llm_entry_counts_the_wait_for_a_loss_site_s_reply(stub: Stub, tmp_path: Path) -> None:
+    stub.reply = QUARTER
+    stub.delay = 2.0
+
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", target=SHIFTED)
+
+    assert result.returncode == 0, result.stderr
+    assert len(stub.received) == 1
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert llm["asks"] == 1
+    assert 2.0 <= llm["seconds"] < 30.0  # pyrefly: ignore[unsupported-operation]
+
+
 def summary_said(stderr: str) -> list[str]:
     return [line for line in llm_lines(stderr) if line.startswith("llm: summary for")]
 

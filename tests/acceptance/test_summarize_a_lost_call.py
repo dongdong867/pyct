@@ -158,7 +158,7 @@ def test_a_site_whose_answer_is_a_list_gets_no_ask_and_is_said_once() -> None:
 class Waiting(FakeSummaries):
     """A fake whose every ask waits ``seconds`` for its reply."""
 
-    seconds = 8.0
+    seconds = 2.0
 
     def summarize(self, request: SummaryRequest) -> SummaryReply:
         time.sleep(self.seconds)
