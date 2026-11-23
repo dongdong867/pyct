@@ -138,7 +138,7 @@ def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyP
     now = [0.0]
     monkeypatch.setattr(summaries, "time", SimpleNamespace(monotonic=lambda: now[0]))
 
-    def building(*_args: object) -> str:
+    def building(*_args: object, **_kwargs: object) -> str:
         now[0] += 10.0
         return ""
 

@@ -2,8 +2,10 @@
 of, and asks about each once per run, in the order noted, while it can still ask, skipping the
 sites a formula cannot stand for; given records made by hand."""
 
+import ast
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
 import pytest
 
@@ -231,3 +233,21 @@ def test_an_entry_is_skipped_while_a_loss_site_waits_for_its_turn() -> None:
 
     assert outcomes == (Outcome.SKIPPED, Outcome.SKIPPED)
     assert fake.requests == []
+
+
+def test_a_run_parses_the_file_of_its_loss_sites_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    parse = ast.parse
+    parsed: list[str] = []
+
+    def counted(source: str, filename: str = "<unknown>", *args: Any, **kwargs: Any) -> Any:
+        parsed.append(filename)
+        return parse(source, filename, *args, **kwargs)
+
+    monkeypatch.setattr(ast, "parse", counted)
+
+    summaries.between(heard(summaries, [DEEP]))
+
+    assert len(fake.requests) == 4
+    assert parsed.count(FILE) == 1

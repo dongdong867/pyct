@@ -61,7 +61,6 @@ llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
 
 from __future__ import annotations
 
-import enum
 import time
 import types
 from collections.abc import Callable
@@ -70,9 +69,10 @@ from dataclasses import dataclass, field
 from pyct.config.llm import SUMMARIES_TOOL
 from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.intercept.model_code import Refused
-from pyct.results.causes import Source, SourceKind, WhyEntry
+from pyct.results.causes import SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
 from pyct.results.record import InputRecord
+from pyct.results.source_files import SourceFiles
 from pyct.run.call_summaries import CALL, LossSites, asked_call, call_request, skipped_because
 from pyct.run.code_context import code_with_piece
 from pyct.run.formula_runner import FormulaText
@@ -103,6 +103,7 @@ from pyct.run.summary_asks import (
     SummaryRequest,
 )
 from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
+from pyct.run.summary_outcomes import Asked, outcome, sources_of
 from pyct.run.summary_runs import (
     AskedLoop,
     asked_loop,
@@ -121,16 +122,6 @@ from pyct.run.token_limit import TokenLimit
 NO_RECORDED_RUN = "no recorded run"
 # the states of a loop whose formula is kept: no ask is sent for it
 _KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
-
-
-class Asked(enum.Enum):
-    """How one loop's turn at a moment ended."""
-
-    CHECKED = enum.auto()
-    FAILED = enum.auto()
-    NOT_ASKED = enum.auto()
-    # not asked, since no formula of the loop could come into use this run
-    NEVER_USED = enum.auto()
 
 
 @dataclass
@@ -188,6 +179,8 @@ class Summaries:
         self.said_once: set[SummarySkipped | SummaryNotUsed] = set()
         # the loss sites the inputs recorded runs of, each asked about once per run
         self.sites = LossSites()
+        # the files the asks read code from, each parsed once this run
+        self.files = SourceFiles()
 
     @property
     def can_ask(self) -> bool:
@@ -200,7 +193,7 @@ class Summaries:
         asked for is still missed for, in code order; ``took``, ``gave up`` or ``skipped`` each
         entry by what came of its sources. A loop an ask was sent for keeps the entries' lines
         that named it. Then run again the inputs the formulas put in use were checked on."""
-        named = {each.site for entry in entries for each in _sources(entry, SourceKind.LOOP)}
+        named = {each.site for entry in entries for each in sources_of(entry, SourceKind.LOOP)}
         sites = sorted(
             named | set(self._dropped_for(moment)),
             key=lambda site: (site.file, site.line, site.col),
@@ -216,7 +209,7 @@ class Summaries:
             self._asked_for(site, entries)
         again, self.again = self.again, []
         run_again(moment.run, again, self.target)
-        outcomes = tuple(_outcome(entry, came, self._call_came) for entry in entries)
+        outcomes = tuple(outcome(entry, came, self._call_came) for entry in entries)
         return Handled(outcomes, asked)
 
     def _call_came(self, site: Site | None) -> Outcome:
@@ -254,7 +247,7 @@ class Summaries:
         if state is None:
             return
         for entry in entries:
-            if any(each.site == site for each in _sources(entry, SourceKind.LOOP)):
+            if any(each.site == site for each in sources_of(entry, SourceKind.LOOP)):
                 state.asked_for.update((entry.file, line) for line in entry.lines)
 
     def _turn(self, site: Site, run: Running) -> tuple[Asked, bool]:
@@ -286,13 +279,18 @@ class Summaries:
     def _call_turn(self, site: Site, run: Running) -> None:
         """A loss site's one turn this run: skipped and said, or asked about."""
         name = self.sites.names[site]
-        call = asked_call(site, name, run.records)
+        call = asked_call(site, name, run.records, self.files)
         reason = NO_RECORDED_RUN if call is None else skipped_because(call)
         if call is None or reason is not None or not can_fork():
             self._say_once(SummarySkipped(site, reason or CANNOT_FORK, call=name))
             return
         state = LoopState(call.loop.piece.changed, kind=CALL, name=name)
-        self._asked(call.loop, state, call_request(self.target, call, self._place(site), ()), run)
+        self._asked(
+            call.loop,
+            state,
+            call_request(self.target, call, self._place(site), (), self.files),
+            run,
+        )
 
     def _asked(
         self, loop: AskedLoop, state: LoopState, request: SummaryRequest, run: Running
@@ -427,7 +425,7 @@ class Summaries:
         shown = shown_runs(loop, state.failed_on)
         return SummaryRequest(
             place=self._place(site),
-            code=code_with_piece(self.target, site.file, loop.piece.lines),
+            code=code_with_piece(self.target, site.file, loop.piece.lines, files=self.files),
             parameters=loop.parameters,
             changed=loop.piece.changed,
             runs=shown,
@@ -474,25 +472,3 @@ class Summaries:
                 self.loops.items(), key=lambda item: (item[0].file, item[0].line, item[0].col)
             )
         )
-
-
-def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:
-    return [each for each in entry.sources or () if each.kind is kind]
-
-
-def _outcome(
-    entry: WhyEntry, came: dict[Site, Asked], call_came: Callable[[Site | None], Outcome]
-) -> Outcome:
-    """``took`` when each loop and each loss site the entry names has a checked formula; ``gave
-    up`` when a try at a loop failed or its reply was ignored, when no formula of one could come
-    into use this run, or when a loss site's came to nothing (``call_came``); ``skipped`` else.
-    An entry that names none is ``gave up`` once no loss site waits for its turn."""
-    loops = [came[each.site] for each in _sources(entry, SourceKind.LOOP)]
-    calls = [call_came(each.site) for each in _sources(entry, SourceKind.LOST)]
-    if not loops and not calls:
-        return call_came(None)
-    if Asked.FAILED in loops or Asked.NEVER_USED in loops or Outcome.GAVE_UP in calls:
-        return Outcome.GAVE_UP
-    if all(each is Asked.CHECKED for each in loops) and all(c is Outcome.TOOK for c in calls):
-        return Outcome.TOOK
-    return Outcome.SKIPPED

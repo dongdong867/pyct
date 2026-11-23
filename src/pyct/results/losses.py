@@ -20,6 +20,7 @@ import ast
 from dataclasses import dataclass
 
 from pyct.core.foundation.branch import LossKind, Site
+from pyct.results.source_files import SourceFiles
 from pyct.results.sources import written_name
 
 # the parts a loss site's node can be
@@ -81,26 +82,18 @@ class LossCode:
     names: tuple[str | None, ...]
 
 
-def loss_code(site: Site, name: str, kind: LossKind, count: int) -> LossCode:
+def loss_code(
+    site: Site, name: str, kind: LossKind, count: int, files: SourceFiles | None = None
+) -> LossCode:
     """The code of the loss site at ``site``, whose downgrade is ``name`` of ``kind`` and whose
-    runs hold ``count`` values going in."""
-    read = _read(site.file)
+    runs hold ``count`` values going in, its file read through the run's ``files``."""
+    read = (files or SourceFiles()).read(site.file)
     node = None if read is None else _node(read[1], site, name)
     parts = None if node is None else _parts(node, name, kind)
     if read is None or node is None or parts is None or len(parts) != count:
         return LossCode(name, (site.line, site.line), _named([None] * count, kind))
     written = ast.get_source_segment(read[0], node) or ast.unparse(node)
     return LossCode(written, (node.lineno, node.end_lineno or node.lineno), _named(parts, kind))
-
-
-def _read(file: str) -> tuple[str, ast.Module] | None:
-    """The file's source and its tree, or None when it does not read or parse."""
-    try:
-        with open(file, encoding="utf-8") as opened:
-            source = opened.read()
-        return source, ast.parse(source, filename=file)
-    except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
-        return None
 
 
 def _node(tree: ast.Module, site: Site, name: str) -> ast.expr | ast.stmt | None:

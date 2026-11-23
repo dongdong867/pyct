@@ -32,6 +32,7 @@ from pyct.core.foundation.branch import Callee, Changed, GoingIn, LossKind, Loss
 from pyct.results.losses import loss_code
 from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
+from pyct.results.source_files import SourceFiles
 from pyct.run.code_context import CODE_LIMIT, code_with_piece, function_code
 from pyct.run.summary_asks import CallAsk, EarlierFormula, SummaryRequest
 from pyct.run.summary_checks import CompleteRun
@@ -83,9 +84,11 @@ class AskedCall:
     answer: object
 
 
-def asked_call(site: Site, name: str, records: Sequence[InputRecord]) -> AskedCall | None:
+def asked_call(
+    site: Site, name: str, records: Sequence[InputRecord], files: SourceFiles
+) -> AskedCall | None:
     """The loss site at ``site`` whose downgrade is ``name``, with its runs in the records, oldest
-    first; None when no run of it is recorded."""
+    first, its code read through the run's ``files``; None when no run of it is recorded."""
     runs = [
         (number, each)
         for number, record in enumerate(records, start=1)
@@ -95,7 +98,7 @@ def asked_call(site: Site, name: str, records: Sequence[InputRecord]) -> AskedCa
     if not runs:
         return None
     first = runs[0][1]
-    code = loss_code(site, name, first.kind, len(first.going_in))
+    code = loss_code(site, name, first.kind, len(first.going_in), files)
     parameters = tuple(each for each in code.names if each is not None)
     complete = tuple(
         CompleteRun(number, _as_piece_run(each, code.names))
@@ -137,12 +140,17 @@ def skipped_because(call: AskedCall) -> str | None:
 
 
 def call_request(
-    target: Target, call: AskedCall, place: str, tries: tuple[EarlierFormula, ...]
+    target: Target,
+    call: AskedCall,
+    place: str,
+    tries: tuple[EarlierFormula, ...],
+    files: SourceFiles,
 ) -> SummaryRequest:
-    """The ask about a loss site, at its ``place``, with its earlier tries."""
+    """The ask about a loss site, at its ``place``, with its earlier tries, its code read through
+    the run's ``files``."""
     loop = call.loop
-    code = code_with_piece(target, loop.site.file, loop.piece.lines, word=CALL)
-    callee, source = _callee(call.callee, CODE_LIMIT - len(code) - 2)
+    code = code_with_piece(target, loop.site.file, loop.piece.lines, CALL, files)
+    callee, source = _callee(call.callee, CODE_LIMIT - len(code) - 2, files)
     if source is not None:
         code = f"{code}\n\n{source}" if code else source
     shown = shown_runs(loop)
@@ -158,7 +166,7 @@ def call_request(
     )
 
 
-def _callee(callee: Callee | None, room: int) -> tuple[str | None, str | None]:
+def _callee(callee: Callee | None, room: int, files: SourceFiles) -> tuple[str | None, str | None]:
     """A callee's module and qualified name, and its source when it is a Python function whose
     file reads and whose source fits in ``room``; Nones for no callee."""
     if callee is None:
@@ -166,5 +174,5 @@ def _callee(callee: Callee | None, room: int) -> tuple[str | None, str | None]:
     named = f"{callee.module}.{callee.qualname}"
     if callee.file is None or callee.line is None:
         return named, None
-    source = function_code(callee.file, callee.line, named)
+    source = function_code(callee.file, callee.line, named, files)
     return named, source if source is not None and len(source) <= room else None
