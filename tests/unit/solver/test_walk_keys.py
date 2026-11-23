@@ -344,9 +344,9 @@ def test_a_site_that_keeps_missing_is_asked_with_the_input_s_keys() -> None:
 def test_an_ask_with_chosen_keys_the_step_guard_gave_up_counts_no_miss(
     monkeypatch: pytest.MonkeyPatch, answer: Answer, gives_up: bool
 ) -> None:
-    # the step guard gives an ask up before cvc5 runs, at no cost, so the site keeps asking
-    # with chosen keys, where a later path may choose fewer; an ask cvc5 ran counts, whatever
-    # it answered
+    # the step guard gives up the ask's last program before cvc5 runs it, so the site keeps
+    # asking with chosen keys, where a later path may choose fewer; an answer cvc5 gave counts,
+    # whatever it was
     seed, path = int_only(1, 9)
     monkeypatch.setattr(cvc5, "_chosen", lambda *_: answer)
 
