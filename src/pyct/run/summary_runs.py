@@ -6,10 +6,10 @@ changes (`pyct.run.summary_checks.CompleteRun`). A request shows up to
 ``SHOWN_RUNS`` of them: the run its loop's last formula was dropped on
 first, then those whose values differ. When the runs hold two or more
 different values going in, it holds back each run whose values going in are
-those of one run: the latest whose changed values no run with other values
-going in has, else the latest, leaving out the run shown first's values, so
-that the check, which runs on every complete run, runs on values the model
-did not see.
+those of one run, chosen so that the check, which runs on every complete
+run, runs on values the model did not see, and so that a formula that
+leaves the changed names as they came in fails there when a run lets it
+(``_held_back``).
 """
 
 from __future__ import annotations
@@ -90,10 +90,11 @@ def shown_runs(loop: AskedLoop, first: CompleteRun | None = None) -> tuple[Shown
 
 def _held_back(every: list[ShownRun], first: list[int]) -> tuple[tuple[str, str], ...] | None:
     """The values going in of the runs a request holds back, among the runs whose values going
-    in differ from the run shown ``first``'s: the latest one's whose changed values no run with
-    other values going in has, so that a formula that writes down the runs shown and leaves
-    the rest as they came does not pass on it, else the latest one's; None when every run has
-    the same values going in."""
+    in differ from the run shown ``first``'s; None when every run has the same values going in.
+    The run picked is the latest of the first kind that holds one: a run whose changed values no
+    run with other values going in has and that moved a changed name (``_moved``); a run that
+    moved one; a run whose changed values are its own; any run. On a run of the first two
+    kinds, a formula that gives each changed name its value going in fails."""
     kept = {every[at].going_in for at in first}
     later = [each for each in reversed(every) if each.going_in not in kept]
     if not later or len({each.going_in for each in every}) < 2:
@@ -101,8 +102,20 @@ def _held_back(every: list[ShownRun], first: list[int]) -> tuple[tuple[str, str]
     going_in_of: dict[tuple[tuple[str, str], ...], set[tuple[tuple[str, str], ...]]] = {}
     for each in every:
         going_in_of.setdefault(each.changed, set()).add(each.going_in)
-    alone = (each for each in later if going_in_of[each.changed] == {each.going_in})
-    return next(alone, later[0]).going_in
+
+    def alone(run: ShownRun) -> bool:
+        return going_in_of[run.changed] == {run.going_in}
+
+    kinds = (lambda run: alone(run) and _moved(run), _moved, alone)
+    picked = (next((run for run in later if kind(run)), None) for kind in kinds)
+    return next((run for run in picked if run is not None), later[0]).going_in
+
+
+def _moved(run: ShownRun) -> bool:
+    """Whether the run's loop left a changed name with a value other than the one it went in
+    with, or one it did not go in with."""
+    going_in = dict(run.going_in)
+    return any(going_in.get(name) != value for name, value in run.changed)
 
 
 def not_shown(loop: AskedLoop, shown: Sequence[ShownRun]) -> int:

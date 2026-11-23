@@ -3,9 +3,9 @@ run's, so that a formula that writes down the runs shown fails on them, and the 
 the request did not show."""
 
 from pyct.core.foundation.branch import Changed, GoingIn, PieceRun
-from pyct.results.llm_asks import AskCost
+from pyct.results.llm_asks import AskCost, Unanswered
 from pyct.run.notes import SummaryChecked, SummaryFailed
-from pyct.run.summaries import SummaryReply
+from pyct.run.summaries import SummaryReply, SummaryRequest
 from pyct.run.summary_checks import CompleteRun
 from pyct.run.summary_runs import AskedLoop, ShownRun, not_shown, piece_at, shown_runs
 from tests.unit.run.test_summaries import (
@@ -135,3 +135,34 @@ def test_a_lookup_that_falls_through_fails_on_the_run_held_back() -> None:
     [request] = fake.requests
     assert request.runs == (on("ab"), on("a"))
     assert SummaryFailed(LOOP, 1, "at input 2, t was 1, the formula gave 0") in notes
+
+
+class Lookup(Fake):
+    """Answers with a lookup of the runs its request shows: each shown run's ``t`` for its ``s``,
+    and ``t`` as it came in for any other ``s``."""
+
+    def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
+        terms = "".join(
+            f" + (s == {dict(run.going_in)['s']}) * {dict(run.changed)['t']}"
+            for run in request.runs
+        )
+        self.answer = SummaryReply(
+            f'def summary(s, t):\n    t = t{terms}\n    return {{"t": t}}\n', AskCost(1)
+        )
+        return super().summarize(request)
+
+
+def test_a_run_whose_changed_values_the_loop_changed_is_held_back_before_one_it_left() -> None:
+    # "ab" alone gives t 0, but the loop left t as it came in, so a lookup that falls through
+    # would pass on it; "az" changed t
+    loop = loop_of("ab", "zb", "az")
+
+    assert shown_runs(loop) == (on("ab"), on("zb"))
+
+
+def test_a_lookup_of_the_runs_shown_fails_on_a_run_the_loop_changed() -> None:
+    runs = [record(counted("ab")), record(counted("zb")), record(counted("az"))]
+
+    _, notes, _ = taken(Lookup(), [entry(LOOPED)], runs)
+
+    assert SummaryFailed(LOOP, 1, "at input 3, t was 1, the formula gave 0") in notes

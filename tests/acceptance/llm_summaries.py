@@ -94,10 +94,20 @@ class FakeSummaries:
 def held_back(runs: Sequence[ShownRun]) -> tuple[tuple[str, str], ...]:
     """The values going in a request holds back from these runs, written as it shows them, in
     run order, as the story refuse-a-summary-that-only-repeats-its-runs picks them: the latest
-    run's whose changed values no run with other values going in has, else the latest run's."""
-    for each in reversed(runs):
-        if all(other.changed != each.changed for other in runs if other.going_in != each.going_in):
-            return each.going_in
+    run whose changed values no run with other values going in has and that moved a changed
+    name, else the latest that moved one, else the latest whose changed values are its own,
+    else the latest."""
+
+    def alone(run: ShownRun) -> bool:
+        return all(other.changed != run.changed for other in runs if other.going_in != run.going_in)
+
+    def moved(run: ShownRun) -> bool:
+        return any(dict(run.going_in).get(name) != value for name, value in run.changed)
+
+    for kind in (lambda run: alone(run) and moved(run), moved, alone):
+        found = [each for each in runs if kind(each)]
+        if found:
+            return found[-1].going_in
     return runs[-1].going_in
 
 
