@@ -23,7 +23,10 @@ or downgrade was recorded once the last argument was in hand, which is one
 the call made inside itself, and the answer is a plain int, float, bool, str or bytes, or
 a list, tuple, set, frozenset or dict holding only those. The loss is a
 downgrade named by the callee as the call writes it, at the call's site, in
-the sink of the call's first tracked value.
+the sink of the call's first tracked value. While a live input records loss
+runs, a judged call keeps its callee and writes each argument as JSON text
+as it is given, while the call has started fewer than 3 times in the input,
+and a loss records its run (`pyct.core.entry.losses`).
 
 The calls start and answer in the order Python runs them, so the calls
 that started and have not answered are a stack, one per thread, and each
@@ -50,9 +53,10 @@ import threading
 import types
 from collections.abc import Callable
 
+from pyct.core.entry import losses
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Downgrade, caller_site
+from pyct.core.foundation.branch import Downgrade, GoingIn, caller_site
 from pyct.core.foundation.package_builtins import binds
 
 # Python's own, which each watched call reads: the target may put others in `builtins` while
@@ -81,10 +85,12 @@ _CONTAINERS = frozenset({list, tuple, set, frozenset})
 
 class _Open:
     """One call that started and has not answered: the frame that started it and the instruction
-    it started at, whether its callee is judged, its first tracked value, and how many forks and
-    downgrades the process had recorded when its last argument was in hand."""
+    it started at, whether its callee is judged, its first tracked value, how many forks and
+    downgrades the process had recorded when its last argument was in hand, and, while a live
+    input records loss runs, its callee and its arguments as JSON text
+    (`pyct.core.entry.losses`)."""
 
-    __slots__ = ("at", "count", "frame", "judged", "tracked")
+    __slots__ = ("at", "callee", "count", "frame", "judged", "tracked", "values")
 
     def __init__(self, frame: types.FrameType, judged: bool, count: int) -> None:
         self.frame = frame
@@ -92,6 +98,8 @@ class _Open:
         self.judged = judged
         self.tracked: object = None
         self.count = count
+        self.callee: object = None
+        self.values: list[GoingIn] | None = None
 
 
 class _Calls(threading.local):
@@ -124,7 +132,11 @@ def called[Callee](callee: Callee, /, *, _ending: Callable[[], bool] = sys.is_fi
     if _ending():
         return callee
     calls = _calls()
-    call = _Open(sys._getframe(1), _judged(callee), escapes.RECORDED[0])
+    frame = sys._getframe(1)
+    call = _Open(frame, _judged(callee), escapes.RECORDED[0])
+    if call.judged:
+        call.values = losses.watching(frame)
+        call.callee = callee
     _drop_left_at(calls, call)
     if _len(calls) == MOST_OPEN:
         del calls[0]
@@ -142,6 +154,8 @@ def given[Value](value: Value, /, *, _ending: Callable[[], bool] = sys.is_finali
         return value
     if top.judged and top.tracked is None:
         top.tracked = _tracked_in(value)
+    if top.values is not None:
+        top.values = losses.written(top.values, value)
     top.count = escapes.RECORDED[0]
     return value
 
@@ -160,8 +174,9 @@ def answer[Result](
     tracked = top.tracked
     if tracked is None or escapes.RECORDED[0] != top.count or not _plain(result):
         return result
-    site = caller_site()
-    escapes.lost(tracked.sink, Downgrade(name=name, site=site), (tracked,))  # pyrefly: ignore[missing-attribute]
+    lost = Downgrade(name=name, site=caller_site())
+    escapes.lost(tracked.sink, lost, (tracked,))  # pyrefly: ignore[missing-attribute]
+    losses.call_lost(lost, top.values, result, top.callee)
     return result
 
 
