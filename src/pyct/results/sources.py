@@ -2,15 +2,18 @@
 that took it tracked and gave it back plain (run-missed-line-source-loop).
 
 The condition's function is read backward, without running it: the names
-the condition reads, the statements of the function that bind those names,
-the names those statements read, and so on. A path ends at a parameter, at a
-name bound inside a loop, a ``for`` or ``while`` of the function or a
-comprehension, which is a loop source, and at a call, an operator or a
-subscript where an input recorded a downgrade of that part's name, which is
-a lost source named by the first value it reads that came from a
-parameter. A name the function never binds, a global or another function's
-local, ends a path with no source, and so does an attribute's value, which
-is read through the name it hangs off.
+the condition reads, the bindings of those names that can reach it, the
+names those bindings read where they run, and so on. A binding reaches a
+place when the code can run from it to there with no other binding of its
+name in between (`pyct.results.reaching`). A path ends at a parameter, at a
+binding inside a loop that does not run the condition on its passes, a
+``for`` or ``while`` of the function or a comprehension, which is a loop
+source, and at a call, an operator or a subscript where an input recorded a
+downgrade of that part's name, which is a lost source named by the first
+value it reads that came from a parameter. A binding inside a loop around
+the condition is read through like any other. A name no binding reaches, a
+global or another function's local, ends a path with no source, and so does
+an attribute's value, which is read through the name it hangs off.
 """
 
 from __future__ import annotations
@@ -23,6 +26,7 @@ from dataclasses import dataclass, field
 
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Source, SourceKind
+from pyct.results.reaching import reaching
 
 # a place in the code, as a downgrade's site and an AST node's start give it
 type At = tuple[int, int]
@@ -39,21 +43,25 @@ _LONGEST_TEXT = 64
 
 @dataclass(frozen=True)
 class _Binding:
-    """One place the function binds a name: the expression it reads, if any, and the innermost
-    loop around it, or the loop itself for a ``for`` target."""
+    """One place the function binds a name: the expression it reads, if any, the innermost
+    loop around it, or the loop itself for a ``for`` target, and the name an augmented
+    assignment reads before it binds it again."""
 
     value: ast.expr | None
     loop: ast.AST | None
+    before: ast.Name | None = None
 
 
 @dataclass(frozen=True)
 class _Function:
     """What a function's reading needs, read once for all its conditions: each name it binds
-    with every place it binds it, each node's parent, and the names a parameter carries to."""
+    with every place it binds it, each node's parent, the names a parameter carries to, and
+    the bindings that reach each name it reads, by the read's id."""
 
     bound: dict[str, list[_Binding]]
     parents: dict[int, ast.AST]
     carried: frozenset[str]
+    reaches: dict[int, frozenset[_Binding]]
 
 
 @dataclass
@@ -86,7 +94,9 @@ class Origins:
         # the names the test reads that a comprehension around it binds are the comprehension's
         inner = _comprehension_names(test, known.parents)
         in_test = _carried_in(known.carried, inner, self.step)
-        return _Reading(self, known.bound, inner, (known.carried, in_test)).sources(test)
+        around = _loops_around(test, known.parents)
+        reading = _Reading(self, known.reaches, inner, (known.carried, in_test), around)
+        return reading.sources(test)
 
     def _function(self, code: types.CodeType) -> ast.AST | None:
         if not self._read:
@@ -170,13 +180,14 @@ def _own_nodes(scope: ast.AST, step: Callable[[], None]) -> Iterator[ast.AST]:
 
 def _read_function(function: ast.AST, step: Callable[[], None]) -> _Function:
     """Each name the function binds, with every place it binds it, a parameter none, each
-    node's parent, and the names a parameter carries to."""
+    node's parent, the names a parameter carries to, and the bindings that reach each read."""
     bound: dict[str, list[_Binding]] = {}
     parents: dict[int, ast.AST] = {}
     for node, loop in _with_loops(function, step, parents):
         for name, binding in _bound_by(node, loop):
             bound.setdefault(name, []).append(binding)
-    return _Function(bound, parents, _carried(function, bound, step))
+    reaches = reaching(function, _bound_by, step)
+    return _Function(bound, parents, _carried(function, bound, step), reaches)
 
 
 def _with_loops(
@@ -276,6 +287,17 @@ def _comprehension_names(test: ast.expr, parents: dict[int, ast.AST]) -> dict[st
     return names
 
 
+def _loops_around(test: ast.expr, parents: dict[int, ast.AST]) -> frozenset[int]:
+    """The loops whose passes run the test, by id: those whose body or test holds it."""
+    around: set[int] = set()
+    node, parent = test, parents.get(id(test))
+    while parent is not None:
+        if isinstance(parent, LOOPS) and not any(node is once for once in _outside(parent)):
+            around.add(id(parent))
+        node, parent = parent, parents.get(id(parent))
+    return frozenset(around)
+
+
 def _outside(loop: ast.For | ast.AsyncFor | ast.While) -> list[ast.AST]:
     """The parts of a loop that run once, not on each pass."""
     once: list[ast.AST] = list(loop.orelse)
@@ -284,22 +306,52 @@ def _outside(loop: ast.For | ast.AsyncFor | ast.While) -> list[ast.AST]:
     return once
 
 
-def _bound_by(node: ast.AST, loop: ast.stmt | None) -> Iterator[tuple[str, _Binding]]:
+def _bound_by(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:
     """The names one statement or expression binds, each with how."""
+    yield from _assigned(node, loop)
+    # a value no loop can summarize, so even one made in a loop is no loop source
+    for name in _named(node):
+        yield name, _Binding(None, None)
+
+
+def _assigned(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:
+    """The names a node binds to a value the reading follows."""
     if isinstance(node, ast.Assign):
         for target in node.targets:
             for name in names_in(target):
                 yield name, _Binding(node.value, loop)
     elif isinstance(node, ast.AugAssign | ast.AnnAssign | ast.NamedExpr) and node.value is not None:
-        # an augmented assignment reads its own name too, which the reading has already read
         for name in names_in(node.target):
-            yield name, _Binding(node.value, loop)
+            yield name, _Binding(node.value, loop, _before(node))
     elif isinstance(node, ast.For | ast.AsyncFor):
         for name in names_in(node.target):
             yield name, _Binding(node.iter, node)
     elif isinstance(node, ast.withitem) and node.optional_vars is not None:
         for name in names_in(node.optional_vars):
             yield name, _Binding(node.context_expr, loop)
+
+
+def _named(node: ast.AST) -> list[str]:
+    """The names a node binds to a value the reading does not follow: an ``except``'s, a
+    ``def``'s or a ``class``'s, an import's, and a ``case`` pattern's captures."""
+    if isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+        return [node.name] if node.name is not None else []
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        return [node.name]
+    if isinstance(node, ast.MatchMapping):
+        return [node.rest] if node.rest is not None else []
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        return [alias.asname or alias.name.split(".")[0] for alias in node.names]
+    return []
+
+
+def _before(node: ast.AugAssign | ast.AnnAssign | ast.NamedExpr) -> ast.Name | None:
+    """The name an augmented assignment reads as it binds it again."""
+    return (
+        node.target
+        if isinstance(node, ast.AugAssign) and isinstance(node.target, ast.Name)
+        else None
+    )
 
 
 def names_in(target: ast.expr) -> Iterator[str]:
@@ -315,41 +367,45 @@ def names_in(target: ast.expr) -> Iterator[str]:
 
 @dataclass
 class _Reading:
-    """One backward reading from a condition: the names already read, and the sources found."""
+    """One backward reading from a condition: the bindings already read, and the sources found."""
 
     origins: Origins
-    bound: dict[str, list[_Binding]]
+    reaches: dict[int, frozenset[_Binding]]
     inner: dict[str, list[_Binding]]
     # the names a parameter carries to: in the function, and where the test reads them
     carried: tuple[frozenset[str], frozenset[str]]
-    seen: set[tuple[str, bool]] = field(default_factory=set)
+    # the loops around the condition, by id, whose bindings are read through
+    around: frozenset[int]
+    seen: set[tuple[str, _Binding]] = field(default_factory=set)
     found: dict[tuple[SourceKind, str, At], Source] = field(default_factory=dict)
 
     def sources(self, test: ast.expr) -> tuple[Source, ...]:
         # a name the test reads is a comprehension's own when one around the test binds it;
         # every name read after is the function's
-        pending = [(name, name in self.inner) for name in self._read(test, None)]
+        pending = [(read, read.id in self.inner) for read in self._read(test, None)]
         while pending:
             self.origins.step()
-            name, inner = pending.pop()
-            if (name, inner) in self.seen:
-                continue
-            self.seen.add((name, inner))
-            for binding in (self.inner if inner else self.bound).get(name, []):
-                pending.extend((each, False) for each in self._followed(name, binding))
+            read, inner = pending.pop()
+            held = self.inner[read.id] if inner else self.reaches.get(id(read), ())
+            for binding in held:
+                if (read.id, binding) not in self.seen:
+                    self.seen.add((read.id, binding))
+                    pending.extend((each, False) for each in self._followed(read.id, binding))
         return tuple(
             sorted(self.found.values(), key=lambda source: (source.site.line, source.site.col))
         )
 
-    def _followed(self, name: str, binding: _Binding) -> Iterator[str]:
+    def _followed(self, name: str, binding: _Binding) -> Iterator[ast.Name]:
         """The names to read next from one binding of ``name``, after any source it is."""
-        if binding.loop is not None:
+        if binding.loop is not None and id(binding.loop) not in self.around:
             self._add(SourceKind.LOOP, name, binding.loop)
             return
         if binding.value is not None:
             yield from self._read(binding.value, name)
+        if binding.before is not None:
+            yield binding.before
 
-    def _read(self, expression: ast.expr, name: str | None) -> Iterator[str]:
+    def _read(self, expression: ast.expr, name: str | None) -> Iterator[ast.Name]:
         """The names an expression reads outside a call that lost a value and outside a
         comprehension, after each of those is noted as a source."""
         carried = self.carried[0] if name is not None else self.carried[1]
@@ -365,7 +421,7 @@ class _Reading:
             if isinstance(node, ast.Lambda):
                 continue
             if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                yield node.id
+                yield node
             pending.extend(reversed(list(ast.iter_child_nodes(node))))
 
     def _lost_in(self, node: ast.AST, carried: frozenset[str]) -> bool:

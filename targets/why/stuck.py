@@ -94,3 +94,21 @@ def picked(x: int) -> str:
     if [10, 20, 30][x % 3] > 15:
         return "big"
     return "small"
+
+
+def counted_after(s: str) -> int:
+    t = 0
+    if t == 3:
+        return -1
+    for _ in s:
+        t += 1
+    return t
+
+
+def squared(x: int) -> str:
+    b = pow(x, 3, 1000)
+    for _ in range(2):
+        b = pow(b, 2, 1000)
+        if b == 1:
+            return "one"
+    return "other"

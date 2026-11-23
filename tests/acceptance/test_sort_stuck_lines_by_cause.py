@@ -78,6 +78,31 @@ def test_counts_a_comprehension_as_a_loop() -> None:
     ]
 
 
+# run-missed-line-source-loop-names-no-loop-that-runs-after-the-condition
+def test_names_no_loop_that_runs_after_the_condition() -> None:
+    result = run_pyct(target("counted_after"), '{"s": "ab"}', *SHORT)
+
+    assert result.returncode == 0, result.stderr
+    missed = line_of("return -1")
+    entry = entry_for(result.stdout, missed)
+    assert entry["reason"] == "no fork"
+    assert entry["sources"] == []
+    assert why_line(result.stderr, missed).endswith("; no source found")
+
+
+# run-missed-line-source-loop-reads-a-loop-around-the-condition-through
+def test_reads_a_loop_around_the_condition_through() -> None:
+    result = run_pyct(target("squared"), '{"x": 3}', *SHORT)
+
+    assert result.returncode == 0, result.stderr
+    one, at = line_of('return "one"'), line_of("b = pow(x, 3, 1000)")
+    entry = entry_for(result.stdout, one)
+    assert entry["reason"] == "no fork"
+    lost = {"kind": "lost", "name": "x", "call": "__pow__", "file": FILE, "line": at, "col": 8}
+    assert entry["sources"] == [lost]
+    assert why_line(result.stderr, one).endswith(f"no fork; x lost in __pow__ at {FILE}:{at}:8")
+
+
 # run-missed-line-source-call-names-the-call-that-lost-a-value
 def test_names_the_call_that_lost_a_value() -> None:
     result = run_pyct(target("ones"), '{"x": 3}', *SHORT)

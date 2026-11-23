@@ -20,8 +20,10 @@ class Bounds:
     does, not when the person typed the seconds. The solver timeout stays
     seconds, because each solve starts its own clock. ``goal`` says whether
     the loop stops once every line and branch is covered, and ``seeds`` how
-    many inputs the plateau leaves out before it counts. All in one value,
-    so the loop and each pass keep to five parameters.
+    many inputs the plateau leaves out before it counts. ``budget`` keeps
+    the budget's seconds, which a stuck moment's stretch is a share of
+    (``pyct.run.stuck``). All in one value, so the loop and each pass keep
+    to five parameters.
     """
 
     until: float | None = None
@@ -29,6 +31,7 @@ class Bounds:
     solver_timeout: float = DEFAULT_SECONDS
     goal: Goal = Goal.COVERAGE
     seeds: int = 1
+    budget: float | None = None
 
     @classmethod
     def of(cls, limits: Limits, seeds: int) -> Bounds:
@@ -38,6 +41,7 @@ class Bounds:
             solver_timeout=limits.solver_timeout.seconds,
             goal=limits.goal,
             seeds=seeds,
+            budget=limits.budget.seconds,
         )
 
     def paused(self, seconds: float) -> Bounds:
