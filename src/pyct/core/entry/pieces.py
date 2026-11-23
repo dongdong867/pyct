@@ -201,6 +201,16 @@ def forget() -> None:
     in_use.forget()
 
 
+def counted(cost: int) -> bool:
+    """Whether a run that counts ``cost`` by its own measure, such as a loss site's
+    (`pyct.core.entry.losses`), fits in what the live input's recorded runs may count together,
+    `MOST_TEXT`: counted when it does."""
+    if _RECORDING.sink is None or _RECORDING.text + cost > MOST_TEXT:
+        return False
+    _RECORDING.text += cost
+    return True
+
+
 def size(run: PieceRun) -> int:
     """What a run counts against `MOST_TEXT`: the characters of its file, its names and its
     values, `RUN_COUNT` for the run and `VALUE_COUNT` for each value."""

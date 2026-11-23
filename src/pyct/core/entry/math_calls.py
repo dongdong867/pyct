@@ -19,7 +19,8 @@ call runs, `pyct.core.entry.bound` hands the call one of these routers (`ROUTERS
 - any other call with a tracked argument, of another function or in a form
   not encoded here, is Python's own answer on the plain values, and a
   downgrade named by the function after it, so a call that raises records
-  nothing.
+  nothing; a live input that records loss runs records its run
+  (`pyct.core.entry.losses`).
 
 A call with no tracked argument is Python's own. `floor`, `ceil` and
 `trunc` ask the number for its own `__floor__`, `__ceil__` and `__trunc__`,
@@ -36,6 +37,7 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any, cast
 
+from pyct.core.entry import losses
 from pyct.core.foundation.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.foundation.escapes import lost
 from pyct.core.foundation.values import forked, own, plain
@@ -189,7 +191,10 @@ def _tracked_call(
             return answer
     plain_args = [_plain(arg) for arg in args]
     answer = own(function, *plain_args, **{key: _plain(value) for key, value in kwargs.items()})
-    lost(sink, Downgrade(name=function.__name__, site=caller_site()), (*args, *kwargs.values()))
+    lost_as = Downgrade(name=function.__name__, site=caller_site())
+    given = (*args, *kwargs.values())
+    lost(sink, lost_as, given)
+    losses.math_lost(lost_as, given, answer)
     return answer
 
 

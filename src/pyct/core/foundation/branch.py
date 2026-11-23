@@ -216,6 +216,41 @@ class PieceRun:
     changed: tuple[Changed, ...]
 
 
+class LossKind(StrEnum):
+    """Where a loss site lost its value: an operation of a tracked value pyct has not taught, a
+    `math` call pyct does not follow, or a watched call into code pyct cannot see inside."""
+
+    OPERATION = "operation"
+    MATH = "math"
+    CALL = "call"
+
+
+@dataclass(frozen=True)
+class Callee:
+    """The callee of a watched call: its module and qualified name, and, for a Python function,
+    the file and first line of its code."""
+
+    module: str
+    qualname: str
+    file: str | None = None
+    line: int | None = None
+
+
+@dataclass(frozen=True)
+class LossRun:
+    """One recorded run of a loss site (`pyct.core.entry.losses`): the site, the downgrade's name,
+    its kind, each value going in, by its position, ``arg1`` first, its JSON text and whether it
+    was tracked, and the one changed name, ``answer``, with the answer's JSON text. A watched
+    call's run names its callee."""
+
+    site: Site
+    name: str
+    kind: LossKind
+    going_in: tuple[GoingIn, ...]
+    changed: tuple[Changed, ...]
+    callee: Callee | None = None
+
+
 class DropReason(StrEnum):
     """Why a loop's formula was dropped in an input: a changed value it gave is not the loop's,
     it raised, or it gave no value for a changed name."""
@@ -247,9 +282,9 @@ class FormulaDrop:
     run: int | None = None
 
 
-# what a sink holds: the forks, the facts, the downgrades, the recorded runs of pieces and the
-# formulas dropped, in the order they happened
-type SinkItem = Branch | Fact | Downgrade | PieceRun | FormulaDrop
+# what a sink holds: the forks, the facts, the downgrades, the recorded runs of pieces and of loss
+# sites, and the formulas dropped, in the order they happened
+type SinkItem = Branch | Fact | Downgrade | PieceRun | LossRun | FormulaDrop
 
 
 class BranchSink(Protocol):
