@@ -401,7 +401,8 @@ def _unanswered(
     wanted: Plan, answer: Unsat | Unknown | Timeout | Error, solved: Solved, unrun: ForkSite
 ) -> Attempt:
     """The pass for an answer that gives no input: the run's end when the solver crashed, and
-    a miss on the fork otherwise."""
+    a miss on the fork otherwise. ``answer`` is ``solved.answer``, which the caller narrowed,
+    so the type check knows it is no ``Sat``."""
     if isinstance(answer, Error):
         stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
         return Attempt(stop=stop, unrun=unrun, asked=solved.asked)
