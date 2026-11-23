@@ -13,6 +13,7 @@ from pyct.llm.summaries import request_text
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse, Unanswered
 from pyct.results.record import InputRecord
+from pyct.run.isolation import Isolation
 from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
 from tests.acceptance.llm_summaries import (
     COUNT,
@@ -30,6 +31,7 @@ from tests.acceptance.llm_summaries import (
 
 # `encoded_z` of the criteria, whose loop records no fork, and its loop's line
 ENCODED_Z = "targets.summaries.loops::encoded_z"
+STOPS = "targets.summaries.loops::stops"
 ENCODED_Z_LOOP = 132
 
 
@@ -149,3 +151,25 @@ def test_the_request_says_runs_it_does_not_show_are_checked() -> None:
     text = request_text(request)
     assert "and ones this request does not show" in text
     assert "a formula that only writes down the runs shown can fail" in text
+
+
+# llm-summary-never-used-loop-that-returns
+def test_a_loop_whose_own_code_returns_is_not_asked_about() -> None:
+    provider = FakeSummaries([COUNT])
+
+    done = run_summaries(STOPS, SEED, provider)
+
+    assert provider.requests == []
+    skipped = f"llm: summary for the loop at {G}:22 skipped: the loop holds a return"
+    assert done.said.count(skipped) == 1
+
+
+# llm-summary-never-used-in-pyct-s-process
+def test_no_loop_is_asked_about_while_inputs_run_in_pyct_s_process() -> None:
+    provider = FakeSummaries([COUNT])
+
+    done = run_summaries(COUNTS, SEED, provider, isolation=Isolation.IN_PROCESS)
+
+    assert provider.requests == []
+    skipped = f"llm: summary for the loop at {F}:10 skipped: inputs run in pyct's own process"
+    assert done.said.count(skipped) == 1

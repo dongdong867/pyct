@@ -3,7 +3,7 @@ process of their own, keeps it checked when they run in pyct's, does not ask abo
 again, and takes its loops out of use as the run ends."""
 
 import dataclasses
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 import pytest
@@ -19,7 +19,6 @@ from pyct.run import loop
 from pyct.run.formula_runner import FormulaRunner
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
-from pyct.run.loops_in_use import IN_PYCT_S_PROCESS
 from pyct.run.notes import Note, SummaryChecked, SummaryNotUsed, SummaryRead
 from pyct.run.run import run
 from pyct.run.setup import Setup
@@ -60,18 +59,30 @@ def table() -> Iterator[dict[tuple[str, int, int], LoopInUse]]:
     in_use.IN_USE.clear()
 
 
-def tool(isolated: bool, notes: list[Note] | None = None) -> tuple[Summaries, Fake]:
-    """The tool for ``counts``, its provider answering ``FORMULA``, told whether the run's inputs
+# a formula whose value is a list, as `listed` runs record it, so it is checked and not used
+LISTED = 'def summary(s, t):\n    return {"t": s.split("q")}\n'
+LIST = "t is a list"
+
+
+def tool(
+    isolated: bool, notes: list[Note] | None = None, formula: str = FORMULA
+) -> tuple[Summaries, Fake]:
+    """The tool for ``counts``, its provider answering ``formula``, told whether the run's inputs
     run in a process of their own."""
     told = Told(
         scope=Scope.of_module(FILE), tell=Tell(noted=(notes if notes is not None else []).append)
     )
-    fake = Fake(SummaryReply(FORMULA, AskCost(1)))
+    fake = Fake(SummaryReply(formula, AskCost(1)))
     return Summaries(fake, load_target(COUNTS), told, isolated=lambda: isolated), fake
 
 
-def taken(summaries: Summaries, at: int = 1) -> Handled:
-    run = Run([record(counted("ab")), record(counted("zz"))])
+def listed(s: str) -> PieceRun:
+    """A run of ``counts``'s loop on ``s`` that left ``t`` a list of ``s``, as ``LISTED`` gives."""
+    return PieceRun(LOOP, counted(s).going_in, (Changed("t", f'["{s}"]'),))
+
+
+def taken(summaries: Summaries, at: int = 1, made: Callable[[str], PieceRun] = counted) -> Handled:
+    run = Run([record(made("ab")), record(made("zz"))])
     return summaries.take((entry(LOOPED),), Moment(at, (), run))
 
 
@@ -169,8 +180,8 @@ def test_the_inputs_two_formulas_put_in_use_were_checked_on_run_again_in_run_ord
 
 
 def test_a_formula_not_put_in_use_runs_no_input_again() -> None:
-    summaries, _ = tool(isolated=False)
-    run = Run([dataclasses.replace(record(counted("zz")), args={"s": "zz"})])
+    summaries, _ = tool(isolated=True, formula=LISTED)
+    run = Run([dataclasses.replace(record(listed("zz")), args={"s": "zz"})])
 
     summaries.take((entry(LOOPED),), Moment(1, (), run))
 
@@ -187,44 +198,44 @@ def test_a_loop_in_use_runs_no_input_again_at_a_later_moment() -> None:
     assert len(run.ran) == 1
 
 
-def test_a_formula_that_passes_stays_checked_for_inputs_in_pyct_s_process(
+def test_a_formula_whose_loop_changes_a_list_stays_checked(
     table: dict[tuple[str, int, int], LoopInUse],
 ) -> None:
-    summaries, _ = tool(isolated=False)
+    summaries, _ = tool(isolated=True, formula=LISTED)
 
-    handled = taken(summaries)
+    handled = taken(summaries, made=listed)
 
     assert handled == Handled((Outcome.TOOK,), asked=True)
     assert summaries.states() == (
-        LoopSummary(FILE, 10, 4, ("t",), FORMULA, SummaryState.CHECKED, 1, 2),
+        LoopSummary(FILE, 10, 4, ("t",), LISTED, SummaryState.CHECKED, 1, 2),
     )
     assert table == {}
 
 
 def test_a_formula_not_used_says_why_right_after_its_checked_line() -> None:
     notes: list[Note] = []
-    summaries, _ = tool(isolated=False, notes=notes)
+    summaries, _ = tool(isolated=True, notes=notes, formula=LISTED)
 
-    taken(summaries)
+    taken(summaries, made=listed)
 
     assert notes == [
-        SummaryRead(LOOP, 't = t + s.count("z")'),
+        SummaryRead(LOOP, 't = s.split("q")'),
         SummaryChecked(LOOP, 2, 1),
-        SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS),
+        SummaryNotUsed(LOOP, LIST),
     ]
 
 
 def test_a_formula_not_used_is_said_once_and_its_loop_not_asked_about_again() -> None:
     notes: list[Note] = []
-    summaries, fake = tool(isolated=False, notes=notes)
-    taken(summaries)
+    summaries, fake = tool(isolated=True, notes=notes, formula=LISTED)
+    taken(summaries, made=listed)
 
-    handled = taken(summaries, at=2)
+    handled = taken(summaries, at=2, made=listed)
 
     assert len(fake.requests) == 1
     assert handled == Handled((Outcome.TOOK,), asked=False)
     assert [each for each in notes if isinstance(each, SummaryNotUsed)] == [
-        SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS)
+        SummaryNotUsed(LOOP, LIST)
     ]
     assert summaries.states()[0].state is SummaryState.CHECKED
 

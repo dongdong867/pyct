@@ -106,16 +106,15 @@ def test_a_loop_whose_formula_failed_is_asked_about_again_with_the_failed_formul
 def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[int]) -> None:
     provider = FakeSummaries([COUNT])
 
-    # inputs in pyct's own process keep the formula checked and not used, so the loop's forks
-    # stay as before and the second moment's entry names the loop again
-    done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS, Isolation.IN_PROCESS)
+    # the formula comes into use; pyct asks nothing while inputs run in its own process
+    # (refuse-a-summary-that-only-repeats-its-runs)
+    done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS)
 
     assert len(moments) >= 2
     assert len(provider.requests) == 1
     assert summary_lines(done) == [
         f'{AT}: t = t + s.count("z")',
         f"{AT}: {checked_on(provider)}",
-        f"{AT} not used: inputs run in pyct's own process",
     ]
 
 

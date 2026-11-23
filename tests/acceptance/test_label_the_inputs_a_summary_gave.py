@@ -119,8 +119,12 @@ def test_the_solver_input_that_reaches_the_missed_line_is_labeled_summary() -> N
 
 # llm-summary-input-not-run-again-for-a-formula-not-used
 def test_a_formula_not_used_runs_no_input_again() -> None:
-    done = encoded(Isolation.IN_PROCESS)
+    # in pyct's own process no formula could come into use, so the loop is not asked about
+    # (refuse-a-summary-that-only-repeats-its-runs)
+    provider = FakeSummaries([COUNT])
+    done = run_summaries(ENCODED_Z, SEED, provider, LONGER, Isolation.IN_PROCESS)
 
-    assert any(" not used: " in line for line in done.llm_said()), done.said
+    assert provider.requests == []
+    assert any(" skipped: inputs run in pyct's own process" in line for line in done.llm_said())
     assert [record.source for record in done.records] == [Source.SEED]
     assert done.result.stopped.kind is StopKind.NO_FORK

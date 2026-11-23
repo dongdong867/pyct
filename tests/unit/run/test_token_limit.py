@@ -51,9 +51,15 @@ def causes(monkeypatch: pytest.MonkeyPatch) -> list[int]:
     return worked_out
 
 
-def ran(spec: str, seed: Mapping[str, object], helpers: Helpers) -> RunResult:
-    """``run()`` on ``spec`` with ``helpers``, its package recording each loop's runs."""
-    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=helpers)
+def ran(
+    spec: str,
+    seed: Mapping[str, object],
+    helpers: Helpers,
+    isolation: Isolation = Isolation.IN_PROCESS,
+) -> RunResult:
+    """``run()`` on ``spec`` with ``helpers``, its package recording each loop's runs, each input
+    where ``isolation`` says."""
+    setup = Setup(isolation=isolation, helpers=helpers)
     with interception(spec, pieces=True):
         return run(load_target(spec), seed, limits=LONG, setup=setup)
 
@@ -64,7 +70,8 @@ def test_a_summaries_reply_that_reaches_the_limit_ends_every_tool_s_asks(
     summaries = FakeSummaries([COUNT], limit=sum(TOKENS))
     rewrites = FakeRewrites(['s == "1e-30"'])
 
-    ran(COUNTS, SEED, Helpers(summaries=summaries, rewrites=rewrites))
+    # inputs in processes of their own, since summaries ask nothing while they run in pyct's
+    ran(COUNTS, SEED, Helpers(summaries=summaries, rewrites=rewrites), Isolation.AUTO)
 
     assert len(summaries.requests) == 1
     assert len(causes) == 1

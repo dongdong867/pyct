@@ -82,6 +82,21 @@ def unused_because(
 ) -> str | None:
     """Why the checked formula of the loop at ``site`` does not come into use, or None when it
     does. ``isolated`` says whether the run's inputs run in a process of their own."""
+    never = never_used_because(site, isolated)
+    if never is not None:
+        return never
+    for each in runs:
+        for value in each.run.changed:
+            kind = _kind(value.value) if value.name in changed else None
+            if kind is not None:
+                return f"{value.name} is {kind}"
+    return None
+
+
+def never_used_because(site: Site, isolated: bool) -> str | None:
+    """Why no formula of the loop at ``site`` could come into use now, whatever its runs
+    recorded, or None when one could: the run's inputs run in pyct's own process, the loop's
+    file no longer holds it, or the loop's own code holds a return, yield or await."""
     if not isolated:
         return IN_PYCT_S_PROCESS
     found = statement_at(site)
@@ -90,11 +105,6 @@ def unused_because(
     leaving = leaving_by(found[0])
     if leaving is not None:
         return f"the loop holds {leaving}"
-    for each in runs:
-        for value in each.run.changed:
-            kind = _kind(value.value) if value.name in changed else None
-            if kind is not None:
-                return f"{value.name} is {kind}"
     return None
 
 

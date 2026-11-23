@@ -29,12 +29,13 @@ from tests.acceptance.llm_summaries import (
     G,
     checked_on,
     code_reply,
+    held_back,
     one_thread,  # noqa: F401
     run_summaries,
 )
 
 TALLIES = "targets.summaries.loops::tallies"
-STOPS = "targets.summaries.loops::stops"
+GUARDED = "targets.summaries.loops::guarded"
 VOWELS = "targets.summaries.loops::vowels"
 # a formula the checks would refuse, for a test about the ask alone
 ANY = code_reply('def summary(s, t):\n    return {"t": t}')
@@ -107,17 +108,19 @@ def test_a_loop_two_missed_lines_name_is_asked_about_once_for_both_its_values() 
 
 # llm-summary-for-a-stuck-loop-loop-that-returns
 def test_the_request_and_the_check_hold_only_the_runs_in_which_the_loop_ended() -> None:
+    # a loop that raises, since one that returns is not asked about
+    # (refuse-a-summary-that-only-repeats-its-runs)
     provider = FakeSummaries([COUNT])
 
-    done = run_summaries(STOPS, SEED, provider)
+    done = run_summaries(GUARDED, SEED, provider)
 
     [request] = provider.requests
     before = done.records[: provider.inputs_then[0]]
-    ended = [record for record in before if "!" not in str(record.args["s"])]
+    ended = [shown(record) for record in before if "#" not in str(record.args["s"])]
     assert len(ended) < len(before)
-    # the latest run's values going in are held back (refuse-a-summary-that-only-repeats-its-runs)
-    assert request.runs == tuple(shown(record) for record in ended[:-1])[:10]
-    assert f"llm: summary for the loop at {G}:22: {checked_on(provider)}" in done.said
+    held = held_back(ended)
+    assert request.runs == tuple(run for run in ended if run.going_in != held)[:10]
+    assert f"llm: summary for the loop at {G}:114: {checked_on(provider)}" in done.said
 
 
 # llm-summary-for-a-stuck-loop-no-recorded-run

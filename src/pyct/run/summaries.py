@@ -6,10 +6,12 @@ distinct loop its sources name, in code order, however many entries name it.
 A loop is asked about with its function's code, the loop marked, and its
 complete runs: the runs of it the inputs so far recorded that hold every
 name it changes, up to 3 per input, but those it holds back
-(``pyct.run.summary_runs``). A loop with no complete run, and one
-asked about while pyct's process runs a second thread, so that no formula
-could run, is skipped at this moment with no ask, and said the first time
-this run it is skipped for that reason. An ask that got no answer is said
+(``pyct.run.summary_runs``). A loop no formula of which could come into
+use, by its own code or since the run's inputs run in pyct's own process
+(``pyct.run.loops_in_use.never_used_because``), a loop with no complete run,
+and one asked about while pyct's process runs a second thread, so that no
+formula could run, is skipped at this moment with no ask, and said the first
+time this run it is skipped for that reason. An ask that got no answer is said
 and ends that loop's tries at this moment; once an answer leaves no token
 under the limit no summary is asked for again this run, the tool says it
 can ask no more, and the connection has said so. A reply with no code block
@@ -73,6 +75,7 @@ from pyct.run.loops_in_use import (
     IN_PYCT_S_PROCESS,
     LoopsInUse,
     dropped_because,
+    never_used_because,
     place_of,
     unused_because,
 )
@@ -273,6 +276,10 @@ class Summaries:
         state = self.loops.get(site)
         if state is not None and state.last in _KEPT:
             return Asked.CHECKED, False
+        never = never_used_because(site, self.isolated())
+        if never is not None:
+            self._skipped(site, never)
+            return Asked.NOT_ASKED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
             self._skipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK)

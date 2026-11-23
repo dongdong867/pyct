@@ -216,24 +216,27 @@ def test_a_formula_in_use_is_listed_in_use() -> None:
 
 
 # llm-summary-for-a-stuck-loop-not-used-for-a-loop-that-can-leave
-def test_a_formula_for_a_loop_that_returns_is_not_used_and_says_why() -> None:
-    done = summarized("few_stops", COUNT)
+def test_a_loop_that_returns_is_not_asked_about_and_says_why() -> None:
+    # no formula of it could come into use, so it is not asked about
+    # (refuse-a-summary-that-only-repeats-its-runs)
+    provider = FakeSummaries([COUNT])
+    done = run_summaries(f"{LOOPS}::few_stops", SEED, provider)
 
     loop = line_of("few_stops", "for c in s:")
     said = done.llm_said()
-    checked = next(at for at, line in enumerate(said) if ": checked on " in line)
-    not_used = f"llm: summary for the loop at {G}:{loop} not used: the loop holds a return"
-    assert said[checked + 1] == not_used
-    assert said.count(not_used) == 1
+    skipped = f"llm: summary for the loop at {G}:{loop} skipped: the loop holds a return"
+    assert provider.requests == []
+    assert said.count(skipped) == 1
+    assert not any(": checked on " in line for line in said)
     stop, z = line_of("few_stops", 'if c == "!":'), line_of("few_stops", 'if c == "z":')
-    for record in after_checked(done):
+    for record in done.records:
         s = str(record.args["s"])
         read = s.index("!") + 1 if "!" in s else len(s)
         # each character read forks at the `"!"` test, and each but a `"!"` at the `"z"` test
         assert len(forks_at(record, stop)) == read, record
         assert len(forks_at(record, z)) == len(s[:read].replace("!", "")), record
         assert not any(holds(each.expression, Z) for each in record.forks), record
-    assert state_of(done) == "checked"
+    assert done.result.summaries == ()
 
 
 def state_of(done: Summarized) -> object:
