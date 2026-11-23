@@ -85,10 +85,11 @@ class Inputs:
     ``ran`` names, in order, where each input ran. In ``auto`` the switch to
     fresh interpreters is said once on stderr; so is the switch to pyct's
     own process, for a target pyct cannot tell its spec names, which a fresh
-    interpreter might not load.
+    interpreter might not load. With ``losses`` each input records the runs of its loss sites
+    (``ExecutionContext.losses``).
     """
 
-    def __init__(self, target: Target, isolation: Isolation) -> None:
+    def __init__(self, target: Target, isolation: Isolation, *, losses: bool = False) -> None:
         if isolation is Isolation.FRESH and not _named(target):
             raise ValueError(
                 "a fresh interpreter loads the target by its name, and"
@@ -98,12 +99,12 @@ class Inputs:
         self.isolation = isolation
         self.ran: list[Isolation] = []
         self._switched: Isolation | None = None
-        alone = execution_context(target, alone=True)
+        alone = execution_context(target, alone=True, losses=losses)
         self._calls: dict[Isolation, Call] = {
             # random's state as the run finds it after the target's import, taken once
             Isolation.FORK: functools.partial(in_a_child, alone, random.getstate()),
             Isolation.FRESH: functools.partial(
-                in_a_fresh_interpreter, fresh_for(target.spec, target.file)
+                in_a_fresh_interpreter, fresh_for(target.spec, target.file, losses=losses)
             ),
             Isolation.IN_PROCESS: functools.partial(
                 execute, dataclasses.replace(alone, alone=False)

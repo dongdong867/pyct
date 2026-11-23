@@ -29,12 +29,11 @@ from dataclasses import dataclass, field
 
 from pyct.core.foundation.branch import (
     Branch,
-    Changed,
     DropReason,
     Expression,
     Fact,
     FormulaDrop,
-    GoingIn,
+    LossRun,
     PieceRun,
     Site,
 )
@@ -55,13 +54,13 @@ from pyct.run.journal import (
     FULL,
     HEAD,
     LINE,
+    LOSS,
     NOTE_AT,
     NOTE_SIZE,
     NUMBER,
     OPEN,
     PART,
     PIECE,
-    PIECE_HEAD,
     RECORDS,
     START,
     STATE,
@@ -72,6 +71,7 @@ from pyct.run.journal import (
     Journal,
     padded,
 )
+from pyct.run.journal_pieces import loss_run, piece_run
 
 _DECODER = json.JSONDecoder()
 
@@ -103,8 +103,9 @@ class Reading:
     be read. ``bound`` says the writer stopped at the bound on what pyct
     keeps for one input, which is the input's own ending. ``reach`` is the
     functions the call entered and the ways their branches went,
-    ``pieces`` the recorded runs of the pieces of the target's code, and
-    ``drops`` the loops' formulas dropped in the call.
+    ``pieces`` the recorded runs of the pieces of the target's code,
+    ``losses`` those of its loss sites, and ``drops`` the loops' formulas
+    dropped in the call.
     """
 
     lines: frozenset[int]
@@ -119,6 +120,7 @@ class Reading:
     reach: Reach = field(default_factory=Reach)
     pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
+    losses: tuple[LossRun, ...] = ()
 
 
 def read(buffer: Journal) -> Reading:
@@ -233,6 +235,7 @@ class _Facts:
     facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
     pieces: list[PieceRun] = field(default_factory=list)
+    losses: list[LossRun] = field(default_factory=list)
     drops: list[FormulaDrop] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
     sites: dict[tuple[str, int, int], Site] = field(default_factory=dict)
@@ -280,15 +283,21 @@ class _Facts:
             self.recount(payload.obj)
             self._downgrade(bytes(payload), carries_on=kind == CARRY_ON)
             self.counted_at = at
-        elif kind == PIECE:
-            self.pieces.append(self._piece(bytes(payload)))
+        elif kind in (PIECE, LOSS):
+            self._run(kind, bytes(payload))
         elif kind == START:
             self.started = True
         elif kind == END:
-            ending = _ending(_decoded(payload))
-            self.ended, self.end = True, ending
+            self.ended, self.end = True, _ending(_decoded(payload))
         else:
             raise ValueError(f"no record of kind {kind}")
+
+    def _run(self, kind: int, payload: bytes) -> None:
+        """Add a recorded run of a piece or of a loss site."""
+        if kind == PIECE:
+            self.pieces.append(piece_run(payload, self._site))
+        else:
+            self.losses.append(loss_run(payload, self._site))
 
     def _reached(self, kind: int, payload: memoryview) -> None:
         """Add a function the call entered, or a way a branch went."""
@@ -326,20 +335,6 @@ class _Facts:
             self.downgrades[-1] = entry
         else:
             self.downgrades.append(entry)
-
-    def _piece(self, payload: bytes) -> PieceRun:
-        """A recorded run, read from its head and its NUL-separated file, names and values."""
-        line, col, going_in, changed = PIECE_HEAD.unpack_from(payload)
-        file, *fields = payload[PIECE_HEAD.size :].decode(errors="surrogatepass").split("\0")
-        if len(fields) != 3 * going_in + 2 * changed:
-            raise ValueError("a recorded run holds three fields a name going in, two a changed")
-        held = [fields[at : at + 3] for at in range(0, 3 * going_in, 3)]
-        if any(tracked not in ("0", "1") for _, tracked, _ in held):
-            raise ValueError("a name going in is marked 1 for tracked or 0")
-        ins = tuple(GoingIn(name, value, tracked == "1") for name, tracked, value in held)
-        rest = fields[3 * going_in :]
-        outs = tuple(Changed(*rest[at : at + 2]) for at in range(0, len(rest), 2))
-        return PieceRun(self._site(file, line, col), ins, outs)
 
     def recount(self, view: Buffer) -> None:
         """Read the last entry's count again: the writer grows it in place while it repeats, so
@@ -427,6 +422,7 @@ class _Facts:
             downgrades=tuple(self.downgrades),
             facts=tuple(self.facts),
             pieces=tuple(self.pieces),
+            losses=tuple(self.losses),
             drops=tuple(self.drops),
             started=self.started,
             ended=self.ended,

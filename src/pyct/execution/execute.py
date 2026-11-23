@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind_call
 from pyct.binding.builds import Build, BuildError, CallPlan, SelfBuild, plan_call
-from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, PieceRun
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, LossRun, PieceRun
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.branch_ways import CodeWays
@@ -43,7 +43,9 @@ class ExecutionContext:
     ``self_build`` says how each call builds the instance a method runs on, from
     the dict the seed holds under the method's first parameter. A value
     there of any other type is passed as the instance as given. ``home`` is
-    the module a bare class name under ``"__class__"`` is read in.
+    the module a bare class name under ``"__class__"`` is read in. ``losses`` says each call
+    records the runs of its loss sites (`pyct.core.entry.losses`), as a run with summaries
+    switched on asks.
     """
 
     fn: Callable[..., object]
@@ -53,6 +55,7 @@ class ExecutionContext:
     checks: Mapping[str, Check] = field(default_factory=dict)
     self_build: SelfBuild | None = None
     home: str = ""
+    losses: bool = False
 
 
 @dataclass(frozen=True)
@@ -63,8 +66,10 @@ class ExecutionResult:
     path holds beside the forks, each placed after the forks recorded before it. ``reach`` is
     the functions of the file it entered and the ways their branches went. ``pieces`` are the
     recorded runs of the pieces of the target's code, in the order each ended
-    (`pyct.core.entry.pieces`), none when its code has no hooks, and ``drops`` the loops'
-    formulas dropped in it (`pyct.core.entry.in_use`).
+    (`pyct.core.entry.pieces`), none when its code has no hooks, ``losses`` the recorded
+    runs of its loss sites, in the order recorded, none with the context's ``losses`` off
+    (`pyct.core.entry.losses`), and ``drops`` the loops' formulas dropped in it
+    (`pyct.core.entry.in_use`).
     """
 
     lines: frozenset[int]
@@ -75,6 +80,7 @@ class ExecutionResult:
     reach: Reach = field(default_factory=Reach)
     pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
+    losses: tuple[LossRun, ...] = ()
 
 
 def execute(
@@ -100,7 +106,7 @@ def execute(
     ends the input before any line runs, as the target's raise.
     """
     tally = Tally(watch)
-    tally.go_live(alone=ctx.alone)
+    tally.go_live(alone=ctx.alone, losses_on=ctx.losses)
     bound = bind_call(args, tally, ctx.checks, ctx.home)
     try:
         plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home, ctx.checks)
@@ -134,6 +140,7 @@ def _result(tally: Tally, failure: Failure | None) -> ExecutionResult:
         reach=tally.reach(),
         pieces=tuple(tally.pieces),
         drops=tuple(tally.drops),
+        losses=tuple(tally.losses),
     )
 
 

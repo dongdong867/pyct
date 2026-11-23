@@ -81,7 +81,8 @@ def run(
 
     The run's coverage adds the lines the target's import ran
     (``Target.import_lines``) to the inputs'; the plateau reads the inputs'
-    alone. Each seed's constructor arguments, under the ``self`` of a method
+    alone. With ``setup.helpers.summaries`` each input records the runs of its loss sites,
+    which summaries ask about. Each seed's constructor arguments, under the ``self`` of a method
     whose instance each input builds, in each object it names with
     ``"__class__"``, and in each JSON object a class hint builds, first take
     the simple defaults it leaves out (``with_defaults``).
@@ -91,7 +92,7 @@ def run(
         raise ValueError("a run needs at least one seed")
     scope = Scope.of_module(target.file)
     walk_keys.forget()
-    inputs = Inputs(target, setup.isolation)
+    inputs = Inputs(target, setup.isolation, losses=setup.helpers.summaries is not None)
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())
     bounds = Bounds.of(limits, len(seeds))

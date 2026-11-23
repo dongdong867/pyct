@@ -12,6 +12,7 @@ from pyct.core.foundation.branch import (
     Fact,
     FormulaDrop,
     GoingIn,
+    LossRun,
     PieceRun,
     Site,
 )
@@ -59,6 +60,9 @@ class Heard:
 
     def piece(self, run: PieceRun) -> None:
         self.told.append(("piece", run))
+
+    def loss(self, run: LossRun) -> None:
+        self.told.append(("loss", run))
 
     def drop(self, drop: FormulaDrop) -> None:
         self.told.append(("drop", drop))

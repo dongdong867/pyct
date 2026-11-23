@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from pyct.core.entry import pieces, watch
+from pyct.core.entry import losses, pieces, watch
 from pyct.core.entry.in_use import summed
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import (
@@ -19,6 +19,7 @@ from pyct.core.foundation.branch import (
     Downgrade,
     Fact,
     FormulaDrop,
+    LossRun,
     PieceRun,
     SinkItem,
     Site,
@@ -57,8 +58,9 @@ class Watch(Protocol):
     last entry grew by one. The tally decides what an entry is; a watch only
     mirrors it. ``bound`` comes once, when the call goes past the forks it
     keeps, with the words its line ends on. A recorded run of a piece of the
-    target's code comes as the hooks record it (`pyct.core.entry.pieces`), and a loop's
-    formula dropped in the call as the hooks drop it (`pyct.core.entry.in_use`).
+    target's code comes as the hooks record it (`pyct.core.entry.pieces`), a recorded run of a
+    loss site as it is recorded (`pyct.core.entry.losses`), and a loop's formula dropped in the
+    call as the hooks drop it (`pyct.core.entry.in_use`).
     """
 
     def fork(self, branch: Branch) -> None: ...
@@ -76,6 +78,8 @@ class Watch(Protocol):
     def bound(self, note: str) -> None: ...
 
     def piece(self, run: PieceRun) -> None: ...
+
+    def loss(self, run: LossRun) -> None: ...
 
     def drop(self, drop: FormulaDrop) -> None: ...
 
@@ -109,6 +113,8 @@ class Tally:
         # each fact as the path came to hold it, placed after the forks recorded before it
         self.facts: list[Fact] = []
         self.pieces: list[PieceRun] = []
+        # each recorded run of a loss site (`pyct.core.entry.losses`)
+        self.losses: list[LossRun] = []
         # each loop's formula dropped in the call (`pyct.core.entry.in_use`)
         self.drops: list[FormulaDrop] = []
         self.watch = watch
@@ -128,7 +134,7 @@ class Tally:
         that took it: a truth test's `__bool__`, a walk's `__iter__`, an index's `__getitem__`.
         """
         if self.sealed:
-            if isinstance(item, PieceRun | FormulaDrop):
+            if isinstance(item, PieceRun | LossRun | FormulaDrop):
                 return
             live = _LIVE[0]
             # a place names no check the target ran, so it names no loss
@@ -145,19 +151,24 @@ class Tally:
             if not self.past_bound:
                 self._fact(item)
             return
-        if isinstance(item, PieceRun):
-            self._piece(item)
+        if isinstance(item, PieceRun | LossRun):
+            self._run(item)
             return
         if isinstance(item, FormulaDrop):
             self._drop(item)
             return
         self._downgrade(item.name, item.site)
 
-    def _piece(self, run: PieceRun) -> None:
-        """Keep a recorded run, and tell the watch."""
-        self.pieces.append(run)
+    def _run(self, run: PieceRun | LossRun) -> None:
+        """Keep a recorded run of a piece or of a loss site, and tell the watch."""
+        if isinstance(run, PieceRun):
+            self.pieces.append(run)
+            if self.watch is not None:
+                self.watch.piece(run)
+            return
+        self.losses.append(run)
         if self.watch is not None:
-            self.watch.piece(run)
+            self.watch.loss(run)
 
     def _drop(self, drop: FormulaDrop) -> None:
         """Keep a dropped formula, and tell the watch."""
@@ -223,15 +234,18 @@ class Tally:
             went=frozenset(self._went),
         )
 
-    def go_live(self, *, alone: bool = False) -> None:
+    def go_live(self, *, alone: bool = False, losses_on: bool = False) -> None:
         """Make this the tally of the call running now, which a value from a call that is over
         names its loss to, and the hooks around the target's pieces record into. The walk keys
         an earlier call handed out are no keys of its path. A call that runs ``alone`` in a
-        process of its own uses the loops in use (`pyct.core.entry.in_use`)."""
+        process of its own uses the loops in use (`pyct.core.entry.in_use`). With ``losses_on``
+        the runs of its loss sites are recorded into it (`pyct.core.entry.losses`)."""
         _LIVE[0] = self
         escapes.forget()
         watch.forget()
         pieces.start(self, alone=alone)
+        if losses_on:
+            losses.start(self)
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""
@@ -239,6 +253,7 @@ class Tally:
         if _LIVE[0] is self:
             _LIVE[0] = None
             pieces.forget()
+            losses.forget()
 
     def counted(self) -> tuple[DowngradeCount, ...]:
         """The downgrades as the line lists them, one entry per run of one name at one site."""

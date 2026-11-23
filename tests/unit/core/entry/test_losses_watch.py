@@ -50,7 +50,7 @@ def here() -> int:
     return sys._getframe(1).f_lineno + 1
 
 
-def counted(items: list[int]) -> int:
+def counted(items: list[object]) -> int:
     """A Python function outside the target's package, which reads its list as it is."""
     items.append(0)
     return len(items)
@@ -76,7 +76,7 @@ def test_a_watched_call_s_loss_records_its_arguments_its_answer_and_its_callee()
 
 def test_a_python_callee_is_named_with_its_code_s_place_and_its_arguments_as_given() -> None:
     with live() as sink:
-        items = [ConcolicInt.made(3, expression="x", sink=sink)]
+        items: list[object] = [ConcolicInt.made(3, expression="x", sink=sink)]
         _ = answer(called(counted)(given(items)), "counted")
 
     [run] = runs(sink)
