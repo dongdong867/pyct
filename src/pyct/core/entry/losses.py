@@ -27,9 +27,8 @@ import contextlib
 import types
 from collections.abc import Callable
 
-from pyct.core.entry import pieces
 from pyct.core.entry.bases import TRACKED_CLASSES
-from pyct.core.entry.pieces import MOST_RUNS, MOST_VALUE, RUN_COUNT, VALUE_COUNT
+from pyct.core.entry.recorded import MOST_RUNS, MOST_VALUE, RUN_COUNT, VALUE_COUNT
 from pyct.core.entry.waiting import json_text
 from pyct.core.foundation.branch import (
     BranchSink,
@@ -165,6 +164,9 @@ def _record(
             return
         named = None if kind is not LossKind.CALL else callee_of(callee)
         run = LossRun(site, lost.name, kind, values, (Changed(ANSWER, text),), named)
+        # imported here, once a run is kept, so that a plain import loads no hook of a piece
+        from pyct.core.entry import pieces
+
         if pieces.counted(size(run)):
             sink.append(run)
 
@@ -213,7 +215,7 @@ _TYPE_QUALNAME = type.__dict__["__qualname__"].__get__
 
 
 def size(run: LossRun) -> int:
-    """What a run counts against `pyct.core.entry.pieces.MOST_TEXT`: the characters of its file,
+    """What a run counts against `pyct.core.entry.recorded.MOST_TEXT`: the characters of its file,
     its name, its kind, its names and values and its callee's names, `RUN_COUNT` for the run
     and `VALUE_COUNT` for each value."""
     values = [(each.name, each.value) for each in run.going_in]

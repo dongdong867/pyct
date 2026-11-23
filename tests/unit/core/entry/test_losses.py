@@ -8,7 +8,7 @@ import sys
 from collections.abc import Iterator
 
 from pyct.core.entry import losses, pieces, substitutes
-from pyct.core.entry.pieces import MOST_RUNS, MOST_TEXT, MOST_VALUE
+from pyct.core.entry.recorded import MOST_RUNS, MOST_TEXT, MOST_VALUE
 from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, SinkItem, Site
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.ints import ConcolicInt

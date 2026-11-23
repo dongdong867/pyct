@@ -110,7 +110,7 @@ import struct
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.entry.pieces import MOST_TEXT
+from pyct.core.entry.recorded import MOST_TEXT
 from pyct.core.foundation.branch import (
     Branch,
     Expression,
