@@ -55,7 +55,8 @@ def add_flags(parser: argparse.ArgumentParser) -> None:
         metavar="TOOLS",
         help=(
             f"switch on LLM tools, joined by commas: {', '.join(TOOLS)}, or {ALL};"
-            " the target's code goes to the provider"
+            " the target's code, and the code a lost value passes through, libraries' included,"
+            " goes to the provider"
         ),
     )
     parser.add_argument(
