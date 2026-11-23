@@ -3,12 +3,15 @@ process of their own, keeps it checked when they run in pyct's, does not ask abo
 again, and takes its loops out of use as the run ends."""
 
 import dataclasses
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 
 import pytest
 
 from pyct.core.entry import in_use
 from pyct.core.entry.in_use import LoopInUse
+from pyct.core.foundation.branch import Changed, GoingIn, PieceRun
+from pyct.results.causes import Source, SourceKind
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState
 from pyct.results.record import Source as RecordSource
@@ -21,7 +24,7 @@ from pyct.run.notes import Note, SummaryChecked, SummaryNotUsed, SummaryRead
 from pyct.run.run import run
 from pyct.run.setup import Setup
 from pyct.run.stuck import Handled, Moment, Outcome
-from pyct.run.summaries import Summaries, SummaryReply
+from pyct.run.summaries import Summaries, SummaryReply, SummaryRequest
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
 from tests.acceptance.llm_summaries import (
@@ -32,6 +35,7 @@ from tests.acceptance.llm_summaries import (
     run_summaries,
 )
 from tests.unit.run.test_summaries import (
+    COMPREHENSION,
     COUNTS,
     FILE,
     FORMULA,
@@ -111,6 +115,57 @@ def test_a_formula_put_in_use_runs_again_the_latest_input_it_was_checked_on() ->
         ({"s": "zz"}, RecordSource.SUMMARY, None)
     ]
     assert summaries.again == []
+
+
+# the comprehension of `counted` in `targets.why.stuck`, whose formula counts the "z" in s
+COMPREHENDED = Source(SourceKind.LOOP, "t", COMPREHENSION)
+COUNTED = 'def summary(s):\n    return {"t": s.count("z")}\n'
+
+
+@dataclass
+class ByPlace:
+    """Answers each ask with the formula for its place: the loop's or the comprehension's."""
+
+    def summarize(self, request: SummaryRequest) -> SummaryReply:
+        formula = COUNTED if request.place.endswith(":19:11") else FORMULA
+        return SummaryReply(formula, AskCost(1))
+
+
+def comprehended(s: str) -> PieceRun:
+    """A run of ``counted``'s comprehension on ``s``."""
+    return PieceRun(
+        COMPREHENSION, (GoingIn("s", f'"{s}"', True),), (Changed("t", str(s.count("z"))),)
+    )
+
+
+def run_again_by_two(*inputs: tuple[str, tuple[PieceRun, ...]]) -> list[Mapping[str, object]]:
+    """The arguments of each input run again once the loop and the comprehension of
+    ``targets.why.stuck`` come into use at one moment, from records of ``inputs``, each its ``s``
+    and its recorded runs."""
+    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+    summaries = Summaries(ByPlace(), load_target(COUNTS), told, isolated=lambda: True)
+    run = Run([dataclasses.replace(record(*runs), args={"s": s}) for s, runs in inputs])
+
+    summaries.take((entry(LOOPED, COMPREHENDED),), Moment(1, (), run))
+
+    assert {state.last for state in summaries.loops.values()} == {SummaryState.IN_USE}
+    assert all(source is RecordSource.SUMMARY for _, source, _ in run.ran)
+    return [seed.args for seed, _, _ in run.ran]
+
+
+def test_an_input_both_formulas_put_in_use_were_checked_on_runs_again_once() -> None:
+    assert run_again_by_two(
+        ("ab", (counted("ab"),)), ("zz", (comprehended("zz"), counted("zz")))
+    ) == [{"s": "zz"}]
+
+
+def test_the_inputs_two_formulas_put_in_use_were_checked_on_run_again_in_run_order() -> None:
+    # the loop comes first in the code, and its input, the eighth, last in the run; a set of 8
+    # and 1 holds 8 first
+    between = [(f"{at}", ()) for at in range(2, 8)]
+    inputs = [("zz", (comprehended("zz"),)), *between, ("ab", (counted("ab"),))]
+
+    assert run_again_by_two(*inputs) == [{"s": "zz"}, {"s": "ab"}]
 
 
 def test_a_formula_not_put_in_use_runs_no_input_again() -> None:
