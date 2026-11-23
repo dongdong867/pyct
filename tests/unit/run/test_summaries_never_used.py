@@ -7,7 +7,7 @@ from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost
 from pyct.run.loops_in_use import IN_PYCT_S_PROCESS, never_used_because
 from pyct.run.notes import Note, SummarySkipped
-from pyct.run.stuck import Moment
+from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.summaries import Summaries, SummaryReply
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
@@ -63,7 +63,8 @@ def test_a_loop_that_returns_is_not_asked_about_and_said_once_in_the_run() -> No
     tool.take((found,), Moment(2, (found,), run))
 
     assert fake.requests == []
-    assert first.asked is False
+    # summaries never take the entry, so a later tool may: it is given up
+    assert first == Handled((Outcome.GAVE_UP,), asked=False)
     assert notes == [SummarySkipped(FEW_STOPS, RETURNS)]
 
 
@@ -76,5 +77,6 @@ def test_no_loop_is_asked_about_while_inputs_run_in_pyct_s_process() -> None:
 
     handled = tool.take((entry(LOOPED),), Moment(1, (), run))
 
-    assert (fake.requests, handled.asked) == ([], False)
+    assert fake.requests == []
+    assert handled == Handled((Outcome.GAVE_UP,), asked=False)
     assert notes == [SummarySkipped(LOOP, IN_PYCT_S_PROCESS)]

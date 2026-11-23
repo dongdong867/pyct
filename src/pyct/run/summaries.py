@@ -11,7 +11,8 @@ use, by its own code or since the run's inputs run in pyct's own process
 (``pyct.run.loops_in_use.never_used_because``), a loop with no complete run,
 and one asked about while pyct's process runs a second thread, so that no
 formula could run, is skipped at this moment with no ask, and said the first
-time this run it is skipped for that reason. An ask that got no answer is said
+time this run it is skipped for that reason; the entries that name the
+first are given up. An ask that got no answer is said
 and ends that loop's tries at this moment; once an answer leaves no token
 under the limit no summary is asked for again this run, the tool says it
 can ask no more, and the connection has said so. A reply with no code block
@@ -164,6 +165,8 @@ class Asked(enum.Enum):
     CHECKED = enum.auto()
     FAILED = enum.auto()
     NOT_ASKED = enum.auto()
+    # not asked, since no formula of the loop could come into use this run
+    NEVER_USED = enum.auto()
 
 
 @dataclass
@@ -279,7 +282,7 @@ class Summaries:
         never = never_used_because(site, self.isolated())
         if never is not None:
             self._skipped(site, never)
-            return Asked.NOT_ASKED, False
+            return Asked.NEVER_USED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
             self._skipped(site, NO_RECORDED_RUN if loop is None else CANNOT_FORK)
@@ -462,11 +465,12 @@ def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:
 
 def _outcome(entry: WhyEntry, came: dict[Site, Asked]) -> Outcome:
     """``took`` when each loop the entry names has a checked formula; ``gave up`` when a try at
-    one failed or its reply was ignored, or when the entry names a call; ``skipped`` else."""
+    one failed or its reply was ignored, when no formula of one could come into use this run,
+    or when the entry names a call; ``skipped`` else."""
     loops = [came[each.site] for each in _sources(entry, SourceKind.LOOP)]
     calls = _sources(entry, SourceKind.LOST)
     if loops and not calls and all(each is Asked.CHECKED for each in loops):
         return Outcome.TOOK
-    if calls or Asked.FAILED in loops:
+    if calls or Asked.FAILED in loops or Asked.NEVER_USED in loops:
         return Outcome.GAVE_UP
     return Outcome.SKIPPED
