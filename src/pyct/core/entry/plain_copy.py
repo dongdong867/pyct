@@ -1,6 +1,6 @@
 """The plain copy a loop in use (`pyct.core.entry.in_use`) takes of a tracked list or dict whose
-form no longer describes it, made with none of the methods the target wrote for its containers
-or keys run.
+form no longer describes it, made with none of the methods the target wrote for its containers,
+and no hash or equality it wrote for its keys, run.
 
 The copy is a new plain list or dict. Each list, tuple, dict, set and frozenset it holds, at every
 depth, a subclass of one included, that is tracked or holds a tracked value at some depth is a new
@@ -24,8 +24,10 @@ whose are not, as a frozen dataclass instance's, which dataclasses writes for th
 object's whose class defines its own, is kept as it is (`_hashes_alone`); a tracked dict that
 holds such a key has no copy (`UnhashedKeysError`). Each container is read in C through its base
 type, and one Python itself defines through its own methods, and each class through `type`'s own
-descriptors, so no method the target wrote for its containers or keys runs and nothing is
-recorded. The walk keeps its own stack, so no depth reaches Python's recursion limit.
+descriptors, so no method the target wrote for its containers runs, nor a hash or equality it
+wrote for its keys, and nothing is recorded. A standard-library hash that calls the key's own
+methods, as `collections.abc.Set._hash` calls `__len__` and `__iter__`, runs them, and what they
+record is recorded. The walk keeps its own stack, so no depth reaches Python's recursion limit.
 """
 
 from __future__ import annotations

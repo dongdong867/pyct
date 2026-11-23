@@ -20,10 +20,12 @@ object, such as a dataclass instance, stays as it is, and so does a dict
 or set with a key whose hash is not Python's own, as a frozen dataclass
 instance's or an object's whose class defines its own; an Enum member's,
 a date's and a UUID's are. The plain copy runs none of the methods the
-target wrote for its containers or keys; a tracked dict that holds such a
-key has none, and that run of the loop is followed as written. Either copy
-records nothing and
-leaves the target's own as it is. The names the start rebinds hold plain
+target wrote for its containers, nor a hash or equality it wrote for its
+keys; a tracked dict that holds such a key has none, and that run of the
+loop is followed as written. Either copy records nothing, unless a
+standard-library hash calls a key's own methods, as
+`collections.abc.Set._hash` calls `__len__` and `__iter__`, and leaves the
+target's own as it is. The names the start rebinds hold plain
 values, so the loop records no fork on them; a list or dict going in is
 the target's own, and the loop's reads of what it holds record as the
 loop as written records them.
@@ -285,17 +287,17 @@ def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> No
 
 
 def _as_it_went_in(value: object) -> object:
-    """A list or dict going in as a copy of the list or dict itself, one level deep, taken on
-    every run of a loop in use: a loop that adds, removes or replaces its items leaves the copy
-    as it went in. A tracked one's copy is tracked by the same form and records no fork. One
-    with no form, or whose length is not the one pyct last saw, gets a plain copy
-    (`plain_copy`), which runs none of the methods the target wrote for its containers or
-    keys, records nothing and leaves the target's own as it is. A tracked copy costs about 4
-    microseconds for a list of 100 items and 30 for 1,000. A plain copy's cost grows with every
-    item it reaches through lists, tuples, dicts, sets and frozensets: about 9 for a list of 100
-    ints and 85 for 1,000, about 1 more for each tuple or list it holds and 2.5 for each dict of
-    three keys, as 1,300 for a heap of 1,000 tuples, and 400 for a list that holds one list of
-    10,000 plain ints. Any other value as it is."""
+    """A list or dict going in as a copy of the list or dict itself, one level deep, taken on every
+    run of a loop in use: a loop that adds, removes or replaces its items leaves the copy as it went
+    in. A tracked one's copy is tracked by the same form and records no fork. One with no form, or
+    whose length is not the one pyct last saw, gets a plain copy (`plain_copy`), which runs none of
+    the methods the target wrote for its containers, nor a hash or equality it wrote for its keys,
+    records nothing unless a standard-library hash runs a key's own methods, and leaves the target's
+    own as it is. A tracked copy costs about 4 microseconds for a list of 100 items and 30 for
+    1,000. A plain copy's cost grows with every item it reaches through lists, tuples, dicts, sets
+    and frozensets: about 9 for a list of 100 ints and 85 for 1,000, about 1 more for each tuple or
+    list it holds and 2.5 for each dict of three keys, as 1,300 for a heap of 1,000 tuples, and 400
+    for a list that holds one list of 10,000 plain ints. Any other value as it is."""
     kind = type(value)
     if kind is ConcolicList:
         items = cast(ConcolicList, value)

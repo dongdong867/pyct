@@ -1,7 +1,8 @@
 """The plain copy a loop in use takes of a tracked list or dict C code changed runs none of the
-methods the target wrote for its containers or keys: it reads each container through its base type
-and each class through `type`'s own descriptors, copies a container class the target wrote as its
-plain base type, and keeps as it is a dict or set with a key whose hash the target's class defines.
+methods the target wrote for its containers, nor a hash or equality it wrote for its keys: it
+reads each container through its base type and each class through `type`'s own descriptors,
+copies a container class the target wrote as its plain base type, and keeps as it is a dict or
+set with a key whose hash the target's class defines.
 The target's own objects end as the loop as written leaves them, and the run records what the loop
 as written records."""
 
