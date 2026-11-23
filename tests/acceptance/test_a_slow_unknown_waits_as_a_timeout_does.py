@@ -160,7 +160,7 @@ def test_a_run_with_rewrites_reaches_a_stuck_moment_within_its_budget(
 
 # a-slow-unknown-waits-for-the-last-picks-still-says-unknown
 def test_a_slow_unknown_still_says_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
-    # 0.3 s of a 1 s limit is slow, and leaves each real cvc5 ask the rest of a second; a rewrite
+    # 0.3 s of a 1 s limit is slow, and each real cvc5 ask has its own full second; a rewrite
     # whose input never takes the side leaves line 6
     answering_after(monkeypatch, 0.3)
     provider = FakeRewrites(['s == "2"'])
