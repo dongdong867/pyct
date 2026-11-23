@@ -9,9 +9,10 @@ import pytest
 
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
+from pyct.results.causes import SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import RunResult
-from pyct.run import loop, stuck
+from pyct.run import loop, stuck, summaries
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.setup import Setup
@@ -23,6 +24,7 @@ from tests.acceptance.llm_summaries import (
     TOKENS,
     F,
     FakeSummaries,
+    G,
     Summarized,
     checked_on,
     code_reply,
@@ -35,6 +37,10 @@ PLACE = "targets.why.stuck:10:4"
 # a plateau that ends the run 3 inputs after its second moment, so it holds two
 TWO_MOMENTS = Limits(plateau=Plateau(13))
 LENGTH = 'def summary(s, t):\n    return {"t": len(s)}'
+# `split_z`, its loop's line, and a formula for it that is checked and not used
+SPLIT_Z = "targets.summaries.loops::split_z"
+SPLIT_LOOP = 144
+SPLIT = code_reply('def summary(s, parts):\n    return {"parts": s.split("z")}')
 
 
 @pytest.fixture
@@ -64,6 +70,30 @@ def causes(monkeypatch: pytest.MonkeyPatch) -> list[int]:
 
     monkeypatch.setattr(loop.Loop, "causes", counted)
     return worked_out
+
+
+@pytest.fixture
+def handed(monkeypatch: pytest.MonkeyPatch) -> list[bool]:
+    """For each moment that gave summaries a turn, whether an entry it was handed names the loop
+    of ``split_z``."""
+    named: list[bool] = []
+    take = summaries.Summaries.take
+
+    def counted(
+        self: summaries.Summaries, entries: tuple[WhyEntry, ...], moment: stuck.Moment
+    ) -> stuck.Handled:
+        named.append(
+            any(
+                (each.site.file, each.site.line) == (G, SPLIT_LOOP)
+                for entry in entries
+                for each in entry.sources or ()
+                if each.kind is SourceKind.LOOP
+            )
+        )
+        return take(self, entries, moment)
+
+    monkeypatch.setattr(summaries.Summaries, "take", counted)
+    return named
 
 
 def plain(limits: Limits) -> RunResult:
@@ -103,18 +133,21 @@ def test_a_loop_whose_formula_failed_is_asked_about_again_with_the_failed_formul
 
 
 # llm-summary-for-a-stuck-loop-checked-is-not-asked-again
-def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[int]) -> None:
-    provider = FakeSummaries([COUNT])
+def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(handed: list[bool]) -> None:
+    # `split_z` changes a list, so its formula is checked and not used, the loop's forks stay as
+    # before, and a later moment's entry names the loop again; with inputs in pyct's own process
+    # no loop is asked about (refuse-a-summary-that-only-repeats-its-runs)
+    provider = FakeSummaries([SPLIT])
 
-    # the formula comes into use; pyct asks nothing while inputs run in its own process
-    # (refuse-a-summary-that-only-repeats-its-runs)
-    done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS)
+    done = run_summaries(SPLIT_Z, SEED, provider, TWO_MOMENTS)
 
-    assert len(moments) >= 2
+    assert len(handed) >= 2 and any(handed[1:]), handed
     assert len(provider.requests) == 1
+    at = f"llm: summary for the loop at {G}:{SPLIT_LOOP}"
     assert summary_lines(done) == [
-        f'{AT}: t = t + s.count("z")',
-        f"{AT}: {checked_on(provider)}",
+        f'{at}: parts = s.split("z")',
+        f"{at}: {checked_on(provider)}",
+        f"{at} not used: parts is a list",
     ]
 
 
