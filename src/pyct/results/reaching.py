@@ -154,12 +154,9 @@ class _Walk[T]:
 
     def _try(self, node: ast.Try | ast.TryStar, state: State[T]) -> State[T] | None:
         """A ``try``: each handler, and a ``finally`` on the way out of a raise no handler
-        caught, starts from any binding its body could have made, joined with its start."""
-        made = {name: set(held) for name, held in state.items()}
-        self.tries.append(made)
-        end = self.block(node.body, state)
-        self.tries.pop()
-        raised = {name: frozenset(held) for name, held in made.items()}
+        caught, starts from any binding its body could have made, joined with its start. Only
+        the paths that end normally run on past the ``finally``."""
+        end, raised = self._raising(node.body, state)
         ends = [self.block(node.orelse, end)]
         for handler in node.handlers:
             start = dict(raised)
@@ -169,8 +166,17 @@ class _Walk[T]:
         after = _join(*ends)
         if not node.finalbody:
             return after
-        final = self.block(node.finalbody, _join(after, raised))
-        return final if after is not None else None
+        self.block(node.finalbody, dict(raised))
+        return None if after is None else self.block(node.finalbody, after)
+
+    def _raising(self, body: list[ast.stmt], state: State[T]) -> tuple[State[T] | None, State[T]]:
+        """Walk a body that a raise can leave at any point: what holds at its end, and each
+        binding that held anywhere in it."""
+        made = {name: set(held) for name, held in state.items()}
+        self.tries.append(made)
+        end = self.block(body, state)
+        self.tries.pop()
+        return end, {name: frozenset(held) for name, held in made.items()}
 
     def _match(self, node: ast.Match, state: State[T]) -> State[T] | None:
         self.expression(node.subject, state)
