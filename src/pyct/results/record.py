@@ -29,6 +29,9 @@ class Source(StrEnum):
     LLM_SEED = "llm_seed"
     # an input the solver gave for the LLM's rewrite of a condition it gave up on
     REWRITE = "rewrite"
+    # an input run again once a loop's formula came into use, or one the solver gave for a
+    # formula's fork: one a loop's formula recorded, or one that reads a value a formula gave
+    SUMMARY = "summary"
 
 
 @dataclass(frozen=True)
@@ -329,9 +332,10 @@ def why_uncovered(
 
 
 def _from_a_pass(record: InputRecord) -> bool:
-    """Whether a pass's sat ask gave the input: the solver's, or a kept rewrite's, which carries
-    its ask's seconds as a try's input does not."""
-    if record.source is Source.REWRITE:
+    """Whether a pass's sat ask gave the input: the solver's, a kept rewrite's, which carries
+    its ask's seconds as a try's input does not, or one for a fork a formula gave, which carries
+    them as an input run again does not."""
+    if record.source in (Source.REWRITE, Source.SUMMARY):
         return record.solver_seconds is not None
     return record.source is Source.SOLVER
 

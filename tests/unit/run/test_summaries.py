@@ -69,12 +69,14 @@ LOOPED = Source(SourceKind.LOOP, "t", LOOP)
 
 @dataclass
 class Run:
-    """The run as a moment sees it, its records made by hand."""
+    """The run as a moment sees it, its records made by hand. It keeps each input a tool runs,
+    with its source, and adds none to its records."""
 
     records: Sequence[InputRecord]
     bounds: Bounds = field(default_factory=Bounds)
     stopped: Stop | None = None
     paused: list[float] = field(default_factory=list)
+    ran: list[tuple[Seed, RecordSource, Plan | None]] = field(default_factory=list)
 
     def causes(self, stop_at: float | None) -> tuple[WhyEntry, ...]:
         return ()
@@ -82,7 +84,8 @@ class Run:
     def run_input(
         self, seed: Seed, source: RecordSource, wanted: Plan | None = None
     ) -> InputRecord | Stop:
-        raise AssertionError("summaries run no input")
+        self.ran.append((seed, source, wanted))
+        return InputRecord(args=seed.args, forks=(), covered_lines=frozenset(), source=source)
 
     def tell_ask(self, ask: Ask) -> None:
         raise AssertionError("summaries ask no solver")

@@ -1,4 +1,5 @@
-"""A loop's complete runs in a run's records, and the runs a summaries request shows of them.
+"""A loop's complete runs in a run's records, the runs a summaries request shows of them, and the
+inputs run again once a formula comes into use.
 
 A complete run is a recorded run of the loop that holds every name it
 changes (`pyct.run.summary_checks.CompleteRun`). A request shows up to
@@ -12,14 +13,17 @@ the model did not see.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from pyct.binding.bind import Seed
 from pyct.core.foundation.branch import FormulaDrop, PieceRun, Site
 from pyct.results.pieces import Piece
-from pyct.results.record import InputRecord
+from pyct.results.record import InputRecord, Source, Stop
 from pyct.run.loops_in_use import statement_at
+from pyct.run.stuck import Running
 from pyct.run.summary_checks import CompleteRun
+from pyct.run.target import Target, argument_checks
 
 # the recorded runs a request shows at most
 SHOWN_RUNS = 10
@@ -123,3 +127,14 @@ def piece_at(site: Site) -> Piece | None:
     None when it does not read or parse, or holds none there."""
     found = statement_at(site)
     return None if found is None else found[1]
+
+
+def run_again(run: Running, numbers: Iterable[int], target: Target) -> None:
+    """Run again each input ``numbers`` names, by its number in the run, from 1, once, in run
+    order, labeled ``summary``, with no plan: the inputs a moment's formulas were checked on, so
+    that each formula in use gives the solver its forks. Stops once one meets a stop."""
+    checks = argument_checks(target)
+    for number in sorted(set(numbers)):
+        args = run.records[number - 1].args
+        if isinstance(run.run_input(Seed.of(args, checks, target.home), Source.SUMMARY), Stop):
+            return

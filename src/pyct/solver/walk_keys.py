@@ -336,8 +336,9 @@ def _rewritten(
 # how many asks with chosen keys cvc5 may answer with no model at one fork's site before the run
 # asks there with the input's keys only: each costs up to a second, and a site whose flip needs a
 # key the solver cannot list (`k.lower() == "admin"` says) misses on every path, so a run that
-# kept asking there made a tenth of the inputs v2 makes. An ask the step guard gave up before
-# cvc5 ran cost nothing and counts nothing: a later path at the site may choose fewer keys
+# kept asking there made a tenth of the inputs v2 makes. A give-up of the step guard counts
+# nothing, since cvc5 never ran the ask's last program and a later path at the site may choose
+# fewer keys; cvc5 may have answered an earlier program of the same ask
 MOST_MISSES = 2
 
 # the misses at each fork's site in this run, by the site and whether the fork is a raise's
