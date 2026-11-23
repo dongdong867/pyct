@@ -332,8 +332,8 @@ def test_the_runs_shown_put_distinct_values_going_in_first_then_distinct_changed
     def going(s: str, t: str = "0") -> PieceRun:
         return PieceRun(LOOP, (GoingIn("s", s, True),), (Changed("t", t),))
 
-    # the last run's values going in are held back
-    runs = [going('"a"'), going('"a"'), going('"a"', "1"), going('"b"'), going('"c"')]
+    # the last run's values going in are held back: its changed values are its own
+    runs = [going('"a"'), going('"a"'), going('"a"', "1"), going('"b"'), going('"c"', "7")]
     loop = AskedLoop(LOOP, piece, tuple(CompleteRun(1, each) for each in runs), ("s",))
 
     assert shown_runs(loop) == (

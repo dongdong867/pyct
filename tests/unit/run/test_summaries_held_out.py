@@ -21,6 +21,8 @@ from tests.unit.run.test_summaries import (
 
 FORMULA = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
 # `counts`'s loop on "ab" written down, and 9 for any other `s`
+# a lookup of the runs "ab" and "a" show that leaves `t` as it came in for any other `s`
+FALLS_THROUGH = 'def summary(s, t):\n    if s == "a":\n        t = 0\n    return {"t": t}\n'
 LOOKUP = 'def summary(s, t):\n    t = 9 - (s == "ab") * 9\n    return {"t": t}\n'
 
 
@@ -110,3 +112,26 @@ def test_the_checked_note_counts_the_runs_the_request_did_not_show() -> None:
     _, notes, _ = taken(fake, [entry(LOOPED)], [record(counted("ab")), record(counted("zz"))])
 
     assert SummaryChecked(LOOP, 2, 1) in notes
+
+
+def test_the_latest_run_whose_changed_values_no_other_run_has_is_held_back() -> None:
+    loop = loop_of("ab", "z", "a")
+
+    assert shown_runs(loop) == (on("ab"), on("a"))
+
+
+def test_the_latest_run_is_held_back_when_each_run_s_changed_values_are_another_s_too() -> None:
+    loop = loop_of("ab", "a")
+
+    assert shown_runs(loop) == (on("ab"),)
+
+
+def test_a_lookup_that_falls_through_fails_on_the_run_held_back() -> None:
+    fake = Fake(SummaryReply(FALLS_THROUGH, AskCost(1)))
+    runs = [record(counted("ab")), record(counted("z")), record(counted("a"))]
+
+    _, notes, _ = taken(fake, [entry(LOOPED)], runs)
+
+    [request] = fake.requests
+    assert request.runs == (on("ab"), on("a"))
+    assert SummaryFailed(LOOP, 1, "at input 2, t was 1, the formula gave 0") in notes

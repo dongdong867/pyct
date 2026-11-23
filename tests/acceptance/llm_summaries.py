@@ -35,7 +35,7 @@ from pyct.run.isolation import Isolation
 from pyct.run.notes import Note
 from pyct.run.run import run
 from pyct.run.setup import Setup
-from pyct.run.summaries import SummaryReply, SummaryRequest
+from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
 from pyct.run.target import interception, load_target
 from pyct.run.tell import Tell
 from tests.acceptance.harness import REPO_ROOT
@@ -89,6 +89,16 @@ class FakeSummaries:
         self.charged += tokens_in + tokens_out
         left = max(self.limit - self.charged, 0)
         return AskCost(attempt, tokens_in, tokens_out, tokens_left=left)
+
+
+def held_back(runs: Sequence[ShownRun]) -> tuple[tuple[str, str], ...]:
+    """The values going in a request holds back from these runs, written as it shows them, in
+    run order, as the story refuse-a-summary-that-only-repeats-its-runs picks them: the latest
+    run's whose changed values no run with other values going in has, else the latest run's."""
+    for each in reversed(runs):
+        if all(other.changed != each.changed for other in runs if other.going_in != each.going_in):
+            return each.going_in
+    return runs[-1].going_in
 
 
 def checked_on(provider: FakeSummaries, ask: int = 0) -> str:

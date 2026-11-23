@@ -23,6 +23,7 @@ from tests.acceptance.llm_summaries import (
     G,
     Summarized,
     code_reply,
+    held_back,
     one_thread,  # noqa: F401
     run_summaries,
 )
@@ -35,7 +36,7 @@ ENCODED_Z_LOOP = 132
 @dataclass
 class Lookup(FakeSummaries):
     """Answers each ask with the lookup reply: the runs its request shows written down, each
-    shown run's ``t`` for its ``s``, and -1 for any other ``s``."""
+    shown run's ``t`` for its ``s``, and ``t`` as it came in for any other ``s``."""
 
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
         self.replies = [code_reply(lookup(request.runs))]
@@ -44,8 +45,8 @@ class Lookup(FakeSummaries):
 
 def lookup(runs: tuple[ShownRun, ...]) -> str:
     table = {dict(run.going_in)["s"]: int(dict(run.changed)["t"]) for run in runs}
-    terms = "".join(f" + (s == {s}) * {t + 1}" for s, t in table.items())
-    return f'def summary(s, t):\n    t = -1{terms}\n    return {{"t": t}}'
+    terms = "".join(f" + (s == {s}) * {t}" for s, t in table.items())
+    return f'def summary(s, t):\n    t = t{terms}\n    return {{"t": t}}'
 
 
 def s_of(record: InputRecord) -> str:
@@ -61,26 +62,29 @@ def shown(record: InputRecord) -> ShownRun:
 
 
 def before_the_ask(done: Summarized, provider: FakeSummaries) -> list[InputRecord]:
-    """The inputs the run had when the first ask came, each with one complete run of the loop;
-    the latest's ``s`` is held back."""
+    """The inputs the run had when the first ask came, each with one complete run of the loop."""
     before = done.records[: provider.inputs_then[0]]
     assert len({s_of(record) for record in before}) > 1
     return before
 
 
+def held_s(before: list[InputRecord]) -> str:
+    """The ``s`` the request held back from these inputs' runs."""
+    return json.loads(dict(held_back([shown(record) for record in before]))["s"])
+
+
 # llm-summary-held-out-run-not-shown
-def test_the_request_holds_back_the_runs_with_the_latest_run_s_values_going_in() -> None:
+def test_the_request_holds_back_the_latest_run_whose_changed_values_no_other_run_has() -> None:
     provider = FakeSummaries([COUNT])
 
     done = run_summaries(COUNTS, SEED, provider)
 
     before = before_the_ask(done, provider)
-    latest = s_of(before[-1])
-    others = {shown(record) for record in before if s_of(record) != latest}
+    held = held_s(before)
+    others = {shown(record) for record in before if s_of(record) != held}
     assert len(others) <= 10
     [request] = provider.requests
     assert set(request.runs) == others
-    assert all(dict(run.going_in)["s"] != json.dumps(latest) for run in request.runs)
 
 
 # llm-summary-held-out-lookup-table-fails
@@ -90,9 +94,10 @@ def test_a_formula_that_writes_down_the_runs_shown_fails_on_a_run_held_back() ->
     done = run_summaries(COUNTS, SEED, provider)
 
     before = before_the_ask(done, provider)
-    latest = s_of(before[-1])
-    at = next(number for number, each in enumerate(before, 1) if s_of(each) == latest)
-    failed = f"at input {at}, t was {latest.count('z')}, the formula gave -1"
+    held = held_s(before)
+    assert held.count("z") != 0
+    at = next(number for number, each in enumerate(before, 1) if s_of(each) == held)
+    failed = f"at input {at}, t was {held.count('z')}, the formula gave 0"
     assert f"llm: summary for the loop at {F}:10, try 1: {failed}" in done.said
     assert not any("checked on" in line for line in done.said)
 

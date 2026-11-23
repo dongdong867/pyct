@@ -6,9 +6,10 @@ changes (`pyct.run.summary_checks.CompleteRun`). A request shows up to
 ``SHOWN_RUNS`` of them: the run its loop's last formula was dropped on
 first, then those whose values differ. When the runs hold two or more
 different values going in, it holds back each run whose values going in are
-the latest run's, or, when the run shown first has those, the latest other
-run's, so that the check, which runs on every complete run, runs on values
-the model did not see.
+those of one run: the latest whose changed values no run with other values
+going in has, else the latest, leaving out the run shown first's values, so
+that the check, which runs on every complete run, runs on values the model
+did not see.
 """
 
 from __future__ import annotations
@@ -88,13 +89,20 @@ def shown_runs(loop: AskedLoop, first: CompleteRun | None = None) -> tuple[Shown
 
 
 def _held_back(every: list[ShownRun], first: list[int]) -> tuple[tuple[str, str], ...] | None:
-    """The values going in of the runs a request holds back: the latest run's whose values going
-    in differ from the run shown ``first``'s; None when no run's differ from every other's."""
+    """The values going in of the runs a request holds back, among the runs whose values going
+    in differ from the run shown ``first``'s: the latest one's whose changed values no run with
+    other values going in has, so that a formula that writes down the runs shown and leaves
+    the rest as they came does not pass on it, else the latest one's; None when every run has
+    the same values going in."""
     kept = {every[at].going_in for at in first}
-    later = [each.going_in for each in reversed(every) if each.going_in not in kept]
+    later = [each for each in reversed(every) if each.going_in not in kept]
     if not later or len({each.going_in for each in every}) < 2:
         return None
-    return later[0]
+    going_in_of: dict[tuple[tuple[str, str], ...], set[tuple[tuple[str, str], ...]]] = {}
+    for each in every:
+        going_in_of.setdefault(each.changed, set()).add(each.going_in)
+    alone = (each for each in later if going_in_of[each.changed] == {each.going_in})
+    return next(alone, later[0]).going_in
 
 
 def not_shown(loop: AskedLoop, shown: Sequence[ShownRun]) -> int:
