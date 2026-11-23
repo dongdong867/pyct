@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import struct
-from collections.abc import Buffer
+from collections.abc import Buffer, Sequence
 from dataclasses import dataclass, field
 
 from pyct.core.foundation.branch import (
@@ -360,11 +360,12 @@ class _Facts:
                 int() as col,
                 bool() as raising,
                 *note,
-            ] if len(note) <= 1 and all(type(each) is bool for each in note):
+            ] if _fork_notes(note):
                 site = self._site(file, line, col)
-                held = note[0] if note else None
-                return Branch(self._expression(expression), taken, site, raising, is_held=held)
-        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its note")
+                held, summary = (note[0] if note else None), len(note) == 2
+                read = self._expression(expression)
+                return Branch(read, taken, site, raising, is_held=held, summary=summary)
+        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its notes")
 
     def _fact(self, value: object) -> Fact:
         """A fact, placed after every fork record read before it."""
@@ -483,3 +484,11 @@ def _ending(value: object) -> Failure | None:
         case [str() as kind, str() as detail, str() | None as traceback]:
             return Failure(kind=FailureKind(kind), detail=detail, traceback=traceback)
     raise ValueError("an ending is null or [kind, detail, traceback]")
+
+
+def _fork_notes(note: Sequence[object]) -> bool:
+    """Whether a fork's items past its sixth are its notes: none, an `is`'s bool, or that bool or
+    null and ``true`` for a fork that reads a formula's value."""
+    if len(note) == 2:
+        return note[1] is True and (note[0] is None or type(note[0]) is bool)
+    return len(note) < 2 and all(type(each) is bool for each in note)

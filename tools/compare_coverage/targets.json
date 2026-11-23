@@ -926,6 +926,7 @@
     {"set": "v2", "target": "targets.strs.unannotated::greet", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.upper_and_digit::both", "seed": {"s": "aB1"}},
     {"set": "v2", "target": "targets.summaries.loops::capped", "seed": {"s": "ab"}},
+    {"set": "v2", "target": "targets.summaries.loops::encoded_z", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::few_counted", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::few_stops", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::few_tallies", "seed": {"s": "ab"}},

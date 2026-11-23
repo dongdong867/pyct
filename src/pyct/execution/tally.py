@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from typing import Protocol
 
 from pyct.core.entry import pieces, watch
+from pyct.core.entry.in_use import summed
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import (
     Branch,
@@ -165,8 +166,9 @@ class Tally:
             self.watch.drop(drop)
 
     def _fork(self, fork: Branch) -> None:
-        """Keep a fork, up to `MOST_FORKS`, and tell the watch. Past the bound, the fork is
-        counted alone."""
+        """Keep a fork, up to `MOST_FORKS`, marked when a loop's formula recorded it or it reads a
+        value a formula gave (`pyct.core.entry.in_use.summed`), and tell the watch. Past the bound,
+        the fork is counted alone."""
         # a watched call around the one that forked saw inside it (`pyct.core.entry.watch`)
         escapes.RECORDED[0] += 1
         if self.past_bound:
@@ -176,6 +178,7 @@ class Tally:
             if self.watch is not None:
                 self.watch.bound(too_long().detail)
             return
+        fork = summed(fork)
         self.branches.append(fork)
         if self.watch is not None:
             self.watch.fork(fork)
