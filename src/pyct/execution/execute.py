@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind_call
 from pyct.binding.builds import Build, BuildError, CallPlan, SelfBuild, plan_call
-from pyct.core.foundation.branch import Branch, Fact, PieceRun
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, PieceRun
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.branch_ways import CodeWays
@@ -63,7 +63,8 @@ class ExecutionResult:
     path holds beside the forks, each placed after the forks recorded before it. ``reach`` is
     the functions of the file it entered and the ways their branches went. ``pieces`` are the
     recorded runs of the pieces of the target's code, in the order each ended
-    (`pyct.core.entry.pieces`), none when its code has no hooks.
+    (`pyct.core.entry.pieces`), none when its code has no hooks, and ``drops`` the loops'
+    formulas dropped in it (`pyct.core.entry.in_use`).
     """
 
     lines: frozenset[int]
@@ -73,6 +74,7 @@ class ExecutionResult:
     facts: tuple[Fact, ...] = ()
     reach: Reach = field(default_factory=Reach)
     pieces: tuple[PieceRun, ...] = ()
+    drops: tuple[FormulaDrop, ...] = ()
 
 
 def execute(
@@ -98,7 +100,7 @@ def execute(
     ends the input before any line runs, as the target's raise.
     """
     tally = Tally(watch)
-    tally.go_live()
+    tally.go_live(alone=ctx.alone)
     bound = bind_call(args, tally, ctx.checks, ctx.home)
     try:
         plan = plan_call(bound, ctx.positional, ctx.self_build, ctx.home, ctx.checks)
@@ -118,14 +120,20 @@ def execute(
     # sealed before the failure is written: writing it asks the raise for its text, which
     # asks any tracked value in it for its own, and that call is pyct's, not the target's
     tally.seal()
+    return _result(tally, _ended(tally, _failure(ctx.fn, ending)))
+
+
+def _result(tally: Tally, failure: Failure | None) -> ExecutionResult:
+    """What the call did, from its sealed tally, and how it ended."""
     return ExecutionResult(
         lines=frozenset(tally.lines),
         branches=tuple(tally.branches),
         downgrades=tally.counted(),
-        failure=_ended(tally, _failure(ctx.fn, ending)),
+        failure=failure,
         facts=tuple(tally.facts),
         reach=tally.reach(),
         pieces=tuple(tally.pieces),
+        drops=tuple(tally.drops),
     )
 
 

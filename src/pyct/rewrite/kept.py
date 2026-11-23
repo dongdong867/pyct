@@ -3,13 +3,17 @@ ask that holds that condition at that side, until one of its inputs takes the ot
 
 Each use runs the rewrite again, in a child of pyct's process, on the
 input whose path that ask extends, since the forks it records depend on
-that input. A condition whose rewrite does not run, or records nothing to
-put in its place, keeps its own fork in that ask.
+that input; a rewrite that reads an object's fields builds the object
+there again, its constructor run once more. It is used only on an input
+where each name it reads has the kind it had where it was checked: an
+object for a name it reads fields of, plain for any other. A condition
+whose rewrite does not run, or records nothing to put in its place, keeps
+its own fork in that ask.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pyct.binding.bind import Seed
@@ -17,8 +21,8 @@ from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
-from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, takes
-from pyct.rewrite.condition import Rewrite, holds_object
+from pyct.rewrite.ask import RunRewrite, holding, in_place, recorded, run_on, takes
+from pyct.rewrite.condition import Rewrite
 
 
 @dataclass(frozen=True)
@@ -30,10 +34,12 @@ class Reused:
 
 
 class Kept:
-    """The rewrite kept for each condition, with the names it reads."""
+    """The rewrite kept for each condition, with the names it reads, and the method's ``self``
+    parameter, None for a target that is no method, which tells an input's objects apart."""
 
-    def __init__(self) -> None:
+    def __init__(self, self_name: str | None = None) -> None:
         self.rewrites: dict[Condition, Rewrite] = {}
+        self.self_name = self_name
 
     def keep(self, condition: Condition, rewrite: Rewrite) -> None:
         self.rewrites[condition] = rewrite
@@ -41,14 +47,17 @@ class Kept:
     def reused(self, plan: Plan, origin: Seed, run: RunRewrite) -> Reused | None:
         """The plan's ask with each kept rewrite the plan holds in its condition's place, each
         run on ``origin``; None when no kept rewrite takes a place in it. A rewrite reading a
-        name the input does not hold, or one that holds an object there, takes none."""
+        name the input does not hold, or one that does not have the kind there it had where the
+        rewrite was checked (``run_on``), takes none, and so does one whose run gives no ask."""
         asked = plan.asked
         used: list[Condition] = []
         for condition, rewrite in self.rewrites.items():
-            if not holding(plan, condition) or not _readable(origin.args, rewrite.reads):
+            if not holding(plan, condition):
                 continue
-            ran = run(rewrite.code, {name: origin.args[name] for name in rewrite.reads})
-            items = None if isinstance(ran, str) else recorded(ran, rewrite.code.co_filename)
+            ran = run_on(rewrite, origin, run, self.self_name)
+            if ran is None:
+                continue
+            items = None if isinstance(ran, str) else recorded(ran, rewrite)
             if items is None or isinstance(items, str):
                 continue
             asked = in_place(asked, condition, items.items)
@@ -62,8 +71,3 @@ class Kept:
         for condition in dropped:
             self.rewrites.pop(condition, None)
         return dropped
-
-
-def _readable(args: Mapping[str, object], names: Sequence[str]) -> bool:
-    """Whether ``args`` holds each name, and none holds an object there (``holds_object``)."""
-    return all(name in args and not holds_object(args[name]) for name in names)

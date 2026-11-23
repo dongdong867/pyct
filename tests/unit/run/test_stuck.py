@@ -11,6 +11,7 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, Tries, WhyEntry
+from pyct.results.coverage import Progress, Scope
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.bounds import Bounds
@@ -77,8 +78,10 @@ class FakeTool:
     kind: Kind
     outcomes: dict[WhyEntry, Outcome] = field(default_factory=dict)
     asks: bool = True
+    can_ask: bool = True
     handed: list[tuple[int, tuple[WhyEntry, ...]]] = field(default_factory=list)
     order: list[Kind] | None = None
+    waits: bool = False
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         self.handed.append((moment.number, entries))
@@ -87,11 +90,39 @@ class FakeTool:
         outcomes = tuple(self.outcomes.get(entry, Outcome.SKIPPED) for entry in entries)
         return Handled(outcomes, asked=self.asks)
 
+    def heard(self, record: InputRecord, number: int) -> None:
+        pass
+
+    def waiting(self, moment: Moment) -> bool:
+        return self.waits
+
 
 def held(tools: Sequence[FakeTool], run: FakeRun | None = None) -> FakeRun:
     run = run or FakeRun()
     Stuck(tools).hold(run)
     return run
+
+
+def due(tools: Sequence[FakeTool]) -> bool:
+    """Whether a moment comes for a run with a line missed and no fork left to flip."""
+    return Stuck(tools).due(
+        FakeRun(), Progress(Scope(FILE, frozenset({4})), frozenset()), empty=True
+    )
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_no_moment_comes_when_no_tool_can_still_ask() -> None:
+    assert due([FakeTool(Kind.SUMMARIES, can_ask=False)]) is False
+
+
+def test_a_moment_comes_while_one_tool_can_still_ask() -> None:
+    tools = [FakeTool(Kind.SUMMARIES, can_ask=False), FakeTool(Kind.REWRITES)]
+
+    assert due(tools) is True
+
+
+def test_no_moment_comes_with_no_tool() -> None:
+    assert due([]) is False
 
 
 def test_each_tool_takes_the_entries_of_its_causes() -> None:
@@ -227,3 +258,31 @@ def test_an_entry_s_cause_names_the_tool_that_takes_it_first(
     entry: WhyEntry, expected: Kind | None
 ) -> None:
     assert owner(entry) is expected
+
+
+def test_a_waiting_tool_with_no_entry_is_handed_the_moment() -> None:
+    summaries, rewrites = FakeTool(Kind.SUMMARIES, waits=True), FakeTool(Kind.REWRITES)
+
+    held([summaries, rewrites], FakeRun(causes_given=(HANDLER,)))
+
+    assert summaries.handed == [(1, ())]
+    assert rewrites.handed == []
+
+
+@pytest.mark.parametrize(("asks", "left"), [(True, False), (False, True)])
+def test_a_waiting_tool_s_moment_counts_toward_three_only_when_it_asks(
+    asks: bool, left: bool
+) -> None:
+    stuck = Stuck([FakeTool(Kind.SUMMARIES, asks=asks, waits=True)])
+    run = FakeRun(causes_given=(HANDLER,))
+    progress = Progress(Scope(FILE, frozenset({4})), frozenset())
+
+    for _ in range(3):
+        stuck.hold(run)
+        run.records.append(InputRecord(args={}, forks=(), covered_lines=frozenset()))
+
+    assert stuck.due(run, progress, empty=True) is left
+
+
+def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
+    assert due([FakeTool(Kind.SUMMARIES, can_ask=False, waits=True)]) is False

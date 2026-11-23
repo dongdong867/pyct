@@ -9,10 +9,11 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import Branch, Fact, ForkSite, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, FormulaDrop, PieceRun, Site
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
+from pyct.results.llm_asks import LoopSummary
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
 
 # how long past a run's deadline pyct goes on working out why lines were missed
@@ -75,7 +76,9 @@ class InputRecord:
     ``first_covered`` is the lines this input covered that no earlier input
     and not the import did, keyed by file as coverage is. ``pieces`` are the
     recorded runs of the pieces of the target's code, with the interception's
-    pieces switch on (`pyct.core.entry.pieces`), which no line prints.
+    pieces switch on (`pyct.core.entry.pieces`), which no line prints, and
+    ``drops`` each loop's formula dropped in the input (`pyct.core.entry.in_use`),
+    which no line prints either.
     """
 
     args: Mapping[str, object]
@@ -91,6 +94,7 @@ class InputRecord:
     solver_seconds: float | None = field(default=None, compare=False)
     first_covered: Mapping[str, frozenset[int]] = field(default_factory=dict)
     pieces: tuple[PieceRun, ...] = ()
+    drops: tuple[FormulaDrop, ...] = ()
 
 
 class StopKind(StrEnum):
@@ -139,7 +143,8 @@ class Stop:
 
 
 class MissWhy(StrEnum):
-    """What the solver answered about a fork it gave no input for. The words on the line."""
+    """The answer a fork's ask ended in when it gave no input, which the run's asker may give
+    in the solver's place. The words on the line."""
 
     UNSAT = "unsat"
     UNKNOWN = "unknown"
@@ -148,11 +153,13 @@ class MissWhy(StrEnum):
 
 @dataclass(frozen=True)
 class Miss:
-    """A fork the run asked for and got no input to: where it is, and what the solver said.
+    """A fork the run asked for and got no input to: where it is, and the answer its ask ended
+    in, from the solver or from the run's asker in the solver's place.
 
     ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
     ``solver_seconds`` is how long the ask took, from the start of writing it to its answer,
-    a measurement two misses compare without.
+    a measurement two misses compare without; for an answer the asker gave in the solver's
+    place, the seconds ``SolverSeconds`` says it adds.
     """
 
     site: Site
@@ -179,7 +186,8 @@ class Environment:
 
 @dataclass(frozen=True)
 class SolverCounts:
-    """How many times the solver answered each way."""
+    """How many of the passes' asks ended in each answer. An answer the run's asker gave in
+    the solver's place counts under that answer."""
 
     sat: int
     unsat: int
@@ -189,7 +197,10 @@ class SolverCounts:
 
 @dataclass(frozen=True)
 class SolverSeconds:
-    """How many seconds the solver's asks took, summed by what each answered."""
+    """How many seconds the passes' asks took, summed by the answer each ended in. An answer
+    the run's asker gave in the solver's place adds 0.0 for an ``unsat`` given before any ask,
+    and, for a ``timeout`` given once a kept rewrite's run and ask used up the pick's limit, the
+    seconds those took."""
 
     sat: float
     unsat: float
@@ -201,12 +212,13 @@ class SolverSeconds:
 class RunResult:
     """One run of one function: its records, the coverage they add up to, and how it ended.
 
-    ``misses`` are the forks the solver gave no input for. A miss is never
+    ``misses`` are the forks the passes' asks gave no input for. A miss is never
     why the run stopped; ``stopped`` carries the loop's own reason.
     ``untried`` counts the forks the run never tried at each site: still open
     when it stopped, or picked and then left by the stop.
     ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
     ``goal`` is what the run was for.
+    ``summaries`` is each loop the summaries tool sent an ask for, in code order.
     """
 
     entry: str
@@ -218,6 +230,7 @@ class RunResult:
     untried: Mapping[ForkSite, int] = field(default_factory=dict)
     deadline: float | None = None
     goal: Goal = Goal.COVERAGE
+    summaries: tuple[LoopSummary, ...] = ()
 
     @property
     def inputs(self) -> int:
@@ -226,8 +239,9 @@ class RunResult:
 
     @property
     def solver(self) -> SolverCounts:
-        """What the solver answered to the passes' asks, derived so the counts can never
-        disagree with the misses.
+        """The answers the passes' asks ended in, derived so the counts can never disagree
+        with the misses. An answer the run's asker gave in the solver's place counts under
+        that answer.
 
         An input a pass's sat ask gave is its one ``sat``, whether the solver
         or a kept rewrite's ask gave it. Every other answer of a pass's ask gave
@@ -244,9 +258,9 @@ class RunResult:
 
     @property
     def solver_seconds(self) -> SolverSeconds:
-        """The seconds of the passes' asks, summed by answer: the ask of an input a pass's ask
-        gave was sat, and every other pass's ask is a miss. The asks a rewrite's try makes
-        between passes are not counted."""
+        """The seconds of the passes' asks, summed by the answer each ended in: the ask of an
+        input a pass's ask gave was sat, and every other pass's ask is a miss. The asks a
+        rewrite's try makes between passes are not counted."""
         given = [record.solver_seconds for record in self.records]
         by_why = {why: 0.0 for why in MissWhy}
         for miss in self.misses:

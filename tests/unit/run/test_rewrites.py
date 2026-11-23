@@ -12,6 +12,10 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
+from pyct.config.plateau import Plateau
+from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.foundation.branch import Branch, Site
 from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition, Reason, WhyEntry
@@ -25,17 +29,20 @@ from pyct.run import loop as loop_module
 from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
 from pyct.run.loop import Solved
+from pyct.run.model_runs import Building
 from pyct.run.process import InputStartError
-from pyct.run.rewrites import Rewrites, _Around, _Child, _module_of
+from pyct.run.rewrites import Rewrites, _Around, _Child
 from pyct.run.stuck import Handled, Moment, Outcome
 from pyct.run.target import Target, interception, load_target
 from pyct.run.tell import Ask, Tell, Told
 from pyct.solver.answer import Sat, Timeout, Unsat
 from tests.acceptance.harness import REPO_ROOT
-from tests.acceptance.llm_rewrites import FakeRewrites, file_of, llm_said, run_rewrites
+from tests.acceptance.llm_rewrites import TOKENS, FakeRewrites, file_of, llm_said, run_rewrites
 
 TEXT = "targets.rewrites.text::exponent"
 COUNTED = "targets.rewrites.counted::exponent"
+# limits under which `loops` would be stuck after 5 inputs, again after 5 more, and stop soon after
+LONG = Limits(budget=Budget(60), plateau=Plateau(20), solver_timeout=SolverTimeout(1.0))
 
 
 @pytest.fixture(autouse=True)
@@ -113,6 +120,44 @@ def test_an_ask_past_the_token_limit_ends_every_later_ask_unsaid(
     assert len(provider.requests) == 1
 
 
+@pytest.fixture
+def worked_out(monkeypatch: pytest.MonkeyPatch) -> list[float | None]:
+    """Each stop the run's cause analysis was given, counted as ``Loop.causes`` is called."""
+    monkeypatch.setattr(model_runs, "running", lambda: 1)
+    stops: list[float | None] = []
+    causes = loop_module.Loop.causes
+
+    def counted(self: loop_module.Loop, stop_at: float | None) -> tuple[WhyEntry, ...]:
+        stops.append(stop_at)
+        return causes(self, stop_at)
+
+    monkeypatch.setattr(loop_module.Loop, "causes", counted)
+    return stops
+
+
+def test_no_moment_comes_after_an_ask_met_the_token_limit(
+    worked_out: list[float | None],
+) -> None:
+    provider = FakeRewrites([Unanswered(Why.LIMIT, "token limit reached", AskCost(1))])
+
+    run_rewrites("targets.rewrites.loops::loops", {"s": "0", "n": 0}, provider, LONG)
+
+    assert len(worked_out) == 1
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_no_moment_comes_after_the_reply_that_reached_the_token_limit(
+    worked_out: list[float | None],
+) -> None:
+    # the first moment's fourth and last ask reaches the limit
+    provider = FakeRewrites(['s == "1e-29"'], limit=4 * sum(TOKENS))
+
+    run_rewrites("targets.rewrites.loops::loops", {"s": "0", "n": 0}, provider, LONG)
+
+    assert len(provider.requests) == 4
+    assert len(worked_out) == 1
+
+
 def test_a_child_pyct_cannot_start_is_said_as_the_reason(monkeypatch: pytest.MonkeyPatch) -> None:
     def refused(*_: object) -> object:
         raise InputStartError("no memory")
@@ -121,7 +166,7 @@ def test_a_child_pyct_cannot_start_is_said_as_the_reason(monkeypatch: pytest.Mon
     rewrite = rewrite_code("n > 0", ("n",), "<rewrite m:1:1>")
     assert isinstance(rewrite, Rewrite)
 
-    ran = _Child(time.monotonic() + 1).run(rewrite.code, {"n": 0})
+    ran = _Child(time.monotonic() + 1, Building()).run(rewrite.code, {"n": 0})
 
     assert ran == "cannot start a child: no memory"
 
@@ -130,9 +175,9 @@ def test_the_place_names_the_module_by_its_dotted_name() -> None:
     target = loaded(TEXT)
     helper = sys.modules[json.__name__]
 
-    assert _module_of(target.file, target) == "targets.rewrites.text"
-    assert _module_of(str(helper.__file__), target) == "json"
-    assert _module_of("/nowhere/lost.py", target) == "lost"
+    assert target.module_of(target.file) == "targets.rewrites.text"
+    assert target.module_of(str(helper.__file__)) == "json"
+    assert target.module_of("/nowhere/lost.py") == "lost"
 
 
 def kept_at_line_2() -> tuple[Rewrites, Site]:
@@ -237,7 +282,7 @@ def test_a_condition_with_no_argument_a_rewrite_may_read_is_given_up_unasked() -
     wanted = plan((Branch(["==", ["float", "s"], 1e-30], False, site),))
     assert wanted is not None
     order = {"__class__": "m::Order"}
-    origin = Seed.of({"s": order, "n": [order]})
+    origin = Seed.of({"s": [order], "n": {"k": order}})
     tool.given_up[Condition(site, True)] = GivenUp(
         Condition(site, True), wanted, origin, MissWhy.TIMEOUT
     )
@@ -255,7 +300,8 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
         bounds=types.SimpleNamespace(until=time.monotonic() - 1, solver_timeout=5.0)
     )
     file = loaded(TEXT).file
-    around = _Around(spent, Told(Scope.of_module(file), Tell()))  # pyrefly: ignore[bad-argument-type]
+    told = Told(Scope.of_module(file), Tell())
+    around = _Around(spent, told, Building())  # pyrefly: ignore[bad-argument-type]
     site = Site(file, 2, 7)
     wanted = plan((Branch([">", "n", 0], False, site),))
     assert wanted is not None

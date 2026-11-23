@@ -4,7 +4,17 @@ from collections.abc import Mapping
 
 from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Branch, Changed, Downgrade, Fact, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Changed,
+    Downgrade,
+    DropReason,
+    Fact,
+    FormulaDrop,
+    GoingIn,
+    PieceRun,
+    Site,
+)
 from pyct.core.lists.lists import ConcolicList
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
@@ -49,6 +59,9 @@ class Heard:
 
     def piece(self, run: PieceRun) -> None:
         self.told.append(("piece", run))
+
+    def drop(self, drop: FormulaDrop) -> None:
+        self.told.append(("drop", drop))
 
 
 def test_a_tally_keeps_the_forks_in_call_order() -> None:
@@ -377,3 +390,28 @@ def test_the_hooks_record_into_the_tally_from_its_going_live_until_its_seal() ->
     f(3)
 
     assert [run.changed for run in tally.pieces] == [(Changed("i", "2"),)]
+
+
+DROP = FormulaDrop(SITE, "t", "2", "3", DropReason.MISMATCH)
+
+
+def test_a_tally_keeps_each_dropped_formula_and_tells_the_watch() -> None:
+    heard = Heard()
+    tally = Tally(heard)
+
+    tally.append(RUN)
+    tally.append(DROP)
+
+    assert tally.drops == [DROP]
+    assert heard.told == [("piece", RUN), ("drop", DROP)]
+
+
+def test_a_sealed_tally_keeps_no_drop_and_names_no_loss_for_one() -> None:
+    live, over = Tally(), Tally()
+    live.go_live()
+    over.sealed = True
+
+    over.append(DROP)
+
+    assert (over.drops, live.drops, live.counted()) == ([], [], ())
+    live.seal()

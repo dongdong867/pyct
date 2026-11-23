@@ -7,6 +7,7 @@ import pytest
 from pyct import cli
 from pyct.cli import main
 from pyct.cli import sweep as sweep_command
+from pyct.config.command_line import UsageError
 from pyct.config.goal import Goal
 from pyct.sweep.result import SweepLimits, SweepResult, SweepStop
 from pyct.sweep.sweep import Mode, SweepTell
@@ -280,3 +281,28 @@ def test_main_reads_a_seeds_file_where_it_reads_a_seed_and_checks_its_lines_afte
         "locate",
         "run",
     ]
+
+
+@pytest.mark.parametrize(
+    ("llm", "pieces"),
+    [
+        ((), False),
+        (("--llm", "seeds,rewrites"), False),
+        (("--llm", "summaries"), True),
+        (("--llm", "all"), True),
+    ],
+)
+def test_main_opens_the_interception_recording_the_pieces_when_summaries_is_on(
+    monkeypatch: pytest.MonkeyPatch, llm: tuple[str, ...], pieces: bool
+) -> None:
+    # the switch is set as the block opens, before the target's import
+    opened: list[tuple[str, bool]] = []
+
+    def opening(spec: str, *, pieces: bool = False) -> object:
+        opened.append((spec, pieces))
+        raise UsageError("opened")
+
+    monkeypatch.setattr(cli, "interception", opening)
+
+    assert main(["run", TARGET, '{"x": 3}', *llm]) == 2
+    assert opened == [(TARGET, pieces)]

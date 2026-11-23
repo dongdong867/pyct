@@ -39,15 +39,20 @@ type Heads = Mapping[str, Callable[..., object]]
 _VALUE = re.compile(r'\(v\d+ (\(- \d+\)|\d+|true|false|"(?:[^"]|"")*"|\(fp [^()]*\))\)')
 
 
-def asked(lines: list[str]) -> list[object]:
-    """What cvc5 says each asked value is, in order, as the Python value it stands for."""
-    answer = subprocess.run(
+def answered(lines: list[str]) -> str:
+    """What cvc5 prints for a program: its answer, and any value the program asks."""
+    return subprocess.run(
         ["cvc5", "--produce-models", "--lang", "smt", "--quiet"],
         input="\n".join(lines) + "\n",
         capture_output=True,
         text=True,
         check=True,
     ).stdout
+
+
+def asked(lines: list[str]) -> list[object]:
+    """What cvc5 says each asked value is, in order, as the Python value it stands for."""
+    answer = answered(lines)
     assert answer.startswith("sat"), answer
     return [_read(value) for value in _VALUE.findall(answer)]
 

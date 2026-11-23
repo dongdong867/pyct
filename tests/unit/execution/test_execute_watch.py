@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from pyct.core.foundation.branch import Branch, Fact, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, PieceRun, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -39,6 +39,9 @@ class Heard:
 
     def piece(self, run: PieceRun) -> None:
         self.told.append(("piece", run))
+
+    def drop(self, drop: FormulaDrop) -> None:
+        self.told.append(("drop", drop))
 
 
 # compiled under a name of its own, so only its lines are traced, not the watch's

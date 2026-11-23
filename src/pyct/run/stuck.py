@@ -4,8 +4,9 @@ LLM tool the entries it takes, in the order summaries, rewrites, guesses.
 A run is stuck when 5 inputs in a row cover no new line, counted from
 after the last seed and again from after each moment's last input, or
 when no fork is left to flip while a line is still missed. A run with no
-tool switched on is never stuck, so it runs as it would with no LLM at
-all. Decision llm-one-stuck-moment-for-summaries-rewrites-and-guesses.
+tool switched on, or none that can still ask, is never stuck, so it runs
+as it would with no LLM at all. Decision
+llm-one-stuck-moment-for-summaries-rewrites-and-guesses.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
 fork`` entry with a source to summaries, a ``not taken`` entry whose tries
@@ -107,12 +108,23 @@ class Moment:
 
 
 class StuckTool(Protocol):
-    """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry."""
+    """An LLM tool the moment hands entries to. ``take`` returns one outcome per entry;
+    ``can_ask`` is false once the tool will ask no more this run, such as when the token limit is
+    reached. ``heard`` takes each input the run keeps, with its number in the run, from 1.
+    ``waiting`` says whether the tool asks at the moment about something no entry it is handed
+    names: it is then handed the moment, with no entry when none is its own."""
 
     @property
     def kind(self) -> Kind: ...
 
+    @property
+    def can_ask(self) -> bool: ...
+
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled: ...
+
+    def heard(self, record: InputRecord, number: int) -> None: ...
+
+    def waiting(self, moment: Moment) -> bool: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -145,21 +157,29 @@ class Stuck:
         self._gave_up: set[_Key] = set()
 
     def due(self, run: Running, progress: Progress, *, empty: bool) -> bool:
-        """Whether a moment comes now: a tool is on, a moment that asks is left, the budget is
-        not spent, a line is still missed and the run would not stop on full coverage.
+        """Whether a moment comes now: a tool that can still ask is on, a moment that asks is
+        left, the budget is not spent, a line is still missed and the run would not stop on full
+        coverage.
 
         ``empty`` says no fork is left to flip; a moment then comes when an
         input ran since the last one ended, so one that ran none ends the run.
         Otherwise it comes on 5 inputs in a row with no new line, counted
         from the last moment's end, or from after the last seed.
         """
-        if not self._tools or self._asked >= MOMENTS or not _goes_on(run, progress):
+        asking = any(tool.can_ask for tool in self._tools.values())
+        if not asking or self._asked >= MOMENTS or not _goes_on(run, progress):
             return False
         inputs = len(run.records)
         if empty:
             return self._ended is None or inputs > self._ended
         since = run.bounds.seeds if self._ended is None else self._ended
         return inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
+        pass's, or one run between two passes."""
+        for tool in self._tools.values():
+            tool.heard(record, number)
 
     def hold(self, run: Running) -> None:
         """Hold one moment: work out the causes, within ``CAUSE_SECONDS`` of now and the run's
@@ -174,7 +194,7 @@ class Stuck:
             if tool is None or run.stopped is not None:
                 continue
             entries = tuple(each for each in moment.causes if self._takes(kind, each, outcomes))
-            if entries:
+            if entries or tool.waiting(moment):
                 asked = self._handed(tool, entries, moment, outcomes) or asked
         self._asked += asked
         self._ended = len(run.records)
@@ -207,6 +227,12 @@ class Stuck:
         return outcome is Outcome.GAVE_UP or (
             outcome is Outcome.SKIPPED and _key(entry) in self._gave_up
         )
+
+
+def going(run: Running) -> bool:
+    """Whether a tool's ask or try may start: the run met no stop and its budget is not spent."""
+    until = run.bounds.until
+    return run.stopped is None and (until is None or until > time.monotonic())
 
 
 def _goes_on(run: Running, progress: Progress) -> bool:

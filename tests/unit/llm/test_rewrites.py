@@ -4,6 +4,8 @@ came, asking about the condition's site."""
 import dataclasses
 from dataclasses import dataclass, field
 
+import pytest
+
 from pyct.config.llm import DEFAULT_LIMIT
 from pyct.llm.connection import Connection
 from pyct.llm.rewrites import REWRITES, LlmRewrites, request_text
@@ -43,8 +45,10 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
     assert 'nearest last:\ns.startswith("-"): true' in text
     assert REQUEST.code in text
     assert (
-        "each value as JSON, or as Python writes it when JSON cannot hold it, and one that holds"
-        ' an object as a placeholder in angle brackets:\ns = "-1"'
+        "each value as JSON, or as Python writes it when JSON cannot hold it, an object as"
+        " <Name object, built from ARGS>, ARGS the arguments pyct builds it from, or as"
+        " <Name object>, and a value that holds an object inside a list, tuple or dict as"
+        ' <holds an object>:\ns = "-1"'
     ) in text
     assert "The solver's answer for the condition: timeout" in text
     assert "earlier rewrites" not in text
@@ -52,13 +56,23 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_for
 
 
 def test_the_request_names_the_parameters_a_rewrite_may_not_read() -> None:
-    request = dataclasses.replace(REQUEST, unreadable=("o", "l"))
+    request = dataclasses.replace(REQUEST, holders=("o", "l"))
 
     assert "may not read" not in request_text(REQUEST)
     assert (
-        's = "-1"\n\nParameters your condition may not read, since each holds an object: o, l'
-        in request_text(request)
+        's = "-1"\n\nParameters your condition may not read, since each holds an object inside a'
+        " list, tuple or dict: o, l" in request_text(request)
     )
+
+
+# llm-rewrite-object-fields-request-shows-a-seed-named-object
+def test_the_form_lets_a_condition_read_self_and_an_object_s_fields_only() -> None:
+    text = request_text(REQUEST)
+
+    assert "a method's self among them" in text
+    assert "a field of a parameter that is an object, written order.code, one level deep" in text
+    assert "never the object whole and never its methods" in text
+    assert "no self" not in text
 
 
 def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
@@ -69,6 +83,46 @@ def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
 
     assert 's == "1e-29"  ->  the input {"s": "1e-29"} took the other side' in text
     assert "before it" not in text
+
+
+# what a retry says once the solver could not answer the latest try's ask
+EXACT_VALUE_SAID = (
+    "The solver could not answer that condition. Answer this time with a condition that fixes"
+    " each parameter it reads to one exact value, such as `name == value`, that the wanted"
+    " side's inputs meet."
+)
+OTHER_SIDE = 'the input {"s": "1e-29"} took the other side'
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-after-the-solver-gave-up
+@pytest.mark.parametrize("answer", ["timeout", "unknown"])
+def test_a_retry_after_the_solver_gave_up_on_the_latest_try_asks_for_one_exact_value(
+    answer: str,
+) -> None:
+    reason = f"the solver answered {answer}"
+    tried = (
+        EarlierTry('s == "1e-29"', OTHER_SIDE),
+        EarlierTry("len(s) > 31", reason, solver_gave_up=True),
+    )
+
+    text = request_text(dataclasses.replace(REQUEST, tries=tried))
+
+    assert f"len(s) > 31  ->  {reason}\n\n{EXACT_VALUE_SAID}\n\n{FORM}" in text
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
+def test_a_retry_after_another_failure_does_not_ask_for_one_exact_value() -> None:
+    solver_gave_up = EarlierTry("len(s) > 31", "the solver answered unknown", solver_gave_up=True)
+    other = EarlierTry('s == "1e-29"', OTHER_SIDE)
+    refused = EarlierTry('__import__("os").getcwd() == s', "a rewrite may not call __import__")
+
+    for tried in ((other,), (refused,), (solver_gave_up, other)):
+        assert "one exact value" not in request_text(dataclasses.replace(REQUEST, tries=tried))
+
+
+# llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask
+def test_a_first_ask_does_not_ask_for_one_exact_value() -> None:
+    assert "one exact value" not in request_text(REQUEST)
 
 
 # what the request says once a value or a reason it shows writes a plain dict's escaped key

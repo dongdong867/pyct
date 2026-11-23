@@ -10,11 +10,13 @@ from pyct.config.command_line import UsageError
 
 # the seeds tool's name, as ``--llm``, stderr and the code that builds it write it
 SEEDS_TOOL = "seeds"
+# the summaries tool's name, written the same ways
+SUMMARIES_TOOL = "summaries"
 # the rewrites tool's name, written the same ways
 REWRITES_TOOL = "rewrites"
 # every LLM tool this version has, in the order ``--llm all`` lists them: seeds, summaries,
 # rewrites, guesses, as each lands
-TOOLS = (SEEDS_TOOL, REWRITES_TOOL)
+TOOLS = (SEEDS_TOOL, SUMMARIES_TOOL, REWRITES_TOOL)
 # the word ``--llm`` takes for every tool in TOOLS
 ALL = "all"
 # the providers ``--llm-model`` takes, each with an adapter of its own
@@ -85,6 +87,13 @@ def parse_llm(
     return LlmSettings(tools, model, replay, limit)
 
 
+def asks_summaries(tools_text: str | None) -> bool:
+    """Whether ``--llm`` as written names summaries, itself or through ``all``: the run then
+    records each loop's runs, which the interception must know before the target loads. It
+    reads the names alone; ``parse_llm`` refuses a wrong flag."""
+    return tools_text is not None and SUMMARIES_TOOL in _named(tools_text)
+
+
 def _limit(text: str) -> int:
     """A whole number of tokens above zero, as ``int()`` reads one."""
     refusal = f"--llm-limit takes a positive number of tokens, got {text!r}"
@@ -99,9 +108,7 @@ def _limit(text: str) -> int:
 
 def _tools(text: str) -> tuple[str, ...]:
     """The tools named, each once, in ``TOOLS`` order. A name pyct does not have is refused."""
-    names = {part.strip() for part in text.split(",")}
-    if ALL in names:
-        names = (names - {ALL}) | set(TOOLS)
+    names = _named(text)
     unknown = sorted(names - set(TOOLS))
     if unknown:
         raise UsageError(
@@ -109,6 +116,12 @@ def _tools(text: str) -> tuple[str, ...]:
             f" joined by commas, or {ALL} for every one"
         )
     return tuple(tool for tool in TOOLS if tool in names)
+
+
+def _named(text: str) -> set[str]:
+    """The names ``--llm`` writes, joined by commas, ``all`` read as every tool pyct has."""
+    names = {part.strip() for part in text.split(",")}
+    return (names - {ALL}) | set(TOOLS) if ALL in names else names
 
 
 def _model(text: str) -> Model:

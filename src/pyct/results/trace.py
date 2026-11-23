@@ -67,7 +67,7 @@ def render_start(spec: str, fn: object) -> str:
 
 
 def render_miss(miss: Miss) -> str:
-    """The fork the solver was asked about, and the answer that gave no input.
+    """The fork a pass's ask gave no input for, and the answer that ask ended in.
 
     Its own line rather than part of the summary, so a caller can print it
     the moment the answer comes in, before the next input's trace.
@@ -96,7 +96,8 @@ def _written(lines: list[str]) -> str:
 
 
 def _summary(result: RunResult) -> list[str]:
-    """What the whole run covered, what the solver answered, and what it left behind."""
+    """What the whole run covered, the answers its passes' asks ended in, and what it left
+    behind."""
     coverage = result.coverage
     lines = [*_coverage(coverage), _solver(result.solver), _solver_seconds(result.solver_seconds)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
@@ -113,7 +114,7 @@ def _coverage(coverage: Coverage) -> list[str]:
 
 
 def _solver(counts: SolverCounts) -> str:
-    """What the solver answered over the run, one count per kind of answer."""
+    """The answers the passes' asks ended in over the run, one count per kind of answer."""
     return (
         f"solver: {counts.sat} sat, {counts.unsat} unsat, "
         f"{counts.unknown} unknown, {counts.timeout} timeout"
@@ -121,7 +122,7 @@ def _solver(counts: SolverCounts) -> str:
 
 
 def _solver_seconds(seconds: SolverSeconds) -> str:
-    """How long the solver's asks took over the run, summed by what each answered."""
+    """How long the passes' asks took over the run, summed by the answer each ended in."""
     return (
         f"solver seconds: {_seconds(seconds.sat)} sat, {_seconds(seconds.unsat)} unsat, "
         f"{_seconds(seconds.unknown)} unknown, {_seconds(seconds.timeout)} timeout"

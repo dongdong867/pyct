@@ -173,8 +173,7 @@ def test_a_rewrite_that_calls_a_method_of_an_object_argument_fails_and_never_cal
 
     at = f"llm: rewrite for {file_of('counted')}:2:7"
     assert tries_said(ran.said, at) == [
-        f"{at}, try {number}: a rewrite may not read n, which holds an object"
-        for number in range(1, 5)
+        f"{at}, try {number}: a rewrite may not call a method of n" for number in range(1, 5)
     ]
-    assert [request.unreadable for request in provider.requests] == [("n",)] * 4
+    assert [request.holders for request in provider.requests] == [()] * 4
     assert not saved.exists()

@@ -12,7 +12,6 @@ import pytest
 from pyct.binding.annotations import Fields, Items
 from pyct.execution.execute import execute
 from pyct.intercept.hook import Interception, current
-from pyct.run.import_watch import ImportWatch
 from pyct.run.target import (
     Target,
     TargetError,
@@ -22,6 +21,7 @@ from pyct.run.target import (
 )
 from pyct.run.target import _self_class as self_class_of
 from pyct.run.target import _self_name as self_name_of
+from pyct.run.watch_page import WatchPage
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CART = "targets.classes.cart"
@@ -331,7 +331,7 @@ def test_load_target_names_an_exit_at_import_by_its_repr(module: str, ending: st
 def test_load_target_names_the_module_on_the_watch_while_it_imports(
     module: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    watch = ImportWatch.for_command_line([f"{module}::classify"])
+    watch = WatchPage.for_command_line([f"{module}::classify"])
     named: list[str | None] = []
     real_import = importlib.import_module
 
@@ -421,6 +421,17 @@ def test_the_interception_of_a_spec_substitutes_its_module_s_package_into_the_ca
 
     assert held == Interception(module="shop.cart", cache=tmp_path)
     assert current() is None
+
+
+def test_the_interception_of_a_spec_records_the_pieces_when_asked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
+
+    with interception("shop.cart::total", pieces=True):
+        held = current()
+
+    assert held == Interception(module="shop.cart", cache=tmp_path, pieces=True)
 
 
 @pytest.mark.parametrize("alone", [True, False])
