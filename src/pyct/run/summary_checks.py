@@ -50,14 +50,20 @@ CHECK_SECONDS = 2.0
 BUDGET_RAN_OUT = "the run's budget ran out"
 
 
-def answer_form(parameters: Sequence[str], changed: Sequence[str]) -> str:
-    """How the reply writes a formula for a loop with these names going in and changed."""
+def answer_form(parameters: Sequence[str], changed: Sequence[str], noun: str = "loop") -> str:
+    """How the reply writes a formula for a loop, or for the piece ``noun`` names, with these
+    names going in and changed."""
     entries = ", ".join(f'"{name}": ...' for name in changed)
     calls = ", ".join(sorted(FORMULA_CALLS))
+    gives = (
+        "the values the loop leaves in its changed names"
+        if noun == "loop"
+        else f"the {noun}'s answer"
+    )
     return (
         "Answer with one fenced Python code block that defines one function and nothing else:"
-        f" def {SUMMARY}({', '.join(parameters)}):, which gives the values the loop leaves in"
-        " its changed names from the values going in, without a loop. Write the def line exactly"
+        f" def {SUMMARY}({', '.join(parameters)}):, which gives {gives} from the values going"
+        " in, without a loop. Write the def line exactly"
         " as shown, with no annotation, default or decorator. It holds at most"
         f" {MOST_STATEMENTS} statements, each an assignment to a name or an if statement that"
         " holds the same, and ends with a return of a dict with one entry per changed name,"
