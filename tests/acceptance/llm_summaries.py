@@ -1,6 +1,7 @@
 """A fake ``SummaryProvider`` that answers fixed text, and ``run()`` with summaries on, the
-target's package intercepted with the recording of each loop's runs, for the
-ask-for-a-stuck-loop-s-summary story's acceptance tests.
+target's package intercepted with the recording of each loop's runs and each input forked, for
+the acceptance tests of the ask-for-a-stuck-loop-s-summary and
+track-a-value-through-a-loop-summary stories.
 
 The fake reads each reply as ``pyct.llm.summaries`` does, and numbers its tries per place and
 charges each reply's tokens against a limit as the connection does, so a test reads the try
@@ -25,9 +26,10 @@ from pyct.config.llm import DEFAULT_LIMIT
 from pyct.config.plateau import Plateau
 from pyct.llm.summaries import summary_reply
 from pyct.results.coverage import Coverage
+from pyct.results.jsonl import render
 from pyct.results.llm_asks import AskCost, Unanswered, Why
 from pyct.results.record import InputRecord, RunResult
-from pyct.run import model_runs
+from pyct.run import isolation, model_runs
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Isolation
 from pyct.run.notes import Note
@@ -91,12 +93,14 @@ class FakeSummaries:
 
 @dataclass
 class Summarized:
-    """What a run with summaries gave: its result, each input as it finished, and the stderr line
-    each note gives, in the order they came."""
+    """What a run with summaries gave: its result, each input as it finished, the stderr line each
+    note gives, in the order they came, and each input's stdout line as it was rendered when it
+    finished, with the coverage it was rendered with."""
 
     result: RunResult
     records: list[InputRecord]
     said: list[str]
+    printed: list[tuple[str, Coverage]] = field(default_factory=list)
 
     def llm_said(self) -> list[str]:
         """The ``llm:`` lines alone."""
@@ -108,27 +112,31 @@ def run_summaries(
     seed: Mapping[str, object] | Sequence[Mapping[str, object]],
     provider: FakeSummaries,
     limits: Limits = ONE_MOMENT,
+    isolation: Isolation = Isolation.AUTO,
 ) -> Summarized:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package and
-    records each loop's runs, every input in this process and each formula in a child of it,
-    with ``provider`` as the summaries helper."""
+    records each loop's runs, every input and each formula check in a child forked from this
+    process, with ``provider`` as the summaries helper. ``isolation`` says where each input runs
+    instead, such as in a fresh interpreter."""
     records = provider.records
     said: list[str] = []
+    printed: list[tuple[str, Coverage]] = []
 
-    def report(record: InputRecord, _coverage: Coverage) -> None:
+    def report(record: InputRecord, coverage: Coverage) -> None:
         records.append(record)
         said.append(f"input {len(records)}")
+        printed.append((render(record, coverage), coverage))
 
     def noted(note: Note) -> None:
         line = note_line(note)
         if line is not None:
             said.append(line)
 
-    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(summaries=provider))
+    setup = Setup(isolation=isolation, helpers=Helpers(summaries=provider))
     tell = Tell(report=report, noted=noted)
     with interception(spec, pieces=True):
         result = run(load_target(spec), seed, limits=limits, setup=setup, tell=tell)
-    return Summarized(result, records, said)
+    return Summarized(result, records, said, printed)
 
 
 @contextlib.contextmanager
@@ -153,11 +161,13 @@ def _in_targets(name: str) -> bool:
 
 @pytest.fixture(autouse=True)
 def one_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
-    """pyct's process as a run has it, one thread: pytest-timeout's watch runs another, and a
-    formula's child forks beside it safely, since it takes no lock the call needs. The target's
+    """pyct's process as a run has it, one thread: pytest-timeout's watch runs another, and an
+    input's or a formula's child forks beside it safely, since it takes no lock the call needs,
+    so no input moves to a fresh interpreter. The target's
     substituted code is kept in a cache folder of the test's own, and each target module is
     imported again under the interception that records loops (``targets_imported_afresh``)."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
+    monkeypatch.setattr(isolation, "running", lambda: 1)
     monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
     with targets_imported_afresh():
         yield

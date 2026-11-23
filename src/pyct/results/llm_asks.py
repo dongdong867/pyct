@@ -88,12 +88,16 @@ class LlmUse:
 class SummaryState(StrEnum):
     """What came of the last ask summaries sent about a loop.
 
-    ``CHECKED``: its formula passed the checks. ``FAILED``: its formula failed a check, or the
-    reply held no code block. ``UNANSWERED``: the ask got no answer. ``UNCHECKED``: pyct could
-    not check its formula, since no child could run it or the run's deadline ended the check.
+    ``IN_USE``: its formula passed the checks and is in use. ``CHECKED``: its formula passed the
+    checks and is not used. ``DROPPED``: its formula passed the checks, came into use, and an
+    input's run of the loop dropped it. ``FAILED``: its formula failed a check, or the reply held
+    no code block. ``UNANSWERED``: the ask got no answer. ``UNCHECKED``: pyct could not check
+    its formula, since no child could run it or the run's deadline ended the check.
     """
 
+    IN_USE = "in use"
     CHECKED = "checked"
+    DROPPED = "dropped"
     FAILED = "failed"
     UNANSWERED = "unanswered"
     UNCHECKED = "unchecked"
@@ -105,7 +109,7 @@ class LoopSummary:
     file and the line and column the loop starts at, the names it changes, the last formula a
     reply held, None when no reply held one, what came of its last ask sent, the connection's
     last try number at its place, and the past runs its formula was checked on, None unless its
-    state is ``CHECKED``."""
+    state is ``IN_USE``, ``CHECKED`` or ``DROPPED``."""
 
     file: str
     line: int

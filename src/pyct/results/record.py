@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import Branch, Fact, ForkSite, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, FormulaDrop, PieceRun, Site
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
@@ -76,7 +76,9 @@ class InputRecord:
     ``first_covered`` is the lines this input covered that no earlier input
     and not the import did, keyed by file as coverage is. ``pieces`` are the
     recorded runs of the pieces of the target's code, with the interception's
-    pieces switch on (`pyct.core.entry.pieces`), which no line prints.
+    pieces switch on (`pyct.core.entry.pieces`), which no line prints, and
+    ``drops`` each loop's formula dropped in the input (`pyct.core.entry.in_use`),
+    which no line prints either.
     """
 
     args: Mapping[str, object]
@@ -92,6 +94,7 @@ class InputRecord:
     solver_seconds: float | None = field(default=None, compare=False)
     first_covered: Mapping[str, frozenset[int]] = field(default_factory=dict)
     pieces: tuple[PieceRun, ...] = ()
+    drops: tuple[FormulaDrop, ...] = ()
 
 
 class StopKind(StrEnum):

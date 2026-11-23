@@ -31,7 +31,6 @@ the standard library, as it does before any folder joins the path.
 
 from __future__ import annotations
 
-import functools
 import importlib.machinery
 import os
 import sys
@@ -39,34 +38,10 @@ import types
 from collections.abc import Sequence
 
 from pyct.core.foundation.branch import PYCT_DIR
+from pyct.core.foundation.standard_library import standard
 
 # the folder of pyct's core, whose code runs the target's own operations in its place
 _CORE = f"{PYCT_DIR}core{os.sep}"
-
-
-def _installed_folders() -> tuple[str, ...]:
-    """The folders ``site`` looks in for installed packages, each with a separator on its end.
-
-    One can lie inside the standard library's folder, as a system Python's
-    own site-packages does. They are read from ``site`` itself, which
-    imports nothing to answer; none when Python started without ``site``,
-    as ``-S`` has it, which then puts none of them on the path. Each is
-    named as its links lead.
-    """
-    site = sys.modules.get("site")
-    if site is None:
-        return ()
-    folders = [*site.getsitepackages(), site.getusersitepackages()]
-    return tuple(f"{os.path.realpath(folder)}{os.sep}" for folder in folders)
-
-
-# the folder the standard library's own files lie in, lib-dynload's included, as its links lead,
-# with a separator on its end; read from os, which every interpreter has imported, so reading it
-# imports nothing
-_STANDARD = f"{os.path.realpath(os.path.dirname(os.__file__))}{os.sep}"
-_INSTALLED = _installed_folders()
-# how the file name of code frozen into the interpreter starts, the import system's included
-_FROZEN = "<frozen "
 
 
 class _OwnImports:
@@ -116,25 +91,12 @@ def _pyct_s(frame: types.FrameType | None) -> bool:
     nor pyct's core's is pyct's."""
     while frame is not None:
         file = frame.f_code.co_filename
-        if not (file.startswith(_CORE) or _standard(file)):
+        if not (file.startswith(_CORE) or standard(file)):
             return file.startswith(PYCT_DIR)
         frame = frame.f_back
     return False
 
 
-@functools.cache
-def _standard(path: str) -> bool:
-    """Whether the file or folder is the standard library's, as its links lead.
-
-    Code frozen into the interpreter is; any other name in angle brackets,
-    such as ``<string>``, names no file and is not.
-    """
-    if path.startswith("<"):
-        return path.startswith(_FROZEN)
-    resolved = f"{os.path.realpath(path)}{os.sep}"
-    return resolved.startswith(_STANDARD) and not resolved.startswith(_INSTALLED)
-
-
 def _standard_entries() -> list[str]:
     """The entries of the import path that hold the standard library, in their order."""
-    return [entry for entry in sys.path if isinstance(entry, str) and _standard(entry)]
+    return [entry for entry in sys.path if isinstance(entry, str) and standard(entry)]

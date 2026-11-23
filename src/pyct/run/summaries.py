@@ -18,16 +18,31 @@ call a cause names gets no ask.
 A reply's formula is read, checked for its form, then checked on the
 loop's complete runs and for values pyct follows (``pyct.run.summary_checks``).
 A formula that fails a check is a failed try, said with its reason and kept
-for the loop's later asks; one that passes both is kept for its loop as
-checked, and that loop is not asked about again. A check whose child could
-not start, or that the run's deadline ended, is no try: the loop is skipped
-at this moment, and said. No input runs and nothing is rebound.
+for the loop's later asks; one that passes both is kept for its loop, and
+that loop is not asked about again while it is kept. It comes into use from
+the next input on, for the rest of the run or until an input drops it, when
+it can (``pyct.run.loops_in_use``); else it is kept as checked, and why is
+said right after the line that says it passed, once in the run for each loop
+and reason. A check whose child could not start, or that the run's deadline
+ended, is no try: the loop is skipped at this moment, and said. No input
+runs.
+
+The tool hears each input the run keeps. A loop in use that an input's
+record says was dropped goes out of use from the next input on, and its
+drop is said with the input's number and why. The loop is asked about
+again at each later moment while a line it was asked for is still missed
+and no formula of its is in use or checked since, whether or not an entry
+names it and whatever came of an ask since, its dropped formula among the
+earlier tries with why, and the run it failed on first among the runs
+shown. Once
+the run's inputs run in pyct's own process, each loop in use goes out of use
+and is kept as checked, said once for each loop.
 
 The summary line lists each loop an ask was sent for with what came of its
-last ask sent (``SummaryState``): its formula checked; failed, by a check or
-a reply with no code block; unanswered; or unchecked, when the check could not
-run or the deadline ended it. An ask the token limit refused sent nothing and
-leaves that as it was.
+last ask sent (``SummaryState``): its formula in use, checked and not used,
+or dropped; failed, by a check or a reply with no code block; unanswered; or
+unchecked, when the check could not run or the deadline ended it. An ask the
+token limit refused sent nothing and leaves that as it was.
 
 ``SummaryProvider`` is declared here, at its consumer, and implemented in ``pyct.llm.summaries``.
 Decision llm-summary-provider-declared-in-run.
@@ -35,55 +50,51 @@ Decision llm-summary-provider-declared-in-run.
 
 from __future__ import annotations
 
-import ast
 import enum
 import time
-from collections.abc import Sequence
+import types
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from pyct.config.llm import SUMMARIES_TOOL
-from pyct.core.foundation.branch import PieceRun, Site
+from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
-from pyct.results.pieces import FUNCTIONS, Piece, pieces
 from pyct.results.record import InputRecord
 from pyct.run.code_context import code_with_piece
+from pyct.run.formula_runner import FormulaText
+from pyct.run.loops_in_use import (
+    IN_PYCT_S_PROCESS,
+    LoopsInUse,
+    dropped_because,
+    place_of,
+    unused_because,
+)
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import (
     AskSkipped,
     ReplyIgnored,
     SummaryChecked,
+    SummaryDropped,
     SummaryFailed,
+    SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.summary_checks import (
-    CompleteRun,
-    Ended,
-    check_formula,
-    formula_code,
-)
+from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
+from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, failed_run, shown_runs
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
 
-# the recorded runs a request shows at most
-SHOWN_RUNS = 10
 # why a loop is not asked about: no run of it holds every name it changes; or, as
 # ``CANNOT_FORK`` says, no formula could run beside a second thread of pyct's process
 NO_RECORDED_RUN = "no recorded run"
-
-
-@dataclass(frozen=True)
-class ShownRun:
-    """One recorded run of the loop as a request shows it: each parameter with its value at the
-    start, and each changed name with its value at the end, each value JSON text."""
-
-    going_in: tuple[tuple[str, str], ...]
-    changed: tuple[tuple[str, str], ...]
+# the states of a loop whose formula is kept: no ask is sent for it
+_KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
 
 
 @dataclass(frozen=True)
@@ -130,17 +141,6 @@ class SummaryProvider(Protocol):
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered: ...
 
 
-@dataclass(frozen=True)
-class AskedLoop:
-    """A loop at one moment: its site, its piece, its complete runs, and the formula's
-    parameters."""
-
-    site: Site
-    piece: Piece
-    runs: tuple[CompleteRun, ...]
-    parameters: tuple[str, ...]
-
-
 class Asked(enum.Enum):
     """How one loop's turn at a moment ended."""
 
@@ -152,10 +152,11 @@ class Asked(enum.Enum):
 @dataclass
 class LoopState:
     """One loop an ask was sent for, across the run: the names it changes, the connection's last
-    try number, the earlier tries that failed, the last formula the model gave, the runs a
-    formula was checked on once one is checked, and what came of the last ask sent for it,
-    unanswered until its answer is read. An ask the token limit refused sent nothing and changes
-    none of these."""
+    try number, the earlier tries that failed or were dropped, the last formula the model gave,
+    the runs a formula was checked on once one is checked, what came of the last ask sent for
+    it, unanswered until its answer is read, the run its last formula was dropped on, whether a
+    formula of its was ever dropped, and the lines it was asked for. An ask the token limit
+    refused sent nothing and changes none of these."""
 
     changes: tuple[str, ...]
     attempts: int = 0
@@ -163,6 +164,11 @@ class LoopState:
     formula: str | None = None
     checked_on: int | None = None
     last: SummaryState = SummaryState.UNANSWERED
+    failed_on: CompleteRun | None = None
+    dropped: bool = False
+    # the missed lines, by file, of the entries that named the loop at its asks: what the loop's
+    # asks were for, not what came of them, so two states compare without them
+    asked_for: set[tuple[str, int]] = field(default_factory=set, compare=False)
 
 
 class Summaries:
@@ -176,14 +182,20 @@ class Summaries:
         target: Target,
         told: Told,
         limit: TokenLimit | None = None,
+        *,
+        isolated: Callable[[], bool],
     ) -> None:
         self.provider = provider
         self.target = target
         self.told = told
         self.limit = TokenLimit() if limit is None else limit
+        # whether the run's inputs run in a process of their own
+        self.isolated = isolated
         self.loops: dict[Site, LoopState] = {}
-        # each loop skipped with no ask, with each reason it was skipped for, already said this run
-        self.said_skips: set[tuple[Site, str]] = set()
+        self.in_use = LoopsInUse()
+        # each loop skipped with no ask, or whose formula is not used, with each reason, said this
+        # run
+        self.said_once: set[SummarySkipped | SummaryNotUsed] = set()
 
     @property
     def can_ask(self) -> bool:
@@ -192,10 +204,13 @@ class Summaries:
         return not self.limit.reached
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
-        """Ask once about each loop the entries' sources name, in code order; ``took``, ``gave
-        up`` or ``skipped`` each entry by what came of its sources."""
+        """Ask once about each loop the entries' sources name, and each dropped loop a line it was
+        asked for is still missed for, in code order; ``took``, ``gave up`` or ``skipped`` each
+        entry by what came of its sources. A loop an ask was sent for keeps the entries' lines
+        that named it."""
+        named = {each.site for entry in entries for each in _sources(entry, SourceKind.LOOP)}
         sites = sorted(
-            {each.site for entry in entries for each in _sources(entry, SourceKind.LOOP)},
+            named | set(self._dropped_for(moment)),
             key=lambda site: (site.file, site.line, site.col),
         )
         came: dict[Site, Asked] = {}
@@ -206,12 +221,38 @@ class Summaries:
                 continue
             came[site], made = self._turn(site, moment.run)
             asked = asked or made
+            self._asked_for(site, entries)
         return Handled(tuple(_outcome(entry, came) for entry in entries), asked)
+
+    def waiting(self, moment: Moment) -> bool:
+        """Whether a loop whose formula was dropped waits on this moment: no formula of its is in
+        use or checked since, and a line it was asked for is still missed."""
+        return bool(self._dropped_for(moment))
+
+    def _dropped_for(self, moment: Moment) -> list[Site]:
+        """Each loop whose formula was dropped, with no formula of its in use or checked since,
+        that a line it was asked for, still missed at the moment, waits on."""
+        missed = {(entry.file, line) for entry in moment.causes for line in entry.lines}
+        return [
+            site
+            for site, state in self.loops.items()
+            if state.dropped and state.last not in _KEPT and state.asked_for & missed
+        ]
+
+    def _asked_for(self, site: Site, entries: tuple[WhyEntry, ...]) -> None:
+        """Keep, with the loop's state once an ask was sent for it, the lines of each entry that
+        names it."""
+        state = self.loops.get(site)
+        if state is None:
+            return
+        for entry in entries:
+            if any(each.site == site for each in _sources(entry, SourceKind.LOOP)):
+                state.asked_for.update((entry.file, line) for line in entry.lines)
 
     def _turn(self, site: Site, run: Running) -> tuple[Asked, bool]:
         """One loop's turn at this moment, and whether the model was asked."""
         state = self.loops.get(site)
-        if state is not None and state.checked_on is not None:
+        if state is not None and state.last in _KEPT:
             return Asked.CHECKED, False
         loop = asked_loop(site, run.records)
         if loop is None or not can_fork():
@@ -239,9 +280,13 @@ class Summaries:
     def _skipped(self, site: Site, reason: str) -> None:
         """A loop skipped with no ask, said the first time this run it is skipped for
         ``reason``."""
-        if (site, reason) not in self.said_skips:
-            self.said_skips.add((site, reason))
-            self.told.note(SummarySkipped(site, reason))
+        self._say_once(SummarySkipped(site, reason))
+
+    def _say_once(self, note: SummarySkipped | SummaryNotUsed) -> None:
+        """A note said the first time this run it comes, for its loop and reason."""
+        if note not in self.said_once:
+            self.said_once.add(note)
+            self.told.note(note)
 
     def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
         """The reply's formula read, its form checked, then checked on the loop's runs and
@@ -263,9 +308,55 @@ class Summaries:
             return Asked.NOT_ASKED
         if failed is not None:
             return self._failed(state, site, failed)
-        state.checked_on, state.last = len(loop.runs), SummaryState.CHECKED
+        state.checked_on = len(loop.runs)
         self.told.note(SummaryChecked(site, len(loop.runs)))
+        state.last = self._used(loop, reply.code, file, formula.code)
         return Asked.CHECKED
+
+    def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
+        """A formula that passed both checks, from its text, its code objects' file name and its
+        code: in use when it can be, else kept as checked and said with why."""
+        changed = loop.piece.changed
+        reason = unused_because(loop.site, loop.runs, changed, self.isolated())
+        if reason is not None:
+            self._say_once(SummaryNotUsed(loop.site, reason))
+            return SummaryState.CHECKED
+        formula = FormulaText(text, loop.parameters, changed, place_of(loop.site), file)
+        self.in_use.use(formula, code)
+        return SummaryState.IN_USE
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        """An input the run kept as its input ``number``: each loop in use its record says was
+        dropped goes out of use, said with why; then, once the run's inputs run in pyct's own
+        process, each loop still in use goes out of use, kept as checked."""
+        for drop in record.drops:
+            if drop.site in self.in_use.sites:
+                self._dropped(drop, record, number)
+        if not self.in_use.sites or self.isolated():
+            return
+        for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
+            self.in_use.stop(site)
+            self.loops[site].last = SummaryState.CHECKED
+            self._say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS))
+
+    def _dropped(self, drop: FormulaDrop, record: InputRecord, number: int) -> None:
+        """The loop in use the input ``number`` dropped: out of use, said, and its formula kept
+        among its earlier tries with why, and the run it failed on, for its next ask."""
+        site = drop.site
+        self.in_use.stop(site)
+        state = self.loops[site]
+        state.last = SummaryState.DROPPED
+        state.dropped = True
+        reason = dropped_because(drop)
+        state.tries.append(
+            EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
+        )
+        state.failed_on = failed_run(drop, record, number)
+        self.told.note(SummaryDropped(site, number, reason))
+
+    def close(self) -> None:
+        """The run ends: no loop of its is in use any more."""
+        self.in_use.close()
 
     def _failed(self, state: LoopState, site: Site, reason: str) -> Asked:
         """A failed try, said and kept for the loop's later asks."""
@@ -284,7 +375,7 @@ class Summaries:
             code=code_with_piece(self.target, site.file, loop.piece.lines),
             parameters=loop.parameters,
             changed=loop.piece.changed,
-            runs=shown_runs(loop),
+            runs=shown_runs(loop, state.failed_on),
             tries=tuple(state.tries),
         )
 
@@ -299,10 +390,12 @@ class Summaries:
         self.told.note(AskSkipped(SUMMARIES_TOOL, answer.reason))
 
     def _sent(self, site: Site, state: LoopState, cost: AskCost) -> None:
-        """The loop's state kept once an ask for it was sent, with the connection's try number;
-        an answer that leaves no token under the limit reaches the run's limit."""
+        """The loop's state kept once an ask for it was sent, with the connection's try number,
+        and no formula checked until its answer is; an answer that leaves no token under the
+        limit reaches the run's limit."""
         self.loops[site] = state
         state.attempts = cost.attempt
+        state.checked_on = None
         self.limit.heard(cost)
 
     def states(self) -> tuple[LoopSummary, ...]:
@@ -323,67 +416,6 @@ class Summaries:
                 self.loops.items(), key=lambda item: (item[0].file, item[0].line, item[0].col)
             )
         )
-
-
-def asked_loop(site: Site, records: Sequence[InputRecord]) -> AskedLoop | None:
-    """The loop at ``site`` with its complete runs in the records, oldest first, and the names
-    going in that each holds; None when the site holds no piece or no run is complete."""
-    piece = piece_at(site)
-    if piece is None:
-        return None
-    wanted = set(piece.changed)
-    runs = tuple(
-        CompleteRun(number, each)
-        for number, record in enumerate(records, start=1)
-        for each in record.pieces
-        if each.site == site and wanted <= {changed.name for changed in each.changed}
-    )
-    if not runs:
-        return None
-    held = [{going.name for going in each.run.going_in} for each in runs]
-    parameters = tuple(name for name in piece.going_in if all(name in names for names in held))
-    return AskedLoop(site, piece, runs, parameters)
-
-
-def shown_runs(loop: AskedLoop) -> tuple[ShownRun, ...]:
-    """Up to ``SHOWN_RUNS`` of the loop's complete runs, as values: those whose values going in
-    differ from every earlier one's first, then those whose changed values differ, then the
-    rest, each group in run order."""
-    every = [_shown(each.run, loop) for each in loop.runs]
-    picked: list[int] = []
-    for part in ("going_in", "changed"):
-        seen = {getattr(every[at], part) for at in picked}
-        for at, each in enumerate(every):
-            if at not in picked and getattr(each, part) not in seen:
-                seen.add(getattr(each, part))
-                picked.append(at)
-    picked += [at for at in range(len(every)) if at not in picked]
-    return tuple(every[at] for at in picked[:SHOWN_RUNS])
-
-
-def _shown(run: PieceRun, loop: AskedLoop) -> ShownRun:
-    going_in = tuple((each.name, each.value) for each in run.going_in)
-    changed = {each.name: each.value for each in run.changed}
-    return ShownRun(
-        tuple(pair for pair in going_in if pair[0] in loop.parameters),
-        tuple((name, changed[name]) for name in loop.piece.changed),
-    )
-
-
-def piece_at(site: Site) -> Piece | None:
-    """The piece of a function in ``site``'s file at its line and column, as the file reads now;
-    None when it does not read or parse, or holds none there."""
-    try:
-        with open(site.file, encoding="utf-8") as opened:
-            tree = ast.parse(opened.read(), filename=site.file)
-    except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
-        return None
-    for node in ast.walk(tree):
-        if isinstance(node, FUNCTIONS):
-            for _, piece in pieces(node):
-                if (piece.line, piece.col) == (site.line, site.col):
-                    return piece
-    return None
 
 
 def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:

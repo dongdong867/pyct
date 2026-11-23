@@ -52,6 +52,9 @@ kind) and its payload, padded to 8 bytes:
   many changed as two u32, then its file and, for each name going in, its
   name, ``1`` or ``0`` for whether it was tracked, and its value's JSON
   text, then each changed name and its value's text, a NUL between each.
+- drop: a loop's formula dropped in the call (``FormulaDrop``), as JSON
+  ``[file, line, col, name, value, got, reason, run]``, ``run`` null for a
+  run not recorded.
 
 A record's bytes go first and the committed mark moves past them after, so
 the journal holds a readable prefix at every instant. Every word the
@@ -106,7 +109,7 @@ from collections.abc import Mapping
 from typing import TypeGuard
 
 from pyct.core.entry.pieces import MOST_TEXT
-from pyct.core.foundation.branch import Branch, Expression, Fact, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, FormulaDrop, PieceRun, Site
 from pyct.results.failure import Failure
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes
@@ -133,7 +136,7 @@ COUNTED = struct.Struct("=Qqq")
 # a recorded run's site's line and column, and how many names went in and how many changed
 PIECE_HEAD = struct.Struct("<qqII")
 
-LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT, PIECE = range(1, 12)
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT, PIECE, DROP = range(1, 13)
 OPEN, FULL, UNENCODABLE, BOUNDED = 0, 1, 2, 3
 
 # the bytes at a journal's end that only the call's ending may take, a long traceback's included;
@@ -239,6 +242,12 @@ class JournalWriter:
         fields += [text for changed in run.changed for text in (changed.name, changed.value)]
         head = PIECE_HEAD.pack(site.line, site.col, len(run.going_in), len(run.changed))
         self._record(PIECE, head + "\0".join(fields).encode(errors="surrogatepass"))
+
+    def drop(self, drop: FormulaDrop) -> None:
+        """Write a loop's formula dropped in the call, among the input's own facts."""
+        site = drop.site
+        fields = [site.file, site.line, site.col, drop.name, drop.value, drop.got, drop.reason]
+        self._json(DROP, [*fields, drop.run])
 
     def bound(self, note: str) -> None:
         """Note that the call went past the forks it keeps, and go on with what it still keeps."""

@@ -105,13 +105,16 @@ def test_a_loop_whose_formula_failed_is_asked_about_again_with_the_failed_formul
 def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[int]) -> None:
     provider = FakeSummaries([COUNT])
 
-    done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS)
+    # inputs in pyct's own process keep the formula checked and not used, so the loop's forks
+    # stay as before and the second moment's entry names the loop again
+    done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS, Isolation.IN_PROCESS)
 
     assert len(moments) >= 2
     assert len(provider.requests) == 1
     assert summary_lines(done) == [
         f'{AT}: t = t + s.count("z")',
         f"{AT}: checked on {provider.inputs_then[0]} past runs",
+        f"{AT} not used: inputs run in pyct's own process",
     ]
 
 
@@ -119,7 +122,8 @@ def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[
 def test_no_moment_comes_once_the_first_moment_s_ask_reached_the_token_limit(
     causes: list[int],
 ) -> None:
-    provider = FakeSummaries([COUNT], limit=sum(TOKENS))
+    # a formula that fails its check, so that none comes into use
+    provider = FakeSummaries([code_reply(LENGTH)], limit=sum(TOKENS))
 
     done = run_summaries(COUNTS, SEED, provider, TWO_MOMENTS)
 
