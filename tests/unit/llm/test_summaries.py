@@ -46,6 +46,12 @@ def test_the_request_holds_the_loop_its_names_its_runs_what_pyct_follows_and_the
     text = request_text(REQUEST)
 
     assert "Write a formula that gives the values the loop leaves in its changed names" in text
+    assert (
+        "pyct checks the formula on the loop's recorded runs, the ones shown below and ones this"
+        " request does not show, so a formula that only writes down the runs shown fails. Then"
+        " it checks that it can follow the values the formula gives."
+    ) in text
+    assert "\n\nRecorded runs of the loop, each as the values going in" in text
     assert f"Loop at m:10:4, marked in the code by the comments `{MARK_START}`" in text
     assert f"```python\n{CODE}\n```" in text
     assert "Names going in, the formula's parameters: s, t\n" in text

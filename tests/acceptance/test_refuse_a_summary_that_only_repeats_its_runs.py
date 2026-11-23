@@ -9,6 +9,7 @@ each loop's runs; no test calls a model.
 import json
 from dataclasses import dataclass
 
+from pyct.llm.summaries import request_text
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse, Unanswered
 from pyct.results.record import InputRecord
@@ -129,3 +130,15 @@ def test_a_loop_with_one_complete_run_is_asked_about_with_it_and_its_formula_com
     use = LlmUse("openai:gpt-6-luna", ("summaries",))
     [item] = json.loads(render_summary(done.result, use))["llm"]["summaries"]
     assert item["state"] == "in use"
+
+
+# llm-summary-held-out-request-says-so
+def test_the_request_says_runs_it_does_not_show_are_checked() -> None:
+    provider = FakeSummaries([COUNT])
+
+    run_summaries(COUNTS, SEED, provider)
+
+    [request] = provider.requests
+    text = request_text(request)
+    assert "and ones this request does not show" in text
+    assert "a formula that only writes down the runs shown fails" in text

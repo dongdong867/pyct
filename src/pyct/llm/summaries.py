@@ -68,22 +68,24 @@ def summary_reply(text: str, cost: AskCost) -> SummaryReply:
 
 
 def request_text(request: SummaryRequest) -> str:
-    """The exact text a summaries ask sends: the task, the loop's code, the names going in and
-    the changed names, the recorded runs, the earlier tries at this loop, the operations pyct
-    follows, and the answer's form."""
+    """The exact text a summaries ask sends: the task, which says runs not shown are checked too,
+    the loop's code, the names going in and the changed names, the runs shown, the earlier tries
+    at this loop, the operations pyct follows, and the answer's form."""
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
         " branches each input took. A line after the loop below is still missed, since a"
         " condition that guards it reads a value the loop changed, which pyct no longer"
         " follows. Write a formula that gives the values the loop leaves in its changed names"
         " from the values going into it, without running the loop. pyct checks the formula on"
-        " the loop's recorded runs, then that it can follow the values the formula gives.",
+        " the loop's recorded runs, the ones shown below and ones this request does not show,"
+        " so a formula that only writes down the runs shown fails. Then it checks that it can"
+        " follow the values the formula gives.",
         f"Loop at {request.place}, marked in the code by the comments `{MARK_START}` and"
         f" `{MARK_END}`. The function's code, then the code of the functions it calls in its"
         f" package:\n```python\n{request.code}\n```",
         f"Names going in, the formula's parameters: {', '.join(request.parameters)}\n"
         f"Changed names, the formula's answer: {', '.join(request.changed)}",
-        "The loop's recorded runs, each as the values going in at its start, then the changed"
+        "Recorded runs of the loop, each as the values going in at its start, then the changed"
         " values at its end, as JSON:\n" + "\n".join(_run(each) for each in request.runs),
     ]
     if request.tries:
