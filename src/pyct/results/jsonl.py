@@ -87,10 +87,12 @@ def _llm(use: LlmUse, summaries: tuple[LoopSummary, ...]) -> dict[str, object]:
 
 
 def _summary(loop: LoopSummary) -> dict[str, object]:
-    """One loop summaries asked about. A loop and a comprehension are each written ``loop``,
-    with no condition."""
+    """One loop or loss site summaries asked about. A loop and a comprehension are each written
+    ``loop``, and a loss site ``call`` with its ``name``, each with no condition."""
+    named = {} if loop.name is None else {"name": loop.name}
     return {
-        "kind": "loop",
+        "kind": loop.kind,
+        **named,
         "file": loop.file,
         "line": loop.line,
         "col": loop.col,

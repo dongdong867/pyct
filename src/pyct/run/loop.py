@@ -240,7 +240,8 @@ class Loop:
         self.bounds = self.bounds.paused(seconds)
 
     def _next(self, waiting: deque[Start]) -> Attempt:
-        """The next pass: the next seed still waiting, or a stuck moment, or a fork to aim at.
+        """The next pass: the next seed still waiting, or a stuck moment, or a fork to aim at,
+        after the tool that asks between passes had its turn (``Stuck.between``).
 
         A moment comes before the pick on 5 inputs in a row with no new line,
         and in place of the stop when no fork is left to flip; ``no fork to
@@ -252,6 +253,7 @@ class Loop:
         if waiting:
             start = waiting.popleft()
             return _stopped_by(self.run_input(start.copy, start.source))
+        self._stuck.between(self)
         if self._stuck.due(self, self.progress, empty=False):
             return self._moment()
         attempt = _attempt(self._ways, self.inputs, self.tree, self.bounds, self.progress)

@@ -56,6 +56,7 @@ class SummaryRead:
     site: Site
     formula: str
     below: bool = False
+    call: str | None = None
 
 
 @dataclass(frozen=True)
@@ -67,6 +68,7 @@ class SummaryChecked:
     site: Site
     runs: int
     not_shown: int = 0
+    call: str | None = None
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,7 @@ class SummaryFailed:
     site: Site
     attempt: int
     reason: str
+    call: str | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,7 @@ class SummarySkipped:
 
     site: Site
     reason: str
+    call: str | None = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,7 @@ class SummaryNotUsed:
 
     site: Site
     reason: str
+    call: str | None = None
 
 
 @dataclass(frozen=True)
@@ -104,8 +109,10 @@ class SummaryDropped:
     site: Site
     number: int
     reason: str
+    call: str | None = None
 
 
+# each summaries note names a loss site by its downgrade's name in ``call``, and a loop by none
 type SummaryNote = (
     SummaryRead | SummaryChecked | SummaryFailed | SummarySkipped | SummaryNotUsed | SummaryDropped
 )

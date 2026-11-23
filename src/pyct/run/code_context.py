@@ -35,9 +35,15 @@ type Code = Callable[..., object]
 _STATIC_FUNC = vars(staticmethod)["__func__"]
 _CLASS_FUNC = vars(classmethod)["__func__"]
 
-# the comments that mark a piece's first and last line in the code a summaries ask sends
+# the comments that mark a loop's first and last line in the code a summaries ask sends
 MARK_START = "# >>> the loop"
 MARK_END = "# <<< the loop"
+
+
+def marks(word: str) -> tuple[str, str]:
+    """The comments that mark the first and last line of a piece the ``word`` names, ``loop`` or
+    ``call``, in the code a summaries ask sends."""
+    return f"# >>> the {word}", f"# <<< the {word}"
 
 
 def code_context(target: Target, limit: int = CODE_LIMIT) -> str:
@@ -50,10 +56,10 @@ def code_context(target: Target, limit: int = CODE_LIMIT) -> str:
 
 
 def code_with_piece(
-    target: Target, file: str, lines: tuple[int, int], limit: int = CODE_LIMIT
+    target: Target, file: str, lines: tuple[int, int], limit: int = CODE_LIMIT, word: str = "loop"
 ) -> str:
     """The source of the innermost function in ``file`` that holds a piece's first and last
-    ``lines``, dedented, the piece between a ``MARK_START`` and a ``MARK_END`` line; then, when
+    ``lines``, dedented, the piece between the two lines ``marks(word)`` gives; then, when
     its module is loaded and holds the function at its top level or in a class there, it is
     headed by its module and name, and its callees in the target's package follow, as
     ``code_context`` gives them. Empty when the file does not read or parse, or no function
@@ -66,14 +72,32 @@ def code_with_piece(
     written = read[0].splitlines()[first - 1 : last]
     start, end = lines[0] - first, lines[1] - first + 1
     indent = written[start][: len(written[start]) - len(written[start].lstrip())]
-    written[end:end] = [f"{indent}{MARK_END}"]
-    written[start:start] = [f"{indent}{MARK_START}"]
+    above, below = marks(word)
+    written[end:end] = [f"{indent}{below}"]
+    written[start:start] = [f"{indent}{above}"]
     marked = textwrap.dedent("\n".join(written))
     function = _function_at(file, first)
     if function is None:
         return marked
     head = f"# {function.__module__}.{function.__qualname__}\n{marked}"
     return _gathered([function], {id(function): head}, _package(target), limit)
+
+
+def function_code(file: str, first: int, head: str) -> str | None:
+    """The source of the function in ``file`` whose code starts at line ``first``, its first
+    decorator's when it has one, dedented, under a ``# head`` line; None when the file does not
+    read or parse, or no function starts there."""
+    read = _read(file)
+    if read is None:
+        return None
+    for node in ast.walk(read[1]):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        start = min([node.lineno, *(each.lineno for each in node.decorator_list)])
+        if start == first:
+            written = "\n".join(read[0].splitlines()[start - 1 : node.end_lineno])
+            return f"# {head}\n{textwrap.dedent(written).rstrip()}"
+    return None
 
 
 def code_around(file: str, line: int, most: int = AROUND_LINES) -> str:

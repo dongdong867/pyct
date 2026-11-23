@@ -156,7 +156,7 @@ def _loop(
     tools: list[StuckTool] = [tool for tool in (summaries, rewrites) if tool is not None]
     if not tools:
         return Loop(inputs, bounds, told)
-    return Loop(inputs, bounds, told, Stuck(tools), rewrites)
+    return Loop(inputs, bounds, told, Stuck(tools, between=summaries), rewrites)
 
 
 def _starts(

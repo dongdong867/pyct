@@ -35,6 +35,7 @@ from pyct.results.coverage import Progress, no_gain
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Source, Stop
 from pyct.run.bounds import Bounds
+from pyct.run.collector import collector_paused
 from pyct.run.tell import Ask
 
 # the most moments of a run in which a tool asked the LLM
@@ -132,6 +133,16 @@ class StuckTool(Protocol):
     def waiting(self, moment: Moment) -> bool: ...
 
 
+class Between(Protocol):
+    """A tool that asks between two passes, with no moment: summaries, about each loss site an
+    input recorded a run of. ``can_ask`` as a ``StuckTool``'s."""
+
+    @property
+    def can_ask(self) -> bool: ...
+
+    def between(self, run: Running) -> None: ...
+
+
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
 # later inputs leave fewer of its lines missed, or by its file and lines when it has none
 type _Key = tuple[str, Condition | tuple[int, ...]]
@@ -152,11 +163,16 @@ def owner(entry: WhyEntry) -> Kind | None:
 class Stuck:
     """When a run is stuck, and what each moment hands each tool. It keeps the moments' count,
     where the inputs in a row and the stretch with no new line start, and the entries a tool
-    gave up on. ``clock`` is the one the run's deadline is read on."""
+    gave up on. ``clock`` is the one the run's deadline is read on. ``between`` is the tool
+    that takes a turn before each pass picks a fork (``between``)."""
 
     def __init__(
-        self, tools: Sequence[StuckTool], clock: Callable[[], float] = time.monotonic
+        self,
+        tools: Sequence[StuckTool],
+        clock: Callable[[], float] = time.monotonic,
+        between: Between | None = None,
     ) -> None:
+        self._between = between
         self._tools = {tool.kind: tool for tool in tools}
         self._clock = clock
         self._held = 0
@@ -189,6 +205,14 @@ class Stuck:
         since = run.bounds.seeds if self._ended is None else self._ended
         in_a_row = inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
         return in_a_row or self._stretched(run.bounds, progress, since)
+
+    def between(self, run: Running) -> None:
+        """Give the tool that asks between passes its turn, while it can still ask, with the
+        collector paused, as no input runs. A turn is no moment: it counts toward no
+        ``MOMENTS`` and starts no count of inputs in a row."""
+        if self._between is not None and self._between.can_ask:
+            with collector_paused():
+                self._between.between(run)
 
     def heard(self, record: InputRecord, number: int) -> None:
         """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
