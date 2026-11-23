@@ -109,7 +109,7 @@ core's top level fails lint.
 
 Three one-method protocols, each declared at its consumer and implemented in
 `llm/`: `SeedProvider` in run (`run/llm_seeds.py`), `SummaryProvider` in run
-(`run/summaries.py`), `RewriteProvider` in rewrite (`rewrite/provider.py`).
+(`run/summary_asks.py`), `RewriteProvider` in rewrite (`rewrite/provider.py`).
 `HintProvider` in solver and `TriageProvider` in sweep come with their tools. A provider returns its reply or `Unanswered` and
 never raises for an LLM problem. `run()` takes the helpers in
 `Setup(isolation=..., helpers=Helpers(...))`, one field per tool; `Helpers()`
