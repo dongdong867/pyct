@@ -2,6 +2,7 @@
 process of their own, keeps it checked when they run in pyct's, does not ask about a loop in use
 again, and takes its loops out of use as the run ends."""
 
+import dataclasses
 from collections.abc import Iterator
 
 import pytest
@@ -10,6 +11,7 @@ from pyct.core.entry import in_use
 from pyct.core.entry.in_use import LoopInUse
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState
+from pyct.results.record import Source as RecordSource
 from pyct.run import loop
 from pyct.run.formula_runner import FormulaRunner
 from pyct.run.helpers import Helpers
@@ -92,6 +94,42 @@ def test_a_formula_that_passes_comes_into_use_for_inputs_in_a_process_of_their_o
         PLACE,
         "<summary targets.why.stuck:10:4>",
     )
+
+
+def test_a_formula_put_in_use_runs_again_the_latest_input_it_was_checked_on() -> None:
+    summaries, _ = tool(isolated=True)
+    records = [
+        dataclasses.replace(record(counted("ab")), args={"s": "ab"}),
+        dataclasses.replace(record(counted("zz")), args={"s": "zz"}),
+        dataclasses.replace(record(), args={"s": "no run of the loop"}),
+    ]
+    run = Run(records)
+
+    summaries.take((entry(LOOPED),), Moment(1, (), run))
+
+    assert [(seed.args, source, wanted) for seed, source, wanted in run.ran] == [
+        ({"s": "zz"}, RecordSource.SUMMARY, None)
+    ]
+    assert summaries.again == []
+
+
+def test_a_formula_not_put_in_use_runs_no_input_again() -> None:
+    summaries, _ = tool(isolated=False)
+    run = Run([dataclasses.replace(record(counted("zz")), args={"s": "zz"})])
+
+    summaries.take((entry(LOOPED),), Moment(1, (), run))
+
+    assert run.ran == []
+
+
+def test_a_loop_in_use_runs_no_input_again_at_a_later_moment() -> None:
+    summaries, _ = tool(isolated=True)
+    run = Run([dataclasses.replace(record(counted("zz")), args={"s": "zz"})])
+    summaries.take((entry(LOOPED),), Moment(1, (), run))
+
+    summaries.take((entry(LOOPED),), Moment(2, (), run))
+
+    assert len(run.ran) == 1
 
 
 def test_a_formula_that_passes_stays_checked_for_inputs_in_pyct_s_process(
