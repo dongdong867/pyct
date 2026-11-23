@@ -14,23 +14,22 @@ from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse, Unanswered
 from pyct.results.record import InputRecord
 from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
-from tests.acceptance.harness import REPO_ROOT
 from tests.acceptance.llm_summaries import (
     COUNT,
     COUNTS,
     SEED,
     F,
     FakeSummaries,
+    G,
     Summarized,
     code_reply,
     one_thread,  # noqa: F401
     run_summaries,
 )
 
-# `H` of the criteria, and its loop's line
-H = str(REPO_ROOT / "targets" / "summaries" / "one_run.py")
-Z_BYTES = "targets.summaries.one_run::z_bytes"
-H_LOOP = 7
+# `encoded_z` of the criteria, whose loop records no fork, and its loop's line
+ENCODED_Z = "targets.summaries.loops::encoded_z"
+ENCODED_Z_LOOP = 132
 
 
 @dataclass
@@ -119,12 +118,12 @@ def test_a_loop_with_one_complete_run_is_asked_about_with_it_and_its_formula_com
 ):
     provider = FakeSummaries([COUNT])
 
-    done = run_summaries(Z_BYTES, SEED, provider)
+    done = run_summaries(ENCODED_Z, SEED, provider)
 
     [request] = provider.requests
     assert provider.inputs_then == [1]
     assert request.runs == (ShownRun((("s", '"ab"'), ("t", "0")), (("t", "0"),)),)
-    checked = f"llm: summary for the loop at {H}:{H_LOOP}: checked on 1 past runs"
+    checked = f"llm: summary for the loop at {G}:{ENCODED_Z_LOOP}: checked on 1 past runs"
     assert checked in done.said
     assert not any(line.startswith(f"{checked},") for line in done.said)
     use = LlmUse("openai:gpt-6-luna", ("summaries",))
