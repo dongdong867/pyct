@@ -145,12 +145,14 @@ class _Walk[T]:
         (breaks if isinstance(node, ast.Break) else continues).append(state)
 
     def _with(self, node: ast.With | ast.AsyncWith, state: State[T]) -> State[T] | None:
+        """A ``with``: its items in order, then its body, which a manager that swallows a raise
+        can leave at any point."""
         for item in node.items:
             self.expression(item.context_expr, state)
             if item.optional_vars is not None:
                 self.expression(item.optional_vars, state)
             self._bound(item, state)
-        return self.block(node.body, state)
+        return _join(*self._raising(node.body, state))
 
     def _try(self, node: ast.Try | ast.TryStar, state: State[T]) -> State[T] | None:
         """A ``try``: each handler, and a ``finally`` on the way out of a raise no handler
@@ -162,6 +164,7 @@ class _Walk[T]:
             start = dict(raised)
             if handler.type is not None:
                 self.expression(handler.type, start)
+            self._bound(handler, start)
             ends.append(self.block(handler.body, start))
         after = _join(*ends)
         if not node.finalbody:
@@ -179,10 +182,15 @@ class _Walk[T]:
         return end, {name: frozenset(held) for name, held in made.items()}
 
     def _match(self, node: ast.Match, state: State[T]) -> State[T] | None:
+        """A ``match``: each case from the subject's state, its captures bound before its guard,
+        and the path where no case matched, unless the last case matches anything."""
         self.expression(node.subject, state)
-        ends: list[State[T] | None] = [state]
+        ends: list[State[T] | None] = [] if _matches_anything(node.cases[-1]) else [state]
         for case in node.cases:
             start = dict(state)
+            self.expression(case.pattern, start)
+            for part in ast.walk(case.pattern):
+                self._bound(part, start)
             if case.guard is not None:
                 self.expression(case.guard, start)
             ends.append(self.block(case.body, start))
@@ -200,7 +208,14 @@ class _Walk[T]:
         for part in parts:
             if part is not None:
                 self.expression(part, state)
+        self._bound(node, state)
         return state
+
+
+def _matches_anything(case: ast.match_case) -> bool:
+    """Whether a case matches every subject: ``case _:`` or a bare capture, with no guard."""
+    pattern = case.pattern
+    return case.guard is None and isinstance(pattern, ast.MatchAs) and pattern.pattern is None
 
 
 def _in_order(node: ast.AST) -> list[tuple[ast.AST, bool]]:

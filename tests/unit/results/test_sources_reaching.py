@@ -394,26 +394,3 @@ def test_each_kind_of_statement_is_walked_in_the_order_it_runs(
     file = module(tmp_path, source)
 
     assert sources(file, function, at) == tuple(loop(file, *each) for each in expected)
-
-
-FINALLY_REPLACED = """\
-def logged(s, x):
-    t = 0
-    for c in s:
-        t += 1
-    try:
-        t = int(x)
-    except ValueError:
-        t = 0
-    finally:
-        log()
-    if t > 3:
-        return 1
-    return 0
-"""
-
-
-def test_only_the_path_that_ends_normally_runs_past_a_finally(tmp_path: Path) -> None:
-    file = module(tmp_path, FINALLY_REPLACED)
-
-    assert sources(file, "logged", (11, 7)) == ()

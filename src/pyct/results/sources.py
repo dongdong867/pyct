@@ -308,6 +308,13 @@ def _outside(loop: ast.For | ast.AsyncFor | ast.While) -> list[ast.AST]:
 
 def _bound_by(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:
     """The names one statement or expression binds, each with how."""
+    yield from _assigned(node, loop)
+    for name in _named(node):
+        yield name, _Binding(None, loop)
+
+
+def _assigned(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Binding]]:
+    """The names a node binds to a value the reading follows."""
     if isinstance(node, ast.Assign):
         for target in node.targets:
             for name in names_in(target):
@@ -321,6 +328,20 @@ def _bound_by(node: ast.AST, loop: ast.AST | None) -> Iterator[tuple[str, _Bindi
     elif isinstance(node, ast.withitem) and node.optional_vars is not None:
         for name in names_in(node.optional_vars):
             yield name, _Binding(node.context_expr, loop)
+
+
+def _named(node: ast.AST) -> list[str]:
+    """The names a node binds to a value the reading does not follow: an ``except``'s, a
+    ``def``'s or a ``class``'s, an import's, and a ``case`` pattern's captures."""
+    if isinstance(node, ast.ExceptHandler | ast.MatchAs | ast.MatchStar):
+        return [node.name] if node.name is not None else []
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        return [node.name]
+    if isinstance(node, ast.MatchMapping):
+        return [node.rest] if node.rest is not None else []
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        return [alias.asname or alias.name.split(".")[0] for alias in node.names]
+    return []
 
 
 def _before(node: ast.AugAssign | ast.AnnAssign | ast.NamedExpr) -> ast.Name | None:
