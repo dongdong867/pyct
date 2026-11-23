@@ -1,12 +1,13 @@
 """The stuck moment: a run that is stuck works out why each line is still missed, then hands each
 LLM tool the entries it takes, in the order summaries, rewrites, guesses.
 
-A run is stuck when 5 inputs in a row cover no new line, counted from
-after the last seed and again from after each moment's last input, or
-when no fork is left to flip while a line is still missed. A run with no
-tool switched on, or none that can still ask, is never stuck, so it runs
-as it would with no LLM at all. Decision
-llm-one-stuck-moment-for-summaries-rewrites-and-guesses.
+A run is stuck when 5 inputs in a row cover no new line, or a quarter of
+its budget passes with no new line, both counted from after the last seed
+and again from after each moment's last input, or when no fork is left to
+flip while a line is still missed. A run with no tool switched on, or
+none that can still ask, is never stuck, so it runs as it would with no
+LLM at all. Decisions llm-one-stuck-moment-for-summaries-rewrites-and-guesses
+and llm-stuck-on-time-as-well-as-inputs.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
 fork`` entry with a source to summaries, a ``not taken`` entry whose tries
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 import enum
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -41,6 +42,10 @@ MOMENTS = 3
 
 # the inputs in a row that cover no new line before a run is stuck
 IN_A_ROW = 5
+
+# the share of the budget that passes with no new line before a run is stuck, as 5 inputs in a
+# row do: 11.25 s of the 45 s default
+STRETCH_SHARE = 0.25
 
 # how long a moment works out the causes of the missed lines, at most
 CAUSE_SECONDS = 2.0
@@ -146,15 +151,23 @@ def owner(entry: WhyEntry) -> Kind | None:
 
 class Stuck:
     """When a run is stuck, and what each moment hands each tool. It keeps the moments' count,
-    where the inputs in a row start, and the entries a tool gave up on."""
+    where the inputs in a row and the stretch with no new line start, and the entries a tool
+    gave up on. ``clock`` is the one the run's deadline is read on."""
 
-    def __init__(self, tools: Sequence[StuckTool]) -> None:
+    def __init__(
+        self, tools: Sequence[StuckTool], clock: Callable[[], float] = time.monotonic
+    ) -> None:
         self._tools = {tool.kind: tool for tool in tools}
+        self._clock = clock
         self._held = 0
         self._asked = 0
         # the inputs the run had when the last moment ended, None before the first
         self._ended: int | None = None
         self._gave_up: set[_Key] = set()
+        self._gains = _Gains()
+        # where the stretch with no new line starts: the inputs the run had then, and the
+        # budget left, None before the first pass after the seeds
+        self._mark: tuple[int, float] | None = None
 
     def due(self, run: Running, progress: Progress, *, empty: bool) -> bool:
         """Whether a moment comes now: a tool that can still ask is on, a moment that asks is
@@ -163,17 +176,19 @@ class Stuck:
 
         ``empty`` says no fork is left to flip; a moment then comes when an
         input ran since the last one ended, so one that ran none ends the run.
-        Otherwise it comes on 5 inputs in a row with no new line, counted
+        Otherwise it comes on 5 inputs in a row with no new line, or on a
+        stretch of the budget with no new line (``_stretched``), each counted
         from the last moment's end, or from after the last seed.
         """
         asking = any(tool.can_ask for tool in self._tools.values())
-        if not asking or self._asked >= MOMENTS or not _goes_on(run, progress):
+        if not asking or self._asked >= MOMENTS or not _goes_on(run, progress, self._clock()):
             return False
         inputs = len(run.records)
         if empty:
             return self._ended is None or inputs > self._ended
         since = run.bounds.seeds if self._ended is None else self._ended
-        return inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
+        in_a_row = inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
+        return in_a_row or self._stretched(run.bounds, progress, since)
 
     def heard(self, record: InputRecord, number: int) -> None:
         """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
@@ -198,6 +213,27 @@ class Stuck:
                 asked = self._handed(tool, entries, moment, outcomes) or asked
         self._asked += asked
         self._ended = len(run.records)
+        left = _left(run.bounds.until, self._clock())
+        self._mark = None if left is None else (self._ended, left)
+
+    def _stretched(self, bounds: Bounds, progress: Progress, since: int) -> bool:
+        """Whether ``STRETCH_SHARE`` of the budget passed with no new line, since the later of
+        ``since`` and the last input that covered one. A run with no budget has no stretch.
+
+        The stretch is read on the deadline, which each wait for the model
+        moves later, so the wait does not count. It starts as the next pass
+        starts, right after the last seed's input or an input that covered a
+        new line ended, or as a moment ends. A pick in flight as it ends runs
+        to its end, and the moment comes before the next pick, unless the
+        pick's input covered a new line.
+        """
+        left = _left(bounds.until, self._clock())
+        if bounds.budget is None or left is None:
+            return False
+        start = max(since, self._gains.last(progress.covered))
+        if self._mark is None or self._mark[0] < start:
+            self._mark = (start, left)
+        return self._mark[1] - left >= bounds.budget * STRETCH_SHARE
 
     def _handed(
         self,
@@ -229,20 +265,45 @@ class Stuck:
         )
 
 
+class _Gains:
+    """Which of a run's inputs last covered a line no earlier input had, read as ``no_gain``
+    reads them, each input looked at once."""
+
+    def __init__(self) -> None:
+        self._looked = 0
+        self._seen: set[int] = set()
+        self._last = 0
+
+    def last(self, covered: Sequence[frozenset[int]]) -> int:
+        """The number, from 1, of the last input in ``covered`` that covered a new line, 0 when
+        none did. ``covered`` is the run's, one set per input, which only grows."""
+        for lines in covered[self._looked :]:
+            self._looked += 1
+            if lines - self._seen:
+                self._last = self._looked
+            self._seen |= lines
+        return self._last
+
+
 def going(run: Running) -> bool:
     """Whether a tool's ask or try may start: the run met no stop and its budget is not spent."""
     until = run.bounds.until
     return run.stopped is None and (until is None or until > time.monotonic())
 
 
-def _goes_on(run: Running, progress: Progress) -> bool:
-    """Whether the run goes on with a line to win: no stop met, the budget not spent, a line
-    missed, and not every line and branch covered for the coverage goal."""
+def _goes_on(run: Running, progress: Progress, now: float) -> bool:
+    """Whether the run goes on with a line to win: no stop met, the budget not spent at ``now``,
+    a line missed, and not every line and branch covered for the coverage goal."""
     bounds = run.bounds
-    if run.stopped is not None or (bounds.until is not None and bounds.until <= time.monotonic()):
+    if run.stopped is not None or (bounds.until is not None and bounds.until <= now):
         return False
     full = bounds.goal is Goal.COVERAGE and progress.full()
     return progress.missed() and not full
+
+
+def _left(until: float | None, now: float) -> float | None:
+    """The seconds of budget left at ``now``. No deadline, none."""
+    return None if until is None else until - now
 
 
 def _cause_stop(until: float | None) -> float:

@@ -699,6 +699,7 @@
     {"set": "v2", "target": "targets.ranges.zero_step::f", "seed": {"k": 2}},
     {"set": "v2", "target": "targets.rewrites.counted::exponent", "seed": {"s": "0", "n": 0}},
     {"set": "v2", "target": "targets.rewrites.digits::big", "seed": {"s": "5"}},
+    {"set": "v2", "target": "targets.rewrites.exponents::exponents", "seed": {"s": "0", "t": "0", "u": "0", "v": "0"}},
     {"set": "v2", "module": "targets.rewrites.hinted", "left_out": "its seeds give objects as plain JSON under class hints, which legacy passes on as dicts"},
     {"set": "v2", "module": "targets.rewrites.hooks", "left_out": "its seeds name classes with \"__class__\", a seed form legacy does not read; its classes' hooks write files, run only through run() with a fake provider"},
     {"set": "v2", "target": "targets.rewrites.later_visit::pick", "seed": {"s": "2"}},
