@@ -10,9 +10,10 @@ LLM at all. Decisions llm-one-stuck-moment-for-summaries-rewrites-and-guesses
 and llm-stuck-on-time-as-well-as-inputs.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
-fork`` entry with a source to summaries, a ``not taken`` entry whose tries
-hold a ``timeout`` or an ``unknown`` to rewrites, and a ``no fork`` entry
-with no source, a ``handler`` and an ``ended before`` entry to guesses.
+fork`` entry, with or without a source, to summaries, a ``not taken``
+entry whose tries hold a ``timeout`` or an ``unknown`` to rewrites, and a
+``handler`` and an ``ended before`` entry to guesses. Decision
+llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
 Guesses also take the entries of a tool that is switched off, and each
 entry an earlier tool gave up on, at this moment or an earlier one, unless
 that tool took it at this moment. Every other entry goes to no tool. Decision
@@ -154,7 +155,7 @@ def owner(entry: WhyEntry) -> Kind | None:
         tries = entry.tries
         return Kind.REWRITES if tries is not None and (tries.timeout or tries.unknown) else None
     if entry.reason is Reason.NO_FORK:
-        return Kind.SUMMARIES if entry.sources else Kind.GUESSES
+        return Kind.SUMMARIES
     if entry.reason in (Reason.HANDLER, Reason.ENDED_BEFORE):
         return Kind.GUESSES
     return None

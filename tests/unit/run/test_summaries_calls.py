@@ -8,11 +8,13 @@ from dataclasses import dataclass, field
 import pytest
 
 from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, Site
+from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, SummaryState
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run import model_runs
 from pyct.run.notes import Note, SummarySkipped
+from pyct.run.stuck import Moment, Outcome
 from pyct.run.summaries import Summaries
 from pyct.run.summary_asks import SummaryReply, SummaryRequest
 from pyct.run.target import load_target
@@ -181,3 +183,51 @@ def test_a_site_is_skipped_while_pyct_s_process_runs_a_second_thread(
 
     assert fake.requests == []
     assert notes == [SummarySkipped(run.site, "cannot fork", call="__rshift__")]
+
+
+def moment_of(summaries: Summaries, run: Run, *entries: WhyEntry) -> tuple[Outcome, ...]:
+    return summaries.take(entries, Moment(1, entries, run)).outcomes
+
+
+def lost_at(line: int, col: int) -> WhyEntry:
+    """An entry whose condition reads the value lost at the shift at the line and column."""
+    lost = Source(SourceKind.LOST, "n", Site(FILE, line, col), call="__rshift__")
+    condition = Condition(Site(FILE, 41, 7), True)
+    return WhyEntry(FILE, (42,), Reason.NO_FORK, condition=condition, sources=(lost,))
+
+
+NO_SOURCE = WhyEntry(FILE, (42,), Reason.NO_FORK, condition=Condition(Site(FILE, 41, 7), True))
+
+
+def test_an_entry_whose_lost_sites_are_checked_is_taken_and_no_ask_is_sent() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    run = heard(summaries, [record(shift(36, 8, 13, 2), shift(37, 8, 13, 2))])
+    summaries.between(run)
+
+    outcomes = moment_of(summaries, run, lost_at(36, 8), NO_SOURCE)
+
+    assert outcomes == (Outcome.TOOK, Outcome.GAVE_UP)
+    assert len(fake.requests) == 2
+
+
+def test_an_entry_whose_lost_site_failed_or_was_skipped_is_given_up() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    run = heard(summaries, [record(shift(36, 8, 3, 1), shift(37, 8, 3, 2, "__index__"))])
+    summaries.between(run)
+
+    outcomes = moment_of(summaries, run, lost_at(36, 8), lost_at(37, 8))
+
+    assert outcomes == (Outcome.GAVE_UP, Outcome.GAVE_UP)
+
+
+def test_an_entry_is_skipped_while_a_loss_site_waits_for_its_turn() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    run = heard(summaries, [record(shift(36, 8, 3, 1))])
+
+    outcomes = moment_of(summaries, run, lost_at(36, 8), NO_SOURCE)
+
+    assert outcomes == (Outcome.SKIPPED, Outcome.SKIPPED)
+    assert fake.requests == []

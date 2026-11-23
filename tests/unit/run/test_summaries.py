@@ -164,7 +164,7 @@ def test_a_loop_two_entries_name_is_asked_about_once() -> None:
     assert len(run.paused) == 1
 
 
-def test_an_entry_that_names_a_call_is_given_up_and_no_call_is_asked_about() -> None:
+def test_an_entry_that_names_a_call_no_input_recorded_is_given_up_with_no_ask() -> None:
     lost = Source(SourceKind.LOST, "x", CALL, call="bin")
 
     handled, notes, _ = taken(fake := Fake(), [entry(lost)], [record(counted("a"))])

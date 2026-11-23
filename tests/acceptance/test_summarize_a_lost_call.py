@@ -10,10 +10,19 @@ each loop's runs and each input forked; no test calls a model.
 import json
 import textwrap
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
+
+import pytest
 
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
+from pyct.core.foundation.branch import Site
+from pyct.results.causes import WhyEntry
+from pyct.results.record import InputRecord
+from pyct.run import run as run_module
+from pyct.run.stuck import Handled, Kind, Moment, Outcome, Stuck
+from pyct.run.summaries import Summaries
 from pyct.run.summary_asks import SummaryReply, SummaryRequest
 from tests.acceptance.llm_summaries import (
     FakeSummaries,
@@ -30,6 +39,7 @@ from tests.acceptance.lost_calls import (
     QUARTER,
     SHIFTED,
     WRAPPED,
+    C,
     at,
     place,
     places,
@@ -150,3 +160,52 @@ def test_the_wait_for_a_loss_site_s_reply_is_added_back_to_the_budget() -> None:
     deadline = done.result.deadline
     assert deadline is not None
     assert deadline - started >= 10 + Waiting.seconds
+
+
+@dataclass
+class FakeGuesses:
+    """A guesses tool that keeps the entries each moment hands it and skips each."""
+
+    handed: list[tuple[int, tuple[WhyEntry, ...]]] = field(default_factory=list)
+    kind: Kind = Kind.GUESSES
+    can_ask: bool = True
+
+    def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
+        self.handed.append((moment.number, entries))
+        return Handled(tuple(Outcome.SKIPPED for _ in entries), asked=False)
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        pass
+
+    def waiting(self, moment: Moment) -> bool:
+        return False
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-no-source-goes-to-guesses-after-summaries
+def test_summaries_give_up_an_entry_with_no_source_and_guesses_take_it_then(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    guesses = FakeGuesses()
+    monkeypatch.setattr(
+        run_module,
+        "Stuck",
+        lambda tools, **kwargs: Stuck([*tools, guesses], **kwargs),
+    )
+    handed: list[tuple[WhyEntry, ...]] = []
+    take = Summaries.take
+
+    def kept(self: Summaries, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
+        handled = take(self, entries, moment)
+        handed.append(entries)
+        assert all(each is Outcome.GAVE_UP for each in handled.outcomes)
+        return handled
+
+    monkeypatch.setattr(Summaries, "take", kept)
+
+    run_summaries(LATE, {"s": "a", "n": 3}, FakeSummaries([HALF]))
+
+    condition = Site(C, 51, 7)
+    [[entry]] = handed
+    assert entry.condition is not None
+    assert (entry.condition.site, entry.sources) == (condition, ())
+    assert guesses.handed == [(1, (entry,))]

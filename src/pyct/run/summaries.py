@@ -51,14 +51,10 @@ or dropped; failed, by a check or a reply with no code block; unanswered; or
 unchecked, when the check could not run or the deadline ended it. An ask the
 token limit refused sent nothing and leaves that as it was.
 
-Before each pass picks a fork, and before the run would stop on ``no fork
-to flip``, the tool asks about each loss site an input recorded a run of
-that had no turn this run, as soon as it can, with no stuck moment
-(``pyct.run.call_summaries``): one at a time, in the order the inputs
-recorded them, each once per run whatever came of it, with the clock
-paused for each wait. A formula that passes both checks is kept as
-checked. Its notes name the call by its downgrade's name and its site
-with its column.
+Before each pass picks a fork, the tool also asks about each loss site an
+input recorded a run of, once per run, in the order recorded, with no stuck
+moment (``between``, ``pyct.run.call_summaries``). Decision
+llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
 
 ``SummaryProvider`` and the ask's request and reply are declared in ``pyct.run.summary_asks``.
 """
@@ -77,7 +73,7 @@ from pyct.intercept.model_code import Refused
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
 from pyct.results.record import InputRecord
-from pyct.run.call_summaries import LossSites, asked_call, call_request, skipped_because
+from pyct.run.call_summaries import CALL, LossSites, asked_call, call_request, skipped_because
 from pyct.run.code_context import code_with_piece
 from pyct.run.formula_runner import FormulaText
 from pyct.run.loops_in_use import (
@@ -220,7 +216,21 @@ class Summaries:
             self._asked_for(site, entries)
         again, self.again = self.again, []
         run_again(moment.run, again, self.target)
-        return Handled(tuple(_outcome(entry, came) for entry in entries), asked)
+        outcomes = tuple(_outcome(entry, came, self._call_came) for entry in entries)
+        return Handled(outcomes, asked)
+
+    def _call_came(self, site: Site | None) -> Outcome:
+        """What came of the loss site at ``site``: ``took`` once its formula was checked,
+        ``skipped`` while it, or with no site any site, waits for its turn, ``gave up`` else."""
+        waiting = self.sites.waiting()
+        if site is None:
+            return Outcome.SKIPPED if waiting else Outcome.GAVE_UP
+        if site in waiting:
+            return Outcome.SKIPPED
+        state = self.loops.get(site)
+        if state is not None and state.kind == CALL and state.last is SummaryState.CHECKED:
+            return Outcome.TOOK
+        return Outcome.GAVE_UP
 
     def waiting(self, moment: Moment) -> bool:
         """Whether a loop whose formula was dropped waits on this moment: no formula of its is in
@@ -281,7 +291,7 @@ class Summaries:
         if call is None or reason is not None or not can_fork():
             self._say_once(SummarySkipped(site, reason or CANNOT_FORK, call=name))
             return
-        state = LoopState(call.loop.piece.changed, kind="call", name=name)
+        state = LoopState(call.loop.piece.changed, kind=CALL, name=name)
         self._asked(call.loop, state, call_request(self.target, call, self._place(site), ()), run)
 
     def _asked(
@@ -470,14 +480,19 @@ def _sources(entry: WhyEntry, kind: SourceKind) -> list[Source]:
     return [each for each in entry.sources or () if each.kind is kind]
 
 
-def _outcome(entry: WhyEntry, came: dict[Site, Asked]) -> Outcome:
-    """``took`` when each loop the entry names has a checked formula; ``gave up`` when a try at
-    one failed or its reply was ignored, when no formula of one could come into use this run,
-    or when the entry names a call; ``skipped`` else."""
+def _outcome(
+    entry: WhyEntry, came: dict[Site, Asked], call_came: Callable[[Site | None], Outcome]
+) -> Outcome:
+    """``took`` when each loop and each loss site the entry names has a checked formula; ``gave
+    up`` when a try at a loop failed or its reply was ignored, when no formula of one could come
+    into use this run, or when a loss site's came to nothing (``call_came``); ``skipped`` else.
+    An entry that names none is ``gave up`` once no loss site waits for its turn."""
     loops = [came[each.site] for each in _sources(entry, SourceKind.LOOP)]
-    calls = _sources(entry, SourceKind.LOST)
-    if loops and not calls and all(each is Asked.CHECKED for each in loops):
-        return Outcome.TOOK
-    if calls or Asked.FAILED in loops or Asked.NEVER_USED in loops:
+    calls = [call_came(each.site) for each in _sources(entry, SourceKind.LOST)]
+    if not loops and not calls:
+        return call_came(None)
+    if Asked.FAILED in loops or Asked.NEVER_USED in loops or Outcome.GAVE_UP in calls:
         return Outcome.GAVE_UP
+    if all(each is Asked.CHECKED for each in loops) and all(c is Outcome.TOOK for c in calls):
+        return Outcome.TOOK
     return Outcome.SKIPPED
