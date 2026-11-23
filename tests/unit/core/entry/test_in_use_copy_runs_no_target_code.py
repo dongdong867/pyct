@@ -1,8 +1,9 @@
 """The plain copy a loop in use takes of a tracked list or dict C code changed runs none of the
-target's code: it reads each container through its base type, copies a container class the target
-wrote as its plain base type, and keeps as it is a dict or set whose keys hash by the target's
-code. The target's own objects end as the loop as written leaves them, and the run records what the
-loop as written records."""
+methods the target wrote for its containers or keys: it reads each container through its base type
+and each class through `type`'s own descriptors, copies a container class the target wrote as its
+plain base type, and keeps as it is a dict or set with a key whose hash the target's class defines.
+The target's own objects end as the loop as written leaves them, and the run records what the loop
+as written records."""
 
 from collections.abc import Mapping
 from typing import Any, cast
@@ -87,6 +88,27 @@ def make(p):
 def make(p):
     return {(K(), 1): p}
 """,
+    "a tuple whose __dict__ is a property that logs": """\
+class D(tuple):
+    logged = []
+    @property
+    def __dict__(self):
+        D.logged.append(1)
+        return {}
+def make(p):
+    return D((p,))
+""",
+    "a dict keyed by an object whose metaclass logs its reads": """\
+class Meta(type):
+    logged = []
+    def __getattribute__(cls, name):
+        Meta.logged.append(name)
+        return type.__getattribute__(cls, name)
+class Key(metaclass=Meta):
+    pass
+def make(p):
+    return {Key(): p}
+""",
     "a set of objects whose hash logs": LOGGED_HASH
     + """\
 def make(p):
@@ -117,6 +139,8 @@ def state(held: object, namespace: Mapping[str, object]) -> object:
         items = [each for pair in dict.items(held) for each in pair]
     elif isinstance(held, set):
         items = sorted(map(kind, set.__iter__(held)))
+    elif isinstance(held, tuple):
+        items = list(tuple.__iter__(held))
     else:
         items = list(list.__iter__(cast(list, held)))
     attributes = {name: repr(each) for name, each in getattr(held, "__dict__", {}).items()}

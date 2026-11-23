@@ -20,6 +20,7 @@ from types import ModuleType
 
 import pytest
 
+from pyct.core.foundation import standard_library
 from pyct.core.foundation.branch import PYCT_DIR
 from pyct.run import own_imports
 from pyct.run.own_imports import keep_own_imports
@@ -168,8 +169,8 @@ def test_an_installed_package_s_import_under_pyct_s_call_comes_from_the_folder(
     folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # a site-packages inside the standard library's folder, as a system Python's own is
-    installed = f"{own_imports._STANDARD}site-packages{os.sep}"
-    monkeypatch.setattr(own_imports, "_INSTALLED", (installed,))
+    installed = f"{standard_library.STANDARD}site-packages{os.sep}"
+    monkeypatch.setattr(standard_library, "INSTALLED", (installed,))
     load_target("target::f")
     library_s = code_of(f"{installed}lazy.py", "found = importlib.import_module('difflib')")
 
@@ -201,14 +202,14 @@ def test_no_folder_is_installed_when_python_started_without_site(
 ) -> None:
     monkeypatch.delitem(sys.modules, "site")
 
-    assert own_imports._installed_folders() == ()
+    assert standard_library.installed_folders() == ()
 
 
 def test_loading_the_finder_imports_no_module_of_its_own() -> None:
     # what own_imports imports itself, then own_imports: nothing more may come with it
     loads = (
         "import sys, functools, importlib.machinery, os, types, collections.abc\n"
-        "import pyct.core.foundation.branch, pyct.run\n"
+        "import pyct.core.foundation.branch, pyct.core.foundation.standard_library, pyct.run\n"
         "before = set(sys.modules)\n"
         "import pyct.run.own_imports\n"
         "print(sorted(set(sys.modules) - before))\n"

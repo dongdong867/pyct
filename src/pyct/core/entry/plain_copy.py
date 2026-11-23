@@ -1,5 +1,6 @@
 """The plain copy a loop in use (`pyct.core.entry.in_use`) takes of a tracked list or dict whose
-form no longer describes it, made with none of the target's code run.
+form no longer describes it, made with none of the methods the target wrote for its containers
+or keys run.
 
 The copy is a new plain list or dict. Each list, tuple, dict, set and frozenset it holds, at every
 depth, a subclass of one included, that is tracked or holds a tracked value at some depth is a new
@@ -9,30 +10,35 @@ them, a dict's keys included, is its plain value. What each new one is:
 
 - a subclass of tuple or frozenset, such as a namedtuple, is of its own type, made by its base
   type's ``__new__`` as a namedtuple's ``_make`` makes one, with the attributes its ``__dict__``
-  holds; one its base cannot make, such as a struct_time, is a plain one of its base;
+  holds, read through Python's own descriptor, none when its class replaces that; one its base
+  cannot make, such as a struct_time, is a plain one of its base;
 - a subclass of list, dict or set that Python itself defines (`_python_s`: an OrderedDict, a
   defaultdict, a Counter) is of its own type, made by `copy.copy`, emptied and refilled by its
   own methods, so an OrderedDict keeps its order and a defaultdict its default;
 - any other subclass of list, dict or set, one the target wrote, is a plain one of its base type.
 
-A dict, set or frozenset whose keys hash or compare by other code than Python's own types' or
-pyct's (`_hashes_alone`) is kept as it is, since making it would hash them; a tracked dict that
+Making a dict, set or frozenset hashes its keys. A key's hash and equality are Python's own when
+each is written in C or lies in a file of the standard library, as an Enum member's, a date's, a
+Decimal's, a Fraction's and a UUID's are (`_python_s_hash`). A dict, set or frozenset with a key
+whose are not, as a frozen dataclass instance's, which dataclasses writes for the class, or an
+object's whose class defines its own, is kept as it is (`_hashes_alone`); a tracked dict that
 holds such a key has no copy (`UnhashedKeysError`). Each container is read in C through its base
-type, and one Python itself defines through its own methods, so no method the target wrote runs
-and nothing is recorded. The walk keeps its own stack, so no depth reaches Python's recursion
-limit.
+type, and one Python itself defines through its own methods, and each class through `type`'s own
+descriptors, so no method the target wrote for its containers or keys runs and nothing is
+recorded. The walk keeps its own stack, so no depth reaches Python's recursion limit.
 """
 
 from __future__ import annotations
 
 import builtins
 import collections
-import contextlib
 import copy
+import types
 from typing import Any, NamedTuple, cast
 
 from pyct.core.dicts.dict_state import DictState
 from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.standard_library import standard
 from pyct.core.lists.list_state import ListState, plain
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
@@ -58,12 +64,25 @@ _BASES: dict[type, type] = {kind: kind for kind in _HOLDERS} | {
 _KEYLESS = frozenset({list, tuple, ConcolicList})
 # the modules whose classes' methods are Python's own
 _PYTHON_S = (builtins, collections)
-# the keys hashed with no other code than Python's own types' or pyct's, and the hash and
-# equality each other key's type must have to be hashed so
+# the keys hashed with Python's own code or pyct's, known without a look at their type's classes
 _HASHED = frozenset({int, float, complex, str, bytes, bool, type(None), *SCALARS})
-_OWN_KINDS = (object, int, float, complex, str, bytes, tuple, frozenset)
-_OWN_HASHES = frozenset(kind.__hash__ for kind in _OWN_KINDS)
-_OWN_EQUALS = frozenset(kind.__eq__ for kind in _OWN_KINDS)
+# the kinds of callables written in C
+_IN_C = frozenset(
+    {
+        types.WrapperDescriptorType,
+        types.MethodDescriptorType,
+        types.BuiltinFunctionType,
+        types.MethodWrapperType,
+    }
+)
+# a class's classes, its own namespace and its name, read as `type` reads them, so no
+# metaclass's code runs
+_MRO = type.__dict__["__mro__"].__get__
+_NAMESPACE = type.__dict__["__dict__"].__get__
+_NAME = type.__dict__["__name__"].__get__
+# whether each key type's hash and equality are Python's own (`_python_s_hash`), by the type's
+# id, beside the type, which the entry keeps alive so its id names no other
+_HASHES: dict[int, tuple[type, bool]] = {}
 
 
 class UnhashedKeysError(Exception):
@@ -145,15 +164,15 @@ def _python_s(kind: type) -> bool:
     """Whether Python itself defines the class and each class it derives from: each is the very
     class `builtins` or `collections` names by its name, whatever its ``__module__`` says."""
     return all(
-        any(getattr(module, each.__name__, None) is each for module in _PYTHON_S)
-        for each in kind.__mro__
+        any(getattr(module, _NAME(each), None) is each for module in _PYTHON_S)
+        for each in _MRO(kind)
     )
 
 
 def _hashes_alone(kind: type, items: list[object]) -> bool:
     """Whether making a container of the type with the items hashes and compares its keys with
-    no other code than Python's own types' or pyct's: each key's type is one of `_HASHED`, or
-    has a Python type's own hash and equality, and so does each item of a tuple or frozenset."""
+    Python's own code or pyct's alone: each key's type is one of `_HASHED` or has Python's own
+    hash and equality (`_python_s_hash`), and so does each item of a tuple or frozenset."""
     if kind in _KEYLESS:
         return True
     if issubclass(kind, dict):
@@ -166,11 +185,43 @@ def _hashes_alone(kind: type, items: list[object]) -> bool:
         key = type(each := stack.pop())
         if key in _HASHED:
             continue
-        if key.__hash__ not in _OWN_HASHES or key.__eq__ not in _OWN_EQUALS:
+        if not _python_s_hash(key):
             return False
         if issubclass(key, tuple | frozenset):
             stack.extend(_held(each))
     return True
+
+
+def _python_s_hash(kind: type) -> bool:
+    """Whether the type's hash and equality are Python's own: each, found where Python finds
+    it among the type's classes, is written in C or is a function whose code lies in a file of
+    the standard library (`standard`). An Enum member's, a date's, a Decimal's and a UUID's are;
+    a frozen dataclass's, which dataclasses writes for the class, and those of a class that
+    defines its own, are not."""
+    known = _HASHES.get(id(kind))
+    if known is not None:
+        return known[1]
+    found = all(_python_s_code(_found(kind, name)) for name in ("__hash__", "__eq__"))
+    _HASHES[id(kind)] = (kind, found)
+    return found
+
+
+def _found(kind: type, name: str) -> object:
+    """What the type's classes hold under the name, the first that holds it, read through each
+    class's own namespace, or None when none does."""
+    for each in _MRO(kind):
+        namespace = _NAMESPACE(each)
+        if name in namespace:
+            return namespace[name]
+    return None
+
+
+def _python_s_code(method: object) -> bool:
+    """Whether the method is written in C or is a function whose code lies in a file of the
+    standard library."""
+    if type(method) in _IN_C:
+        return True
+    return type(method) is types.FunctionType and standard(method.__code__.co_filename)
 
 
 def _copies(reached: dict[int, _Node]) -> set[int]:
@@ -241,8 +292,9 @@ def _fill(copied: object, items: list[object]) -> None:
 
 def _frozen(value: tuple | frozenset, items: list[object]) -> object:
     """A new tuple or frozenset with the items. A subclass's is of its own type, made by its
-    base type's ``__new__``, with the attributes its ``__dict__`` holds, read with Python's own
-    attribute lookup; Python's own, and one its base cannot make, a plain one of its base."""
+    base type's ``__new__``, with the attributes its ``__dict__`` holds, read through the C
+    descriptor Python gives its class, none when its class replaces that; Python's own, and one
+    its base cannot make, a plain one of its base."""
     kind = type(value)
     if kind in _OWN:
         return kind(items)
@@ -251,9 +303,9 @@ def _frozen(value: tuple | frozenset, items: list[object]) -> object:
         made = cast(Any, base).__new__(kind, items)
     except Exception:
         return base(items)
-    with contextlib.suppress(AttributeError):
-        attributes = object.__getattribute__(value, "__dict__")
-        object.__getattribute__(made, "__dict__").update(attributes)
+    slot = _found(kind, "__dict__")
+    if type(slot) is types.GetSetDescriptorType:
+        slot.__get__(made).update(slot.__get__(value))
     return made
 
 
