@@ -23,7 +23,7 @@ from pyct.run.bounds import Bounds
 from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call
 from pyct.run.process import InputStartError
-from pyct.run.records import miss_why, record_of
+from pyct.run.records import miss_why, record_of, source_of
 from pyct.run.stuck import Stuck
 from pyct.run.tell import Ask, Told
 from pyct.run.waits import site_waits
@@ -411,14 +411,16 @@ def _unanswered(
 
 
 def _input(ways: Ways, wanted: Plan, found: Seed, solved: Solved, until: float | None) -> Attempt:
-    """The pass that runs the input the answer gave, labeled with the answer's source."""
+    """The pass that runs the input the answer gave, labeled with the answer's source, or
+    ``summary`` for a fork a formula gave (`source_of`)."""
     try:
         executed = ways.call(found.args, until)
     except InputStartError as error:
         unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
         return Attempt(stop=_could_not_start(error), unrun=unrun, asked=solved.asked)
     record = record_of(found.args, executed, wanted, solved.seconds)
-    return Attempt(ran=Ran(_labeled(record, solved.source), found), asked=solved.asked)
+    source = source_of(wanted, solved.source)
+    return Attempt(ran=Ran(_labeled(record, source), found), asked=solved.asked)
 
 
 def solver_answer(

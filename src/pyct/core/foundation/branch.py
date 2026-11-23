@@ -96,6 +96,10 @@ class Branch:
     ``is_held`` is set on a fork an `is` records as it tests its operand, and says whether the
     `is` held on that pass; None on any other fork. see-why reads an `is` test's sides from it
     (``results.senses``). Like ``lost_as``, it is not part of the fork, and it is not printed.
+
+    ``summary`` is set on a fork a loop's formula recorded, or whose condition reads a value a
+    formula gave (``pyct.core.entry.in_use.summed``): an input aimed at it is labeled
+    ``summary``. Like ``lost_as``, it is not part of the fork, and it is not printed.
     """
 
     expression: Expression
@@ -104,6 +108,7 @@ class Branch:
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
     is_held: bool | None = field(default=None, compare=False)
+    summary: bool = field(default=False, compare=False)
 
     @property
     def where(self) -> ForkSite:

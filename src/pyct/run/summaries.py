@@ -24,8 +24,11 @@ the next input on, for the rest of the run or until an input drops it, when
 it can (``pyct.run.loops_in_use``); else it is kept as checked, and why is
 said right after the line that says it passed, once in the run for each loop
 and reason. A check whose child could not start, or that the run's deadline
-ended, is no try: the loop is skipped at this moment, and said. No input
-runs.
+ended, is no try: the loop is skipped at this moment, and said. After the
+moment's asks, the latest input whose run of each loop that came into use
+then its formula was checked on runs again, labeled ``summary``, each such
+input once, so that the formulas give the solver their forks at once; a
+moment that put no formula in use runs no input.
 
 The tool hears each input the run keeps. A loop in use that an input's
 record says was dropped goes out of use from the next input on, and its
@@ -85,7 +88,14 @@ from pyct.run.notes import (
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
-from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, failed_run, shown_runs
+from pyct.run.summary_runs import (
+    AskedLoop,
+    ShownRun,
+    asked_loop,
+    failed_run,
+    run_again,
+    shown_runs,
+)
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
@@ -193,6 +203,9 @@ class Summaries:
         self.isolated = isolated
         self.loops: dict[Site, LoopState] = {}
         self.in_use = LoopsInUse()
+        # the inputs, by their numbers in the run, that the formulas put in use at this moment were
+        # checked on last
+        self.again: list[int] = []
         # each loop skipped with no ask, or whose formula is not used, with each reason, said this
         # run
         self.said_once: set[SummarySkipped | SummaryNotUsed] = set()
@@ -207,7 +220,7 @@ class Summaries:
         """Ask once about each loop the entries' sources name, and each dropped loop a line it was
         asked for is still missed for, in code order; ``took``, ``gave up`` or ``skipped`` each
         entry by what came of its sources. A loop an ask was sent for keeps the entries' lines
-        that named it."""
+        that named it. Then run again the inputs the formulas put in use were checked on."""
         named = {each.site for entry in entries for each in _sources(entry, SourceKind.LOOP)}
         sites = sorted(
             named | set(self._dropped_for(moment)),
@@ -222,6 +235,8 @@ class Summaries:
             came[site], made = self._turn(site, moment.run)
             asked = asked or made
             self._asked_for(site, entries)
+        again, self.again = self.again, []
+        run_again(moment.run, again, self.target)
         return Handled(tuple(_outcome(entry, came) for entry in entries), asked)
 
     def waiting(self, moment: Moment) -> bool:
@@ -315,7 +330,8 @@ class Summaries:
 
     def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
         """A formula that passed both checks, from its text, its code objects' file name and its
-        code: in use when it can be, else kept as checked and said with why."""
+        code: in use when it can be, its loop's latest complete run's input kept to run again,
+        else kept as checked and said with why."""
         changed = loop.piece.changed
         reason = unused_because(loop.site, loop.runs, changed, self.isolated())
         if reason is not None:
@@ -323,6 +339,7 @@ class Summaries:
             return SummaryState.CHECKED
         formula = FormulaText(text, loop.parameters, changed, place_of(loop.site), file)
         self.in_use.use(formula, code)
+        self.again.append(loop.runs[-1].number)
         return SummaryState.IN_USE
 
     def heard(self, record: InputRecord, number: int) -> None:

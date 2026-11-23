@@ -231,7 +231,7 @@ def llm_lines(stderr: str) -> list[str]:
 
 def heads(stderr: str) -> list[str]:
     """Each input's trace head: its first line, the one that names its source."""
-    starts = ("seed ", "llm seed ", "solver ")
+    starts = ("seed ", "llm seed ", "solver ", "summary ")
     return [line for line in stderr.splitlines() if line.startswith(starts)]
 
 

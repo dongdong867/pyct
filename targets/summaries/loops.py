@@ -1,5 +1,5 @@
-"""Loops whose values the conditions after them read with no fork, for the
-ask-for-a-stuck-loop-s-summary and track-a-value-through-a-loop-summary stories."""
+"""Loops whose values the conditions after them read with no fork, for the summaries stories,
+from ask-for-a-stuck-loop-s-summary through label-the-inputs-a-summary-gave."""
 
 
 def tallies(s: str) -> str:
@@ -123,5 +123,17 @@ def guarded(s: str) -> str:
             return "many before #"
         return "holds #"
     if t > 3:
+        return "many"
+    return "few"
+
+
+def encoded_z(s: str) -> str:
+    t = 0
+    for b in s.encode():
+        if b == 122:
+            t += 1
+    if t > 3:
+        if s.endswith("!"):
+            return "many and loud"
         return "many"
     return "few"

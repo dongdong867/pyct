@@ -8,6 +8,8 @@ import signal
 import time
 from typing import NoReturn
 
+import pytest
+
 from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.run.journal import RECORDS, JournalWriter
 from pyct.run.journal_reader import read
@@ -111,13 +113,19 @@ def test_a_fork_record_holds_six_items_and_a_bool_note_alone() -> None:
     assert reading.branches == () and reading.problem is not None
 
 
-def test_a_fork_record_with_more_than_its_note_is_unreadable() -> None:
+@pytest.mark.parametrize(
+    "notes", [b"true, true, true]", b"true, false]", b"null]", b'true, "summary"]']
+)
+def test_a_fork_record_with_more_than_its_notes_is_unreadable(notes: bytes) -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    writer.fork(Branch(expression="abcdefg", taken=True, site=Site("m.py", 2, 4), is_held=True))
-    written = b'"abcdefg", true, "m.py", 2, 4, false, true]'
+    branch = Branch(expression="abcdefgabcdefg", taken=True, site=Site("m.py", 2, 4), is_held=True)
+    writer.fork(branch)
+    written = b'"abcdefgabcdefg", true, "m.py", 2, 4, false, true]'
     at = buffer.index(written)
-    buffer[at : at + len(written)] = b'"a", true, "m.py", 2, 4, false, true, true]'
+    rest = b'", true, "m.py", 2, 4, false, ' + notes
+    # the same length as the record written, so the record's head still holds its length
+    buffer[at : at + len(written)] = b'"' + b"a" * (len(written) - len(rest) - 1) + rest
 
     reading = read(buffer)
 

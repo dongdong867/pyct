@@ -132,7 +132,8 @@ def test_an_input_after_the_check_records_no_fork_in_the_loop() -> None:
         assert [each for each in record.forks if each.site.line in loop] == [], record
 
 
-# llm-summary-for-a-stuck-loop-in-use-reaches-the-missed-line
+# llm-summary-for-a-stuck-loop-in-use-reaches-the-missed-line, its input labeled `summary` as
+# label-the-inputs-a-summary-gave's llm-summary-input-solver-aimed-at-the-formula says
 def test_the_solver_aims_at_the_formula_s_count_and_covers_the_missed_line() -> None:
     done = summarized("few_z", COUNT, LONGER)
 
@@ -140,7 +141,7 @@ def test_the_solver_aims_at_the_formula_s_count_and_covers_the_missed_line() -> 
     reached = [
         record
         for record in after_checked(done)
-        if str(record.args["s"]).count("z") >= 4 and record.source is Source.SOLVER
+        if str(record.args["s"]).count("z") >= 4 and record.source is Source.SUMMARY
     ]
     assert reached, [record.args for record in after_checked(done)]
     assert many in reached[0].covered_lines
