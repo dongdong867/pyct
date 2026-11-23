@@ -91,6 +91,32 @@ class FakeSummaries:
         return AskCost(attempt, tokens_in, tokens_out, tokens_left=left)
 
 
+def checked_on(provider: FakeSummaries, ask: int = 0) -> str:
+    """The text the ``checked on`` line holds for the formula of ``provider``'s ask numbered
+    ``ask``, from 0: the complete runs of its loop the inputs then held, and those whose values
+    going in no run its request showed has, as the story
+    refuse-a-summary-that-only-repeats-its-runs counts them."""
+    request = provider.requests[ask]
+    line, col = (int(part) for part in request.place.rsplit(":", 2)[1:])
+    runs = [
+        each
+        for record in provider.records[: provider.inputs_then[ask]]
+        for each in record.pieces
+        if (each.site.line, each.site.col) == (line, col)
+        and set(request.changed) <= {changed.name for changed in each.changed}
+    ]
+    seen = {shown.going_in for shown in request.runs}
+    hidden = sum(
+        tuple(
+            (going.name, going.value) for going in each.going_in if going.name in request.parameters
+        )
+        not in seen
+        for each in runs
+    )
+    text = f"checked on {len(runs)} past runs"
+    return f"{text}, {hidden} of them not shown" if hidden else text
+
+
 @dataclass
 class Summarized:
     """What a run with summaries gave: its result, each input as it finished, the stderr line each

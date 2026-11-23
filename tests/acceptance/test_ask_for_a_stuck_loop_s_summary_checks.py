@@ -18,6 +18,7 @@ from tests.acceptance.llm_summaries import (
     FakeSummaries,
     G,
     Summarized,
+    checked_on,
     code_reply,
     one_thread,  # noqa: F401
     run_summaries,
@@ -41,7 +42,7 @@ def test_a_formula_that_gives_every_past_run_s_value_and_one_pyct_follows_is_che
     assert request.place == "targets.why.stuck:10:4"
     assert summary_lines(done) == [
         f'{AT}: t = t + s.count("z")',
-        f"{AT}: checked on {provider.inputs_then[0]} past runs",
+        f"{AT}: {checked_on(provider)}",
     ]
 
 
@@ -56,7 +57,7 @@ def test_a_comprehension_s_value_is_asked_about_and_checked() -> None:
     at = f"llm: summary for the loop at {F}:19"
     assert summary_lines(done) == [
         f'{at}: t = s.count("z")',
-        f"{at}: checked on {provider.inputs_then[0]} past runs",
+        f"{at}: {checked_on(provider)}",
     ]
 
 
@@ -75,7 +76,7 @@ def test_one_ask_names_each_changed_value_and_the_line_writes_a_formula_for_each
     at = f"llm: summary for the loop at {G}:8"
     assert summary_lines(done) == [
         f'{at}: ups = ups + s.count("u"); downs = downs + s.count("d")',
-        f"{at}: checked on {provider.inputs_then[0]} past runs",
+        f"{at}: {checked_on(provider)}",
     ]
 
 

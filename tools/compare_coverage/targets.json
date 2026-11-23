@@ -935,6 +935,7 @@
     {"set": "v2", "target": "targets.summaries.loops::stops", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::tallies", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.loops::vowels", "seed": {"s": "ab"}},
+    {"set": "v2", "target": "targets.summaries.one_run::z_bytes", "seed": {"s": "ab"}},
     {"set": "v2", "module": "targets.sweep.bound", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.borrowed.inside.v1", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.borrowed.inside.v2", "left_out": "a sweep fixture"},

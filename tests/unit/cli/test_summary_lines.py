@@ -34,6 +34,10 @@ SITE = Site("/t/m.py", 10, 4)
             "llm: summary for the loop at /t/m.py:10: checked on 4 past runs",
         ),
         (
+            SummaryChecked(SITE, 4, 1),
+            "llm: summary for the loop at /t/m.py:10: checked on 4 past runs, 1 of them not shown",
+        ),
+        (
             SummaryFailed(SITE, 2, "at input 1, t was 0, the formula gave 2"),
             "llm: summary for the loop at /t/m.py:10, try 2:"
             " at input 1, t was 0, the formula gave 2",

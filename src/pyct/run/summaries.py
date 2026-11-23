@@ -5,7 +5,8 @@ At a moment, summaries take each ``no fork`` entry, and ask once about each
 distinct loop its sources name, in code order, however many entries name it.
 A loop is asked about with its function's code, the loop marked, and its
 complete runs: the runs of it the inputs so far recorded that hold every
-name it changes, up to 3 per input. A loop with no complete run, and one
+name it changes, up to 3 per input, but those it holds back
+(``pyct.run.summary_runs``). A loop with no complete run, and one
 asked about while pyct's process runs a second thread, so that no formula
 could run, is skipped at this moment with no ask, and said the first time
 this run it is skipped for that reason. An ask that got no answer is said
@@ -85,7 +86,14 @@ from pyct.run.notes import (
 )
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.summary_checks import CompleteRun, Ended, check_formula, formula_code
-from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, failed_run, shown_runs
+from pyct.run.summary_runs import (
+    AskedLoop,
+    ShownRun,
+    asked_loop,
+    failed_run,
+    not_shown,
+    shown_runs,
+)
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
@@ -269,7 +277,7 @@ class Summaries:
         self._sent(site, state, answer.cost)
         if answer.ignored is not None:
             return self._ignored(state, answer.ignored), True
-        return self._tried(loop, state, answer, run), True
+        return self._tried(loop, state, answer, run, request.runs), True
 
     def _ignored(self, state: LoopState, reason: str) -> Asked:
         """A reply that held nothing the tool could read, said; its loop's ask failed."""
@@ -288,9 +296,17 @@ class Summaries:
             self.said_once.add(note)
             self.told.note(note)
 
-    def _tried(self, loop: AskedLoop, state: LoopState, reply: SummaryReply, run: Running) -> Asked:
-        """The reply's formula read, its form checked, then checked on the loop's runs and
-        for values pyct follows: kept when it passes, else a failed try, said with its reason.
+    def _tried(
+        self,
+        loop: AskedLoop,
+        state: LoopState,
+        reply: SummaryReply,
+        run: Running,
+        shown: tuple[ShownRun, ...],
+    ) -> Asked:
+        """The reply's formula read, its form checked, then checked on the loop's runs, ``shown``
+        and those its request held back, and for values pyct follows: kept when it passes, said
+        with the count of runs not shown, else a failed try, said with its reason.
         A check that could not run, or that the run's deadline ended, leaves the formula
         unchecked and skips the loop at this moment."""
         state.formula = reply.code
@@ -309,7 +325,7 @@ class Summaries:
         if failed is not None:
             return self._failed(state, site, failed)
         state.checked_on = len(loop.runs)
-        self.told.note(SummaryChecked(site, len(loop.runs)))
+        self.told.note(SummaryChecked(site, len(loop.runs), not_shown(loop, shown)))
         state.last = self._used(loop, reply.code, file, formula.code)
         return Asked.CHECKED
 

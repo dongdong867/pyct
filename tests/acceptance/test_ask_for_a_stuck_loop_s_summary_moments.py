@@ -24,6 +24,7 @@ from tests.acceptance.llm_summaries import (
     F,
     FakeSummaries,
     Summarized,
+    checked_on,
     code_reply,
     one_thread,  # noqa: F401
     run_summaries,
@@ -94,7 +95,7 @@ def test_a_loop_whose_formula_failed_is_asked_about_again_with_the_failed_formul
         f"{AT}: t = len(s)",
         f"{AT}, try 1: at input 1, t was 0, the formula gave 2",
         f'{AT}: t = t + s.count("z")',
-        f"{AT}: checked on {provider.inputs_then[1]} past runs",
+        f"{AT}: {checked_on(provider, 1)}",
     ]
     assert provider.inputs_then[0] < provider.inputs_then[1]
     [loop] = done.result.summaries
@@ -113,7 +114,7 @@ def test_a_loop_whose_formula_is_checked_is_not_asked_about_again(moments: list[
     assert len(provider.requests) == 1
     assert summary_lines(done) == [
         f'{AT}: t = t + s.count("z")',
-        f"{AT}: checked on {provider.inputs_then[0]} past runs",
+        f"{AT}: {checked_on(provider)}",
         f"{AT} not used: inputs run in pyct's own process",
     ]
 
@@ -145,4 +146,4 @@ def test_a_second_moment_comes_after_an_ask_that_failed(moments: list[int]) -> N
     assert len(moments) >= 2
     assert [request.place for request in provider.requests] == [PLACE, PLACE]
     assert provider.inputs_then == moments[:2]
-    assert f"{AT}: checked on {provider.inputs_then[1]} past runs" in done.said
+    assert f"{AT}: {checked_on(provider, 1)}" in done.said

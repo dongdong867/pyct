@@ -78,7 +78,7 @@ def test_a_formula_that_passes_comes_into_use_for_inputs_in_a_process_of_their_o
     handled = taken(summaries)
 
     assert handled == Handled((Outcome.TOOK,), asked=True)
-    assert notes == [SummaryRead(LOOP, 't = t + s.count("z")'), SummaryChecked(LOOP, 2)]
+    assert notes == [SummaryRead(LOOP, 't = t + s.count("z")'), SummaryChecked(LOOP, 2, 1)]
     assert summaries.states() == (
         LoopSummary(FILE, 10, 4, ("t",), FORMULA, SummaryState.IN_USE, 1, 2),
     )
@@ -116,7 +116,7 @@ def test_a_formula_not_used_says_why_right_after_its_checked_line() -> None:
 
     assert notes == [
         SummaryRead(LOOP, 't = t + s.count("z")'),
-        SummaryChecked(LOOP, 2),
+        SummaryChecked(LOOP, 2, 1),
         SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS),
     ]
 

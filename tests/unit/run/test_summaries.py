@@ -329,7 +329,8 @@ def test_the_runs_shown_put_distinct_values_going_in_first_then_distinct_changed
     def going(s: str, t: str = "0") -> PieceRun:
         return PieceRun(LOOP, (GoingIn("s", s, True),), (Changed("t", t),))
 
-    runs = [going('"a"'), going('"a"'), going('"a"', "1"), going('"b"')]
+    # the last run's values going in are held back
+    runs = [going('"a"'), going('"a"'), going('"a"', "1"), going('"b"'), going('"c"')]
     loop = AskedLoop(LOOP, piece, tuple(CompleteRun(1, each) for each in runs), ("s",))
 
     assert shown_runs(loop) == (
@@ -376,7 +377,7 @@ def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
     assert handled == Handled((Outcome.TOOK,), asked=True)
     assert notes == [
         SummaryRead(LOOP, 't = t + s.count("z")'),
-        SummaryChecked(LOOP, 2),
+        SummaryChecked(LOOP, 2, 1),
         SummaryNotUsed(LOOP, IN_PYCT_S_PROCESS),
     ]
     checked = SummaryState.CHECKED
