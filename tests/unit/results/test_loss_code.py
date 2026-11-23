@@ -59,6 +59,18 @@ def file(tmp_path: Path) -> str:
             id="an element",
         ),
         pytest.param(
+            (9, 4),
+            ("__ror__", LossKind.OPERATION, 2),
+            LossCode("flags |= bit", (9, 9), ("bit", "flags")),
+            id="an augmented or",
+        ),
+        pytest.param(
+            (11, 4),
+            ("__rlshift__", LossKind.OPERATION, 2),
+            LossCode("x <<= n", (11, 11), ("n", "x")),
+            id="an augmented shift",
+        ),
+        pytest.param(
             (12, 11),
             ("__rshift__", LossKind.OPERATION, 2),
             LossCode("n >> 2", (12, 12), ("n", None)),

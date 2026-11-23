@@ -164,7 +164,7 @@ def _operands(node: ast.AST, name: str) -> list[ast.expr] | None:
     if isinstance(node, ast.BinOp):
         return _receiver_first([node.left, node.right], name)
     if isinstance(node, ast.AugAssign):
-        return [node.target, node.value]
+        return _receiver_first([node.target, node.value], name)
     if isinstance(node, ast.UnaryOp):
         return [node.operand]
     if isinstance(node, ast.Compare):
