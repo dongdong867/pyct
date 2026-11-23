@@ -2,7 +2,7 @@
 joins the run as any input does."""
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 import pytest
@@ -10,6 +10,7 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.branches.plan import plan
 from pyct.branches.tree import Tree
+from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.core.foundation.branch import Branch
@@ -74,7 +75,35 @@ def loop_of(
     target = load_target(spec)
     told = Told(scope=Scope.of_module(target.file), tell=Tell(), imported=target.import_lines)
     inputs = call or Inputs(target, Isolation.IN_PROCESS)
-    return Loop(inputs, Bounds.of(limits, seeds), told, Stuck(tools))  # pyrefly: ignore[bad-argument-type]
+    clock = inputs.clock if isinstance(inputs, Ticking) else time.monotonic
+    return Loop(inputs, Bounds.of(limits, seeds), told, Stuck(tools, clock))  # pyrefly: ignore[bad-argument-type]
+
+
+@dataclass
+class Ticking:
+    """The target's inputs, each moving a clock of the test's own on by its step, the n-th
+    input by the n-th step and every later one by the last, so a run's stretch passes as its
+    inputs run, whatever the machine's load."""
+
+    spec: str
+    steps: Sequence[float]
+    ahead: float = 0.0
+    calls: int = 0
+
+    def __post_init__(self) -> None:
+        self._inputs = Inputs(load_target(self.spec), Isolation.IN_PROCESS)
+
+    def __call__(self, args: Mapping[str, object], until: float | None) -> ExecutionResult:
+        self.ahead += self.steps[min(self.calls, len(self.steps) - 1)]
+        self.calls += 1
+        return self._inputs(args, until)
+
+    def clock(self) -> float:
+        return time.monotonic() + self.ahead
+
+
+# a budget whose quarter, 15000 s, passes in four inputs of 4000 s each
+LONG = Limits(budget=Budget(60000.0), plateau=Plateau(inputs=10))
 
 
 def go(loop: Loop, *seeds: Mapping[str, object]) -> Looped:
@@ -234,3 +263,48 @@ def test_each_tool_hears_each_kept_input_with_its_number() -> None:
     # the seeds, the passes' inputs and the moments' inputs alike
     sources = {record.source for record in looped.records}
     assert sources == {Source.SEED, Source.SOLVER, Source.LLM_SEED}
+
+
+def test_a_quarter_of_the_budget_with_no_new_line_makes_a_run_stuck_before_five_inputs() -> None:
+    summaries = Tool(Kind.SUMMARIES)
+
+    go(loop_of(COUNTS, [summaries], LONG, Ticking(COUNTS, [4000.0])), {"s": ""})
+
+    # inputs 2 and 3 cover a new line; inputs 4 to 7 take 16000 s, and the 5-input rule would
+    # wait for input 8; after the moment, inputs 8 to 11 do the same
+    assert [moment[:2] for moment in summaries.moments] == [(1, 7), (2, 11)]
+
+
+def test_an_input_in_flight_as_the_stretch_ends_that_covers_a_new_line_starts_it_again() -> None:
+    summaries = Tool(Kind.SUMMARIES)
+    # input 3, which covers line 12, takes 20000 s: the stretch ends while it runs
+    ticking = Ticking(COUNTS, [4000.0, 4000.0, 20000.0, 1000.0])
+
+    go(loop_of(COUNTS, [summaries], LONG, ticking), {"s": ""})
+
+    # no moment as the next pass starts: the 5 inputs in a row after input 3 come first
+    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 8)]
+
+
+def test_an_input_in_flight_as_the_stretch_ends_with_no_new_line_brings_the_moment() -> None:
+    summaries = Tool(Kind.SUMMARIES)
+    # input 4, which covers no new line, takes 20000 s
+    ticking = Ticking(COUNTS, [4000.0, 4000.0, 4000.0, 20000.0, 1000.0])
+
+    go(loop_of(COUNTS, [summaries], LONG, ticking), {"s": ""})
+
+    # the moment comes before the next pick, once input 4 has run
+    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 4)]
+
+
+def test_the_stretch_counts_from_after_the_last_seed() -> None:
+    summaries = Tool(Kind.SUMMARIES)
+    # the two seeds take 20000 s each, and the second covers no new line
+    ticking = Ticking(COUNTS, [20000.0, 20000.0, 1000.0])
+    loop = loop_of(COUNTS, [summaries], LONG, ticking, seeds=2)
+
+    go(loop, {"s": ""}, {"s": ""})
+
+    # the first moment is the 5-input rule's, 5 inputs after the last of inputs 3 and 4, which
+    # cover lines 11 and 12
+    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 9)]
