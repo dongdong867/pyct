@@ -128,6 +128,8 @@ def test_a_loop_with_one_complete_run_is_asked_about_with_it_and_its_formula_com
     [request] = provider.requests
     assert provider.inputs_then == [1]
     assert request.runs == (ShownRun((("s", '"ab"'), ("t", "0")), (("t", "0"),)),)
+    # nothing is held back, so the request makes no claim about runs it does not show
+    assert "does not show" not in request_text(request)
     checked = f"llm: summary for the loop at {G}:{ENCODED_Z_LOOP}: checked on 1 past runs"
     assert checked in done.said
     assert not any(line.startswith(f"{checked},") for line in done.said)
@@ -143,6 +145,7 @@ def test_the_request_says_runs_it_does_not_show_are_checked() -> None:
     run_summaries(COUNTS, SEED, provider)
 
     [request] = provider.requests
+    assert request.not_shown >= 1
     text = request_text(request)
     assert "and ones this request does not show" in text
-    assert "a formula that only writes down the runs shown fails" in text
+    assert "a formula that only writes down the runs shown can fail" in text

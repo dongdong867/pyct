@@ -47,10 +47,10 @@ def test_the_request_holds_the_loop_its_names_its_runs_what_pyct_follows_and_the
 
     assert "Write a formula that gives the values the loop leaves in its changed names" in text
     assert (
-        "pyct checks the formula on the loop's recorded runs, the ones shown below and ones this"
-        " request does not show, so a formula that only writes down the runs shown fails. Then"
-        " it checks that it can follow the values the formula gives."
+        "pyct checks the formula on the loop's recorded runs, then that it can follow the values"
+        " the formula gives."
     ) in text
+    assert "does not show" not in text
     assert "\n\nRecorded runs of the loop, each as the values going in" in text
     assert f"Loop at m:10:4, marked in the code by the comments `{MARK_START}`" in text
     assert f"```python\n{CODE}\n```" in text
@@ -59,6 +59,16 @@ def test_the_request_holds_the_loop_its_names_its_runs_what_pyct_follows_and_the
     assert 'as JSON:\ns = "ab", t = 0  ->  t = 0\ns = "zz", t = 0  ->  t = 2' in text
     assert "earlier formulas" not in text
     assert text.endswith(f"{FOLLOWS}\n\n{answer_form(('s', 't'), ('t',))}")
+
+
+def test_a_request_that_holds_runs_back_says_pyct_checks_the_formula_on_them_too() -> None:
+    text = request_text(dataclasses.replace(REQUEST, not_shown=1))
+
+    assert (
+        "pyct checks the formula on the loop's recorded runs, the ones shown below and ones this"
+        " request does not show, so a formula that only writes down the runs shown can fail. Then"
+        " it checks that it can follow the values the formula gives."
+    ) in text
 
 
 def test_the_form_names_the_function_its_parameters_and_each_changed_name() -> None:

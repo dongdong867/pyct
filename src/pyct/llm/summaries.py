@@ -68,7 +68,7 @@ def summary_reply(text: str, cost: AskCost) -> SummaryReply:
 
 
 def request_text(request: SummaryRequest) -> str:
-    """The exact text a summaries ask sends: the task, which says runs not shown are checked too,
+    """The exact text a summaries ask sends: the task, which says when runs not shown are checked,
     the loop's code, the names going in and the changed names, the runs shown, the earlier tries
     at this loop, the operations pyct follows, and the answer's form."""
     parts = [
@@ -76,10 +76,7 @@ def request_text(request: SummaryRequest) -> str:
         " branches each input took. A line after the loop below is still missed, since a"
         " condition that guards it reads a value the loop changed, which pyct no longer"
         " follows. Write a formula that gives the values the loop leaves in its changed names"
-        " from the values going into it, without running the loop. pyct checks the formula on"
-        " the loop's recorded runs, the ones shown below and ones this request does not show,"
-        " so a formula that only writes down the runs shown fails. Then it checks that it can"
-        " follow the values the formula gives.",
+        " from the values going into it, without running the loop. " + _checks(request),
         f"Loop at {request.place}, marked in the code by the comments `{MARK_START}` and"
         f" `{MARK_END}`. The function's code, then the code of the functions it calls in its"
         f" package:\n```python\n{request.code}\n```",
@@ -97,6 +94,21 @@ def request_text(request: SummaryRequest) -> str:
     parts.append(FOLLOWS)
     parts.append(answer_form(request.parameters, request.changed))
     return "\n\n".join(parts)
+
+
+def _checks(request: SummaryRequest) -> str:
+    """What the request says pyct checks the formula on: the runs it does not show too, when it
+    holds some back."""
+    if not request.not_shown:
+        return (
+            "pyct checks the formula on the loop's recorded runs, then that it can follow the"
+            " values the formula gives."
+        )
+    return (
+        "pyct checks the formula on the loop's recorded runs, the ones shown below and ones this"
+        " request does not show, so a formula that only writes down the runs shown can fail."
+        " Then it checks that it can follow the values the formula gives."
+    )
 
 
 def _run(run: ShownRun) -> str:

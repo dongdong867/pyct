@@ -126,7 +126,8 @@ class SummaryRequest:
     the loop marked, then the code of the functions it calls in its package. ``parameters``
     are the formula's parameters, the names going in that every complete run holds;
     ``changed`` the names the loop changes; ``runs`` the runs shown; ``tries`` the earlier
-    tries at this place, oldest first.
+    tries at this place, oldest first; ``not_shown`` the complete runs whose values going in no
+    shown run has.
     """
 
     place: str
@@ -135,6 +136,7 @@ class SummaryRequest:
     changed: tuple[str, ...]
     runs: tuple[ShownRun, ...]
     tries: tuple[EarlierFormula, ...] = ()
+    not_shown: int = 0
 
 
 @dataclass(frozen=True)
@@ -286,7 +288,7 @@ class Summaries:
         self._sent(site, state, answer.cost)
         if answer.ignored is not None:
             return self._ignored(state, answer.ignored), True
-        return self._tried(loop, state, answer, run, request.runs), True
+        return self._tried(loop, state, answer, run, request.not_shown), True
 
     def _ignored(self, state: LoopState, reason: str) -> Asked:
         """A reply that held nothing the tool could read, said; its loop's ask failed."""
@@ -311,11 +313,11 @@ class Summaries:
         state: LoopState,
         reply: SummaryReply,
         run: Running,
-        shown: tuple[ShownRun, ...],
+        hidden: int,
     ) -> Asked:
-        """The reply's formula read, its form checked, then checked on the loop's runs, ``shown``
-        and those its request held back, and for values pyct follows: kept when it passes, said
-        with the count of runs not shown, else a failed try, said with its reason.
+        """The reply's formula read, its form checked, then checked on the loop's runs, those
+        its request showed and the ``hidden`` it did not, and for values pyct follows: kept when
+        it passes, said with ``hidden``, else a failed try, said with its reason.
         A check that could not run, or that the run's deadline ended, leaves the formula
         unchecked and skips the loop at this moment."""
         state.formula = reply.code
@@ -334,7 +336,7 @@ class Summaries:
         if failed is not None:
             return self._failed(state, site, failed)
         state.checked_on = len(loop.runs)
-        self.told.note(SummaryChecked(site, len(loop.runs), not_shown(loop, shown)))
+        self.told.note(SummaryChecked(site, len(loop.runs), hidden))
         state.last = self._used(loop, reply.code, file, formula.code)
         return Asked.CHECKED
 
@@ -397,13 +399,15 @@ class Summaries:
 
     def _request(self, loop: AskedLoop, state: LoopState) -> SummaryRequest:
         site = loop.site
+        shown = shown_runs(loop, state.failed_on)
         return SummaryRequest(
             place=self._place(site),
             code=code_with_piece(self.target, site.file, loop.piece.lines),
             parameters=loop.parameters,
             changed=loop.piece.changed,
-            runs=shown_runs(loop, state.failed_on),
+            runs=shown,
             tries=tuple(state.tries),
+            not_shown=not_shown(loop, shown),
         )
 
     def _unanswered(self, site: Site, state: LoopState, answer: Unanswered) -> None:
