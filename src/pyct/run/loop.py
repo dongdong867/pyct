@@ -253,7 +253,7 @@ class Loop:
         if waiting:
             start = waiting.popleft()
             return _stopped_by(self.run_input(start.copy, start.source))
-        self._stuck.between(self)
+        self._stuck.between(self, self.progress)
         if self._stuck.due(self, self.progress, empty=False):
             return self._moment()
         attempt = _attempt(self._ways, self.inputs, self.tree, self.bounds, self.progress)

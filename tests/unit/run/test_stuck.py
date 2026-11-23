@@ -11,7 +11,7 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, Tries, WhyEntry
-from pyct.results.coverage import Progress, Scope
+from pyct.results.coverage import Progress, Reach, Scope
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.bounds import Bounds
@@ -297,3 +297,40 @@ def test_a_waiting_tool_s_moment_counts_toward_three_only_when_it_asks(
 
 def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
     assert due([FakeTool(Kind.SUMMARIES, can_ask=False, waits=True)]) is False
+
+
+@dataclass
+class Turns:
+    """A tool that asks between passes, and counts its turns."""
+
+    can_ask: bool = True
+    turns: int = 0
+
+    def between(self, run: object) -> None:
+        self.turns += 1
+
+
+def missing(*lines: int) -> Progress:
+    """The progress of a run of `FILE`'s lines 4 and 5 whose one input covered the others."""
+    progress = Progress(Scope(FILE, frozenset({4, 5})), frozenset())
+    progress.add(frozenset({4, 5}) - set(lines), Reach())
+    return progress
+
+
+@pytest.mark.parametrize(
+    ("run", "progress", "turns"),
+    [
+        pytest.param(FakeRun(), missing(5), 1, id="a line missed"),
+        pytest.param(FakeRun(), missing(), 0, id="every line covered"),
+        pytest.param(FakeRun(stopped=Stop(kind=StopKind.BUDGET)), missing(5), 0, id="a stop met"),
+        pytest.param(FakeRun(bounds=Bounds(until=0.0)), missing(5), 0, id="the budget spent"),
+    ],
+)
+def test_the_turn_between_passes_comes_only_while_the_run_goes_on_with_a_line_to_win(
+    run: FakeRun, progress: Progress, turns: int
+) -> None:
+    tool = Turns()
+
+    Stuck([], between=tool).between(run, progress)
+
+    assert tool.turns == turns

@@ -21,7 +21,7 @@ from pyct.core.foundation.branch import Site
 from pyct.results.causes import WhyEntry
 from pyct.results.record import InputRecord
 from pyct.run import run as run_module
-from pyct.run.stuck import Handled, Kind, Moment, Outcome, Stuck
+from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, Stuck
 from pyct.run.summaries import Summaries
 from pyct.run.summary_asks import SummaryReply, SummaryRequest
 from tests.acceptance.llm_summaries import (
@@ -85,16 +85,34 @@ def test_pyct_asks_about_each_loss_in_the_order_the_input_recorded_them() -> Non
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-asks-once-per-run
-def test_pyct_asks_about_a_loss_once_in_a_run_whose_every_input_records_it() -> None:
+def test_pyct_asks_about_a_loss_once_in_a_run_whose_every_input_records_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     provider = FakeSummaries([HALF])
+    turns: list[int] = []
+    between = Summaries.between
 
-    done = run_summaries(
-        SHIFTED, [{"n": 3}, {"n": 9}, {"n": 30}], provider, Limits(budget=Budget(5))
-    )
+    def counted(self: Summaries, run: Running) -> None:
+        turns.append(len(provider.records))
+        between(self, run)
 
-    assert len(done.records) == 3
+    monkeypatch.setattr(Summaries, "between", counted)
+
+    done = run_summaries(SHIFTED, [{"n": 3}, {"n": 9}], provider, Limits(budget=Budget(5)))
+
+    assert len(turns) >= 2
     assert all(record.losses for record in done.records)
     assert places(provider) == [place(11, 11)]
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-asks-once-per-run, once no line is left to win
+def test_pyct_asks_about_no_loss_once_every_line_is_covered() -> None:
+    provider = FakeSummaries([HALF])
+
+    done = run_summaries(SHIFTED, [{"n": 3}, {"n": 30}], provider, Limits(budget=Budget(5)))
+
+    assert all(record.losses for record in done.records)
+    assert provider.requests == []
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-asks-at-a-library-site

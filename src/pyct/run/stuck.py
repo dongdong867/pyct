@@ -207,13 +207,14 @@ class Stuck:
         in_a_row = inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
         return in_a_row or self._stretched(run.bounds, progress, since)
 
-    def between(self, run: Running) -> None:
-        """Give the tool that asks between passes its turn, while it can still ask, with the
-        collector paused, as no input runs. A turn is no moment: it counts toward no
-        ``MOMENTS`` and starts no count of inputs in a row."""
-        if self._between is not None and self._between.can_ask:
+    def between(self, run: Running, progress: Progress) -> None:
+        """Give the tool that asks between passes its turn, while it can still ask and the run
+        goes on with a line to win, with the collector paused, as no input runs. A turn is no
+        moment: it counts toward no ``MOMENTS`` and starts no count of inputs in a row."""
+        tool = self._between
+        if tool is not None and tool.can_ask and _goes_on(run, progress, self._clock()):
             with collector_paused():
-                self._between.between(run)
+                tool.between(run)
 
     def heard(self, record: InputRecord, number: int) -> None:
         """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a
