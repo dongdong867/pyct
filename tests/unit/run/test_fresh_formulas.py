@@ -180,11 +180,11 @@ def test_a_fresh_input_runs_the_loop_as_written_when_its_formula_does_not_compil
     assert {fork.site.line for fork in result.records[0].forks} == {LOOP[0], LOOP[0] + 1}
 
 
-QUARTER = 'def summary(n):\n    return {"answer": n // 4}\n'
+QUARTER = 'def summary(n):\n    return {"answer": n % 4}\n'
 
 
 def call_text(place: tuple[str, int, int], text: str = QUARTER) -> FormulaText:
-    return FormulaText(text, ("n",), ("answer",), place, FILE, "__rshift__", ("n", None))
+    return FormulaText(text, ("n",), ("answer",), place, FILE, "__pow__", ("n", None, None))
 
 
 @pytest.fixture
@@ -224,10 +224,10 @@ def test_each_loss_site_handed_over_is_compiled_into_core_s_table_of_sites(
     assert table == {}
     assert list(calls) == [("calls.py", 11, 11)]
     call = calls[("calls.py", 11, 11)]
-    assert (call.name, call.positions) == ("__rshift__", ("n", None))
+    assert (call.name, call.positions) == ("__pow__", ("n", None, None))
     assert isinstance(call.formula, FormulaRunner)
     assert call.formula.home is None
-    assert call.formula({"n": 13}) == {"answer": 3}
+    assert call.formula({"n": 13}) == {"answer": 1}
 
 
 def test_a_loss_site_coming_into_use_or_handed_over_loads_core_s_module_of_sites(
