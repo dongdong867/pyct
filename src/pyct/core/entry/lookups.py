@@ -47,7 +47,7 @@ def item(container: object, key: object) -> object:
     if type(key) in HASHABLE and _plain_dict(container):
         element = _search(container, key)
         if element is _UNSEARCHED:
-            return _unsearched(container, key, "__getitem__")
+            return _unsearched(container[key], key)
         if element is not NOT_FOUND:
             return _dict_getitem(container, element)
     elif type(key) in _POSITIONS:
@@ -55,18 +55,17 @@ def item(container: object, key: object) -> object:
             return _character(container, cast(ConcolicInt, key))
         if type(container) is list or type(container) is tuple:
             if len(container) > LOOKED_UP_MOST:
-                return _unsearched(container, key, "__getitem__")
+                return _unsearched(container[key], key)  # pyrefly: ignore[bad-index]
             at = _position(container, cast(ConcolicInt, key))
             if at is not None:
                 return container[at]
     return container[key]  # pyrefly: ignore[bad-index]
 
 
-def _unsearched(container: object, key: object, name: str) -> object:
-    """``container[key]`` as Python reads it, then a downgrade named for the read: the lookup is
-    one pyct does not follow. A read that raises records nothing."""
-    answer = container[key]  # pyrefly: ignore[bad-index]
-    lost(cast(Tracked, key).sink, Downgrade(name=name, site=caller_site()))
+def _unsearched(answer: object, key: object) -> object:
+    """The answer of Python's own read, with a downgrade named `__getitem__` for a lookup pyct
+    does not follow. The caller reads in its own frame, which blame reads through."""
+    lost(cast(Tracked, key).sink, Downgrade(name="__getitem__", site=caller_site()))
     return answer
 
 
