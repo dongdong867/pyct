@@ -78,3 +78,14 @@ def test_what_is_left_of_the_budget_still_bounds_a_formula_s_ask(
     left: float | None, marked: bool, limit: float
 ) -> None:
     assert solve_limit(Bounds(solver_timeout=10.0), left, planned(marked=marked)) == limit
+
+
+def test_a_fork_before_the_aimed_one_that_reads_a_formula_gives_the_ask_a_quarter() -> None:
+    forks = (
+        Branch(["<", "t", 3], True, Site("m.py", 5, 3), formulas=(FORMULA,)),
+        Branch([">", "x", 3], False, Site("m.py", 7, 3)),
+    )
+    found = plan(forks)
+    assert found is not None
+
+    assert solve_limit(Bounds(solver_timeout=10.0), None, found) == 2.5

@@ -271,9 +271,11 @@ def test_a_formula_put_in_use_after_the_path_ran_stays_in_use() -> None:
     # the one input so far is input 1, so the formula is in use from input 2
     summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
     fork = Branch(["==", ["%", "n", 4], 1], True, Site(FILE, 41, 7), formulas=(site,))
+    # the aimed fork reads no formula's value, the fork before it does
+    aimed = Branch([">", "n", 9], False, Site(FILE, 45, 7))
 
     def long_at(path: int) -> LongAsk:
-        plan = Plan((fork,), Aim(fork.site, 0), path)
+        plan = Plan((fork, aimed), Aim(aimed.site, 1), path)
         return LongAsk(plan, Timeout(), 2.5)
 
     summaries.ran_long(long_at(0))
@@ -285,5 +287,5 @@ def test_a_formula_put_in_use_after_the_path_ran_stays_in_use() -> None:
 
     assert summaries.states()[0].state is SummaryState.DROPPED
     assert [note for note in notes if isinstance(note, SummaryTakenOut)] == [
-        SummaryTakenOut(site, 2, f"its fork at {fork.site.file}:41:7 timed out", call="__pow__")
+        SummaryTakenOut(site, 2, f"its fork at {FILE}:45:7 timed out", call="__pow__")
     ]
