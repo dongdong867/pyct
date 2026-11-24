@@ -20,15 +20,19 @@ LINES = frozenset(range(1, 100))
 @dataclass
 class Asking:
     """A tool that asks at the n-th moment as the n-th of ``asks`` says, and the last says for
-    each later moment."""
+    each later moment; at its first moment it runs an input that covers ``covers``, if given."""
 
     asks: Sequence[bool]
+    covers: int | None = None
     kind: Kind = Kind.GUESSES
     can_ask: bool = True
     moments: int = 0
 
     def take(self, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
         asked = self.asks[min(self.moments, len(self.asks) - 1)]
+        if self.moments == 0 and self.covers is not None:
+            assert isinstance(moment.run, FakeRun)
+            moment.run.add(self.covers)
         self.moments += 1
         return Handled(tuple(Outcome.SKIPPED for _ in entries), asked=asked)
 
@@ -39,12 +43,14 @@ class Asking:
         return False
 
 
-def seeded(asks: Sequence[bool], bounds: Bounds | None = None) -> tuple[Clock, FakeRun, Stuck]:
+def seeded(
+    asks: Sequence[bool], bounds: Bounds | None = None, covers: int | None = None
+) -> tuple[Clock, FakeRun, Stuck]:
     """A run whose one seed covered line 1, first looked at as its seed ended, at 0."""
     clock = Clock()
     run = FakeRun(bounds=bounds or Bounds(), progress=Progress(Scope(FILE, LINES), frozenset()))
     run.add(1)
-    stuck = Stuck([Asking(asks)], clock)
+    stuck = Stuck([Asking(asks, covers)], clock)
     assert stuck.due(run, run.progress, empty=False) is False
     return clock, run, stuck
 
@@ -78,6 +84,25 @@ def test_an_input_that_covers_a_new_line_brings_the_wait_back_to_5() -> None:
     assert held_at(run, stuck, 30, new_at={9}) == [6, 14, 24]
 
 
+# space-out-stuck-moments-that-ask-nothing-a-new-line-resets
+def test_a_moment_s_own_input_that_covers_a_new_line_brings_the_wait_back_to_5() -> None:
+    _, run, stuck = seeded([False], covers=50)
+
+    # the first moment asks nothing and runs input 7, which covers line 50: the next comes 5
+    # inputs after it, not 10
+    assert held_at(run, stuck, 20) == [7, 12, 22]
+
+
+# space-out-stuck-moments-that-ask-nothing-the-wait-doubles
+def test_a_no_fork_moment_that_asks_nothing_doubles_the_wait() -> None:
+    _, run, stuck = seeded([False])
+    assert stuck.due(run, run.progress, empty=True) is True
+    stuck.hold(run)
+
+    # 10 inputs after the no-fork moment, which ended after input 1, not 5
+    assert held_at(run, stuck, 12) == [11]
+
+
 # space-out-stuck-moments-that-ask-nothing-an-ask-resets
 def test_a_moment_that_asks_brings_the_wait_back_to_5_and_counts_toward_three() -> None:
     _, run, stuck = seeded([False, False, True, True, True, False])
@@ -106,3 +131,21 @@ def test_a_moment_that_asks_nothing_doubles_the_stretch_until_a_new_line() -> No
     assert due_at(held) is False
     assert due_at(held + quarter - 0.1) is False
     assert due_at(held + quarter) is True
+
+
+# space-out-stuck-moments-that-ask-nothing-an-ask-resets
+def test_a_moment_that_asks_brings_the_stretch_back_to_a_quarter() -> None:
+    clock, run, stuck = seeded([False, True], Bounds(until=1000.0, budget=BUDGET))
+    quarter = BUDGET / 4
+
+    def due_at(now: float) -> bool:
+        clock.now = now
+        return stuck.due(run, run.progress, empty=False)
+
+    # the moment at a quarter asks nothing, so the next waits a half; that one asks
+    for now in (quarter, 3 * quarter):
+        assert due_at(now) is True
+        stuck.hold(run)
+
+    assert due_at(4 * quarter - 0.1) is False
+    assert due_at(4 * quarter) is True
