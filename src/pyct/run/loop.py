@@ -26,7 +26,7 @@ from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of, source_of
 from pyct.run.stuck import Stuck
 from pyct.run.tell import Ask, Told
-from pyct.run.waits import site_waits
+from pyct.run.waits import site_waits, solve_limit
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import taking
@@ -370,8 +370,9 @@ def _attempt(
     says so even when another reason also holds, then every line and branch
     covered, then the plateau (``_covered_or_plateau``).
 
-    Each solve gets the solver timeout, or what is left of the budget when
-    that is less, so the budget still bounds the solver. A solver that
+    Each solve gets the solver timeout, a quarter of it when its path holds a fork that reads a
+    formula's value, or what is left of the budget when that is less, so the budget still bounds
+    the solver (``solve_limit``). A solver that
     crashed ends the run as a failure, and so does an input pyct could not
     start a process for. Any other answer is an input to run, or a miss on
     that fork. ``ways.asker`` gives the answer, and the source the input
@@ -389,7 +390,7 @@ def _attempt(
     if stop is not None:
         return Attempt(stop=stop, unrun=unrun)
     origin = inputs[wanted.path]
-    limit = _solve_limit(bounds, left)
+    limit = solve_limit(bounds, left, wanted)
     solved = ways.asker.solved(wanted, origin, limit)
     if site_waits(solved.answer, solved.seconds, limit):
         tree.ran_long()
@@ -478,12 +479,3 @@ def _spent(left: float | None) -> bool:
     """Whether the budget is spent. A deadline that has passed is no time at all; cvc5 reads
     ``--tlimit-per=0`` as no limit."""
     return left is not None and left <= 0
-
-
-def _solve_limit(bounds: Bounds, left: float | None) -> float:
-    """The seconds one solve gets: the solver timeout, or ``left`` when the budget has less.
-
-    ``left`` is read once, before the budget check, so a solve always gets
-    the same time the check found above zero.
-    """
-    return bounds.solver_timeout if left is None else min(bounds.solver_timeout, left)
