@@ -172,9 +172,10 @@ class LongAsk:
 
     @property
     def reason(self) -> str:
-        """Why the formula goes out of use, naming the fork the ask was for."""
+        """Why the formula goes out of use, naming the fork the ask was for, which may read none
+        of the formula's values."""
         site = self.plan.aim.site
-        fork = f"its fork at {site.file}:{site.line}:{site.col}"
+        fork = f"a fork on its path at {site.file}:{site.line}:{site.col}"
         if isinstance(self.ended, Timeout):
             return f"{fork} timed out"
         return f"{fork} answered unknown after {self.seconds:.2f} s"
