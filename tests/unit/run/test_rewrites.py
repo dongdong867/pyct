@@ -11,7 +11,7 @@ from dataclasses import dataclass
 import pytest
 
 from pyct.binding.bind import Seed
-from pyct.branches.plan import plan
+from pyct.branches.plan import Plan, plan
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
@@ -307,3 +307,32 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
     assert wanted is not None
 
     assert around.ask(wanted.asked, wanted, Seed.of({"n": 0})) is None
+
+
+def test_a_try_s_ask_on_a_formula_s_path_gets_a_quarter_of_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits: list[float] = []
+
+    def answered(wanted: Plan, origin: Seed, limit: float, asked: object) -> Solved:
+        limits.append(limit)
+        return Solved(Unsat(), 0.0, Ask(0, wanted.aim, wanted.path, ()))
+
+    monkeypatch.setattr(rewrites_module, "solver_answer", answered)
+    going = types.SimpleNamespace(
+        bounds=types.SimpleNamespace(until=None, solver_timeout=4.0), tell_ask=lambda ask: None
+    )
+    file = loaded(TEXT).file
+    around = _Around(going, Told(Scope.of_module(file), Tell()), Building())  # pyrefly: ignore[bad-argument-type]
+    # the path's first fork reads the value of a formula at line 1, and its aimed fork none
+    wanted = plan(
+        (
+            Branch([">", "t", 3], True, Site(file, 2, 7), formulas=(Site(file, 1, 4),)),
+            Branch(["<", "x", 3], False, Site(file, 3, 7)),
+        )
+    )
+    assert wanted is not None
+
+    around.ask(wanted.asked, wanted, Seed.of({"x": 0}))
+
+    assert limits == [1.0]
