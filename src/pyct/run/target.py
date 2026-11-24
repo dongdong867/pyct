@@ -147,14 +147,17 @@ def load_target(
     )
 
 
-def execution_context(target: Target, *, alone: bool = False) -> ExecutionContext:
+def execution_context(
+    target: Target, *, alone: bool = False, losses: bool = False
+) -> ExecutionContext:
     """What each input of ``target`` calls: its callable and file, the parameters passed by
     position, what their annotations check, and how it builds the instance a method runs on.
-    ``alone`` as ``ExecutionContext`` says."""
+    ``alone`` and ``losses`` as ``ExecutionContext`` says."""
     return ExecutionContext(
         target.fn,
         target.file,
         alone=alone,
+        losses=losses,
         positional=positional_only(target.signature),
         checks=argument_checks(target),
         self_build=_self_build(target),

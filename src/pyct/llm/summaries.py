@@ -12,9 +12,10 @@ from pyct.llm.connection import Connection
 from pyct.llm.replies import last_code_block
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import AskCost, Unanswered
-from pyct.run.code_context import MARK_END, MARK_START
-from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
+from pyct.run.code_context import MARK_END, MARK_START, marks
+from pyct.run.summary_asks import CallAsk, SummaryReply, SummaryRequest
 from pyct.run.summary_checks import answer_form
+from pyct.run.summary_runs import ShownRun
 
 SUMMARIES = Tool(SUMMARIES_TOOL, 6000)
 
@@ -70,8 +71,24 @@ def summary_reply(text: str, cost: AskCost) -> SummaryReply:
 def request_text(request: SummaryRequest) -> str:
     """The exact text a summaries ask sends: the task, which says when runs not shown are checked,
     the loop's code, the names going in and the changed names, the runs shown, the earlier tries
-    at this loop, the operations pyct follows, and the answer's form."""
-    parts = [
+    at this loop, the operations pyct follows, and the answer's form; for a loss site, the same
+    about its call (``_call_parts``)."""
+    noun = "loop" if request.call is None else "call"
+    parts = _loop_parts(request) if request.call is None else _call_parts(request, request.call)
+    if request.tries:
+        tried = "\n".join(
+            f"```python\n{each.formula.rstrip()}\n```\nIt failed: {each.reason}"
+            for each in request.tries
+        )
+        parts.append(f"Your earlier formulas at this {noun}, and why each failed:\n{tried}")
+    parts.append(FOLLOWS)
+    parts.append(answer_form(request.parameters, request.changed, noun))
+    return "\n\n".join(parts)
+
+
+def _loop_parts(request: SummaryRequest) -> list[str]:
+    """What an ask about a loop says before the earlier tries."""
+    return [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
         " branches each input took. A line after the loop below is still missed, since a"
         " condition that guards it reads a value the loop changed, which pyct no longer"
@@ -85,29 +102,46 @@ def request_text(request: SummaryRequest) -> str:
         "Recorded runs of the loop, each as the values going in at its start, then the changed"
         " values at its end, as JSON:\n" + "\n".join(_run(each) for each in request.runs),
     ]
-    if request.tries:
-        tried = "\n".join(
-            f"```python\n{each.formula.rstrip()}\n```\nIt failed: {each.reason}"
-            for each in request.tries
-        )
-        parts.append(f"Your earlier formulas at this loop, and why each failed:\n{tried}")
-    parts.append(FOLLOWS)
-    parts.append(answer_form(request.parameters, request.changed))
-    return "\n\n".join(parts)
 
 
-def _checks(request: SummaryRequest) -> str:
+def _call_parts(request: SummaryRequest, call: CallAsk) -> list[str]:
+    """What an ask about a loss site says before the earlier tries: the task, the code with the
+    site marked and its callee's source or name, the parameters and the runs shown."""
+    above, below = marks("call")
+    then = "" if not call.callee_source else f", then the source of its callee, {call.callee}"
+    parts = [
+        "pyct tests one Python function by running it on inputs a solver finds by flipping the"
+        " branches each input took. pyct no longer follows the value the call below answers,"
+        " since it does not follow the operation or the function it calls, so a condition that"
+        " reads the answer gets no branch. Write a formula that gives the call's answer from"
+        " the values going into it, without making the call. " + _checks(request, "call"),
+        f"Call `{call.written}` at {request.place}, marked in the code by the comments `{above}`"
+        f" and `{below}`. The function's code, then the code of the functions it calls in its"
+        f" package{then}:\n```python\n{request.code}\n```",
+    ]
+    if call.callee is not None and not call.callee_source:
+        parts.append(f"The call's callee is {call.callee}, whose source is not shown.")
+    parts += [
+        f"Values going in, the formula's parameters: {', '.join(request.parameters)}\n"
+        f"The formula's answer: {', '.join(request.changed)}",
+        "Recorded runs of the call, each as the values going in, then its answer, as JSON:\n"
+        + "\n".join(_run(each) for each in request.runs),
+    ]
+    return parts
+
+
+def _checks(request: SummaryRequest, noun: str = "loop") -> str:
     """What the request says pyct checks the formula on: the runs it does not show too, when it
     holds some back."""
     if not request.not_shown:
         return (
-            "pyct checks the formula on the loop's recorded runs, then that it can follow the"
+            f"pyct checks the formula on the {noun}'s recorded runs, then that it can follow the"
             " values the formula gives."
         )
     return (
-        "pyct checks the formula on the loop's recorded runs, the ones shown below and ones this"
-        " request does not show, so a formula that only writes down the runs shown can fail."
-        " Then it checks that it can follow the values the formula gives."
+        f"pyct checks the formula on the {noun}'s recorded runs, the ones shown below and ones"
+        " this request does not show, so a formula that only writes down the runs shown can"
+        " fail. Then it checks that it can follow the values the formula gives."
     )
 
 

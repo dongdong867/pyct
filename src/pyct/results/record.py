@@ -9,7 +9,15 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import Branch, Fact, ForkSite, FormulaDrop, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Fact,
+    ForkSite,
+    FormulaDrop,
+    LossRun,
+    PieceRun,
+    Site,
+)
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
@@ -81,7 +89,8 @@ class InputRecord:
     recorded runs of the pieces of the target's code, with the interception's
     pieces switch on (`pyct.core.entry.pieces`), which no line prints, and
     ``drops`` each loop's formula dropped in the input (`pyct.core.entry.in_use`),
-    which no line prints either.
+    which no line prints either, and ``losses`` the recorded runs of its loss sites, with
+    summaries switched on (`pyct.core.entry.losses`), which no line prints.
     """
 
     args: Mapping[str, object]
@@ -98,6 +107,7 @@ class InputRecord:
     first_covered: Mapping[str, frozenset[int]] = field(default_factory=dict)
     pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
+    losses: tuple[LossRun, ...] = ()
 
 
 class StopKind(StrEnum):

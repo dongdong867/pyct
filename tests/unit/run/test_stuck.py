@@ -11,7 +11,7 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, Tries, WhyEntry
-from pyct.results.coverage import Progress, Scope
+from pyct.results.coverage import Progress, Reach, Scope
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.bounds import Bounds
@@ -130,9 +130,9 @@ def test_each_tool_takes_the_entries_of_its_causes() -> None:
 
     held([guesses, rewrites, summaries])
 
-    assert summaries.handed == [(1, (LOOPED,))]
+    assert summaries.handed == [(1, (LOOPED, NO_SOURCE))]
     assert rewrites.handed == [(1, (TIMED_OUT,))]
-    assert guesses.handed == [(1, (NO_SOURCE, HANDLER, ENDED))]
+    assert guesses.handed == [(1, (HANDLER, ENDED))]
 
 
 def test_the_tools_take_their_turns_in_the_order_summaries_rewrites_guesses() -> None:
@@ -153,13 +153,24 @@ def test_guesses_take_a_switched_off_tool_s_entries_in_line_order() -> None:
 
 
 def test_guesses_take_what_a_tool_gave_up_on_and_not_what_it_took() -> None:
-    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP})
+    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP, NO_SOURCE: Outcome.GAVE_UP})
     rewrites = FakeTool(Kind.REWRITES, {TIMED_OUT: Outcome.TOOK})
     guesses = FakeTool(Kind.GUESSES)
 
     held([summaries, rewrites, guesses])
 
     assert guesses.handed == [(1, (LOOPED, NO_SOURCE, HANDLER, ENDED))]
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-no-source-goes-to-guesses-after-summaries
+def test_guesses_take_an_entry_with_no_source_at_the_moment_summaries_give_it_up() -> None:
+    summaries = FakeTool(Kind.SUMMARIES, {NO_SOURCE: Outcome.GAVE_UP})
+    guesses = FakeTool(Kind.GUESSES)
+
+    held([summaries, guesses], FakeRun(causes_given=(NO_SOURCE,)))
+
+    assert summaries.handed == [(1, (NO_SOURCE,))]
+    assert guesses.handed == [(1, (NO_SOURCE,))]
 
 
 def test_guesses_take_what_a_tool_gave_up_on_at_an_earlier_moment() -> None:
@@ -244,7 +255,7 @@ def test_a_stop_a_tool_meets_ends_the_moment() -> None:
     [
         (LOOPED, Kind.SUMMARIES),
         (TIMED_OUT, Kind.REWRITES),
-        (NO_SOURCE, Kind.GUESSES),
+        (NO_SOURCE, Kind.SUMMARIES),
         (HANDLER, Kind.GUESSES),
         (ENDED, Kind.GUESSES),
         (UNSAT, None),
@@ -286,3 +297,40 @@ def test_a_waiting_tool_s_moment_counts_toward_three_only_when_it_asks(
 
 def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
     assert due([FakeTool(Kind.SUMMARIES, can_ask=False, waits=True)]) is False
+
+
+@dataclass
+class Turns:
+    """A tool that asks between passes, and counts its turns."""
+
+    can_ask: bool = True
+    turns: int = 0
+
+    def between(self, run: object) -> None:
+        self.turns += 1
+
+
+def missing(*lines: int) -> Progress:
+    """The progress of a run of `FILE`'s lines 4 and 5 whose one input covered the others."""
+    progress = Progress(Scope(FILE, frozenset({4, 5})), frozenset())
+    progress.add(frozenset({4, 5}) - set(lines), Reach())
+    return progress
+
+
+@pytest.mark.parametrize(
+    ("run", "progress", "turns"),
+    [
+        pytest.param(FakeRun(), missing(5), 1, id="a line missed"),
+        pytest.param(FakeRun(), missing(), 0, id="every line covered"),
+        pytest.param(FakeRun(stopped=Stop(kind=StopKind.BUDGET)), missing(5), 0, id="a stop met"),
+        pytest.param(FakeRun(bounds=Bounds(until=0.0)), missing(5), 0, id="the budget spent"),
+    ],
+)
+def test_the_turn_between_passes_comes_only_while_the_run_goes_on_with_a_line_to_win(
+    run: FakeRun, progress: Progress, turns: int
+) -> None:
+    tool = Turns()
+
+    Stuck([], between=tool).between(run, progress)
+
+    assert tool.turns == turns

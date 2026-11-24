@@ -109,7 +109,8 @@ class LoopSummary:
     file and the line and column the loop starts at, the names it changes, the last formula a
     reply held, None when no reply held one, what came of its last ask sent, the connection's
     last try number at its place, and the past runs its formula was checked on, None unless its
-    state is ``IN_USE``, ``CHECKED`` or ``DROPPED``."""
+    state is ``IN_USE``, ``CHECKED`` or ``DROPPED``. A loss site is ``kind`` ``call``, named by
+    its downgrade's ``name``."""
 
     file: str
     line: int
@@ -119,3 +120,5 @@ class LoopSummary:
     state: SummaryState
     tries: int
     checked_on: int | None = None
+    kind: str = "loop"
+    name: str | None = None

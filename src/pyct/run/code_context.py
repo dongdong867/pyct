@@ -20,6 +20,7 @@ from collections.abc import Callable, Iterator, Mapping
 from typing import TypeGuard
 
 from pyct.intercept.hook import in_package
+from pyct.results.source_files import SourceFiles, read_source
 from pyct.run.namespaces import file_of, namespace
 from pyct.run.target import Target
 
@@ -35,9 +36,15 @@ type Code = Callable[..., object]
 _STATIC_FUNC = vars(staticmethod)["__func__"]
 _CLASS_FUNC = vars(classmethod)["__func__"]
 
-# the comments that mark a piece's first and last line in the code a summaries ask sends
+# the comments that mark a loop's first and last line in the code a summaries ask sends
 MARK_START = "# >>> the loop"
 MARK_END = "# <<< the loop"
+
+
+def marks(word: str) -> tuple[str, str]:
+    """The comments that mark the first and last line of a piece the ``word`` names, ``loop`` or
+    ``call``, in the code a summaries ask sends."""
+    return f"# >>> the {word}", f"# <<< the {word}"
 
 
 def code_context(target: Target, limit: int = CODE_LIMIT) -> str:
@@ -50,15 +57,19 @@ def code_context(target: Target, limit: int = CODE_LIMIT) -> str:
 
 
 def code_with_piece(
-    target: Target, file: str, lines: tuple[int, int], limit: int = CODE_LIMIT
+    target: Target,
+    file: str,
+    lines: tuple[int, int],
+    word: str = "loop",
+    files: SourceFiles | None = None,
 ) -> str:
     """The source of the innermost function in ``file`` that holds a piece's first and last
-    ``lines``, dedented, the piece between a ``MARK_START`` and a ``MARK_END`` line; then, when
+    ``lines``, dedented, the piece between the two lines ``marks(word)`` gives; then, when
     its module is loaded and holds the function at its top level or in a class there, it is
     headed by its module and name, and its callees in the target's package follow, as
-    ``code_context`` gives them. Empty when the file does not read or parse, or no function
-    holds the piece."""
-    read = _read(file)
+    ``code_context`` gives them, within ``CODE_LIMIT``. The file is read through the run's
+    ``files``. Empty when the file does not read or parse, or no function holds the piece."""
+    read = (files or SourceFiles()).read(file)
     found = None if read is None else _innermost(read[1], lines[0])
     if read is None or found is None:
         return ""
@@ -66,21 +77,39 @@ def code_with_piece(
     written = read[0].splitlines()[first - 1 : last]
     start, end = lines[0] - first, lines[1] - first + 1
     indent = written[start][: len(written[start]) - len(written[start].lstrip())]
-    written[end:end] = [f"{indent}{MARK_END}"]
-    written[start:start] = [f"{indent}{MARK_START}"]
+    above, below = marks(word)
+    written[end:end] = [f"{indent}{below}"]
+    written[start:start] = [f"{indent}{above}"]
     marked = textwrap.dedent("\n".join(written))
     function = _function_at(file, first)
     if function is None:
         return marked
     head = f"# {function.__module__}.{function.__qualname__}\n{marked}"
-    return _gathered([function], {id(function): head}, _package(target), limit)
+    return _gathered([function], {id(function): head}, _package(target), CODE_LIMIT)
+
+
+def function_code(file: str, first: int, head: str, files: SourceFiles | None = None) -> str | None:
+    """The source of the function in ``file`` whose code starts at line ``first``, its first
+    decorator's when it has one, dedented, under a ``# head`` line; None when the file does not
+    read or parse, or no function starts there. The file is read through the run's ``files``."""
+    read = (files or SourceFiles()).read(file)
+    if read is None:
+        return None
+    for node in ast.walk(read[1]):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        start = min([node.lineno, *(each.lineno for each in node.decorator_list)])
+        if start == first:
+            written = "\n".join(read[0].splitlines()[start - 1 : node.end_lineno])
+            return f"# {head}\n{textwrap.dedent(written).rstrip()}"
+    return None
 
 
 def code_around(file: str, line: int, most: int = AROUND_LINES) -> str:
     """The source of the innermost function in ``file`` that holds ``line``, dedented, with no
     callee; the file's own lines when no function does. Past ``most`` lines, the ``most`` lines
     around ``line``. Empty when the file does not read or parse."""
-    read = _read(file)
+    read = read_source(file)
     if read is None:
         return ""
     lines = read[0].splitlines()
@@ -114,16 +143,6 @@ def _gathered(starts: list[Code], written: Mapping[int, str], package: str, limi
 
 def _package(target: Target) -> str:
     return target.spec.partition("::")[0].partition(".")[0]
-
-
-def _read(file: str) -> tuple[str, ast.Module] | None:
-    """The file's source and its tree, or None when it does not read or parse."""
-    try:
-        with open(file, encoding="utf-8") as opened:
-            source = opened.read()
-        return source, ast.parse(source, filename=file)
-    except (OSError, UnicodeDecodeError, SyntaxError, ValueError, RecursionError, MemoryError):
-        return None
 
 
 def _innermost(tree: ast.Module, line: int) -> tuple[int, int] | None:

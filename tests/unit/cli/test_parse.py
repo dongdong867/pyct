@@ -81,6 +81,19 @@ def test_the_run_help_names_the_cache_folder_and_its_variable(
     assert ".pyct_cache/" in help_text and "PYCT_CACHE_DIR" in help_text
 
 
+def test_the_run_help_says_the_code_a_lost_value_passes_through_goes_to_the_provider(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        parse_command(["run", "--help"])
+
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert (
+        "the target's code, and the code a lost value passes through, libraries' included,"
+        " goes to the provider"
+    ) in help_text
+
+
 def test_sweep_reads_the_package_the_list_flag_and_the_limits() -> None:
     assert parse_command(["sweep", "shop", "--list"]) == SweepCommand(
         package="shop", list_only=True

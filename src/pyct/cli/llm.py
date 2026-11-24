@@ -55,7 +55,8 @@ def add_flags(parser: argparse.ArgumentParser) -> None:
         metavar="TOOLS",
         help=(
             f"switch on LLM tools, joined by commas: {', '.join(TOOLS)}, or {ALL};"
-            " the target's code goes to the provider"
+            " the target's code, and the code a lost value passes through, libraries' included,"
+            " goes to the provider"
         ),
     )
     parser.add_argument(
@@ -195,11 +196,14 @@ def note_line(note: Note) -> str | None:
 
 
 def summary_line(note: SummaryNote) -> str:
-    """The stderr line a summaries note gives, the loop's site written ``file:line``, each
-    character a terminal reads escaped as Python escapes it. A formula's statements written
-    below go each on a line of its own, indented."""
+    """The stderr line a summaries note gives, the loop's site written ``file:line``, a loss
+    site's ``the call <name> at file:line:col``, each character a terminal reads escaped as
+    Python escapes it. A formula's statements written below go each on a line of its own,
+    indented."""
     site = note.site
     at = f"llm: summary for the loop at {site.file}:{site.line}"
+    if note.call is not None:
+        at = f"llm: summary for the call {note.call} at {site.file}:{site.line}:{site.col}"
     match note:
         case SummaryRead(_, formula, below=True):
             return f"{at}:" + "".join(f"\n    {_escaped(each)}" for each in formula.splitlines())

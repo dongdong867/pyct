@@ -65,28 +65,31 @@ _MOST_SEED = 2**32 - 1
 
 @dataclass(frozen=True)
 class Fresh:
-    """What every fresh interpreter of one run shares: the target's name and file, one hash seed."""
+    """What every fresh interpreter of one run shares: the target's name and file, one hash seed,
+    and whether each input records the runs of its loss sites (``ExecutionContext.losses``)."""
 
     spec: str
     file: str
     hash_seed: str
+    losses: bool = False
 
 
-def fresh_for(spec: str, file: str) -> Fresh:
-    """The run's fresh interpreters, hashing with the seed pyct was given, or one picked now."""
+def fresh_for(spec: str, file: str, *, losses: bool = False) -> Fresh:
+    """The run's fresh interpreters, hashing with the seed pyct was given, or one picked now;
+    ``losses`` as ``Fresh`` says."""
     # unset or empty, Python hashes at random
     given = os.environ.get("PYTHONHASHSEED") or "random"
     # from the system, never from random's own generator, which is the target's
     drawn = int.from_bytes(os.urandom(4), "little") % _MOST_SEED + 1
     seed = str(drawn) if given == "random" else given
-    return Fresh(spec=spec, file=file, hash_seed=seed)
+    return Fresh(spec=spec, file=file, hash_seed=seed, losses=losses)
 
 
 def in_a_fresh_interpreter(
     fresh: Fresh, args: Mapping[str, object], until: float | None
 ) -> ExecutionResult:
     """Run one input of the run's target in a new interpreter, and read what it did."""
-    handed = _request(fresh.spec, fresh.file, args, until)
+    handed = _request(fresh.spec, fresh.file, args, until, losses=fresh.losses)
     with _journal() as (journal, buffer), handed as request:
         start = functools.partial(_spawned, request, journal, fresh.hash_seed)
         reader = JournalReader(buffer)
@@ -104,11 +107,12 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
     """The one call the request asks for, told to the journal as it happens."""
     with os.fdopen(request, "rb") as handed:
         sys.path[:] = pickle.load(handed)
-        spec, file, args, until, interception = pickle.load(handed)
+        spec, file, args, until, losses, interception = pickle.load(handed)
         install(pickle.load(handed))
     with _intercepting(interception):
         target = dataclasses.replace(load_target(spec, keep_import_lines=False), file=file)
-        return execute(execution_context(target, alone=True), args, until, watch=watch).failure
+        context = execution_context(target, alone=True, losses=losses)
+        return execute(context, args, until, watch=watch).failure
 
 
 def _intercepting(interception: Interception | None) -> contextlib.AbstractContextManager[None]:
@@ -133,7 +137,7 @@ def _journal() -> Generator[tuple[int, mmap.mmap]]:
 
 @contextlib.contextmanager
 def _request(
-    spec: str, file: str, args: Mapping[str, object], until: float | None
+    spec: str, file: str, args: Mapping[str, object], until: float | None, *, losses: bool = False
 ) -> Generator[int]:
     """The input, pickled into an unlinked file: the import path first, then the call, then
     the formulas in use.
@@ -146,7 +150,7 @@ def _request(
         try:
             handed = stack.enter_context(tempfile.TemporaryFile())
             pickle.dump(list(sys.path), handed)
-            pickle.dump((spec, file, dict(args), until, current()), handed)
+            pickle.dump((spec, file, dict(args), until, losses, current()), handed)
             pickle.dump(handed_formulas(), handed)
             handed.flush()
         except (OSError, pickle.PicklingError, TypeError, AttributeError, RecursionError) as error:

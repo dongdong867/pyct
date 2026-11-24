@@ -54,6 +54,7 @@ def record_of(
         solver_seconds=seconds,
         pieces=executed.pieces,
         drops=executed.drops,
+        losses=executed.losses,
     )
 
 

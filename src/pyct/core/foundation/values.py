@@ -21,6 +21,7 @@ from pyct.core.foundation.branch import (
     lost_at,
 )
 from pyct.core.foundation.escapes import lost
+from pyct.core.foundation.heard_losses import HEARS
 
 # the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
@@ -223,8 +224,15 @@ def downgraded(
         if result is NotImplemented:
             return result
         # the call's own caller is where the walk for the site starts
-        lost(self.sink, lost_at(name, sys._getframe(1)), (self, *args, *kwargs.values()))
-        return own(plain, self, base) if result is self else result
+        lost_as = lost_at(name, sys._getframe(1))
+        operands = (self, *args, *kwargs.values())
+        lost(self.sink, lost_as, operands)
+        answer = own(plain, self, base) if result is self else result
+        # a live input that records loss runs hears the loss, with what the target gets
+        hears = HEARS[0]
+        if hears is not None:
+            hears(lost_as, operands, answer)
+        return answer
 
     return downgrade
 
