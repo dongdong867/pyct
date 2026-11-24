@@ -60,7 +60,9 @@ def judged(x: int) -> str:
 
 
 def letter(v: int) -> str:
-    return _LETTERS[v % 3]
+    letters = list(_LETTERS)
+    letters[v % 3] = "z"
+    return letters[2]
 
 
 def lettered(x: int) -> str:
@@ -91,7 +93,9 @@ def lost_inside(x: int) -> int:
 
 
 def picked(x: int) -> str:
-    if [10, 20, 30][x % 3] > 15:
+    sizes = [10, 20, 30]
+    sizes[x % 3] = 0
+    if sizes[1] > 15:
         return "big"
     return "small"
 
