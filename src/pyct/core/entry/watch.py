@@ -94,7 +94,8 @@ class _Open:
     downgrades the process had recorded when its last argument was in hand, and, while a live
     input records loss runs, its callee and its arguments as JSON text
     (`pyct.core.entry.losses`), and, in a file that holds a loss site in use, its arguments as
-    it was given them (`pyct.core.entry.calls_in_use`)."""
+    it was given them, unless an earlier start of it answered at a site not in use
+    (`pyct.core.entry.calls_in_use`)."""
 
     __slots__ = ("at", "callee", "count", "frame", "given", "judged", "tracked", "values")
 
@@ -145,7 +146,11 @@ def called[Callee](callee: Callee, /, *, _ending: Callable[[], bool] = sys.is_fi
         call.values = losses.watching(frame)
         call.callee = callee
         if losses.watched_in(frame.f_code.co_filename):
-            call.given = []
+            # imported here, as a file holds a site in use (`losses.start`)
+            from pyct.core.entry import calls_in_use
+
+            if calls_in_use.keeps_given(frame.f_code, call.at):
+                call.given = []
     _drop_left_at(calls, call)
     if _len(calls) == MOST_OPEN:
         del calls[0]
@@ -182,6 +187,10 @@ def answer[Result](
     if top is None:
         return result
     calls.pop()
+    if top.given is not None:
+        from pyct.core.entry import calls_in_use
+
+        calls_in_use.answered_at(top.frame.f_code, top.at, caller_site())
     tracked = top.tracked
     if tracked is None or escapes.RECORDED[0] != top.count or not _plain(result):
         return result

@@ -36,6 +36,7 @@ attributes.
 from __future__ import annotations
 
 import contextlib
+import types
 from collections.abc import Mapping, Sequence
 from typing import cast
 
@@ -54,14 +55,16 @@ type _Place = tuple[str, int, int]
 
 class _Live:
     """The live input's sites in use, when its call runs alone, none else, the files that hold
-    them, and the sites dropped in it."""
+    them, the sites dropped in it, and, by the code and instruction a watched call starts at,
+    whether it answered at a site in use, with the code held so its id stays its own."""
 
-    __slots__ = ("dropped", "files", "sites")
+    __slots__ = ("answers", "dropped", "files", "sites")
 
     def __init__(self) -> None:
         self.sites: dict[_Place, CallInUse] = {}
         self.files: frozenset[str] = frozenset()
         self.dropped: set[_Place] = set()
+        self.answers: dict[tuple[int, int], tuple[types.CodeType, bool]] = {}
 
 
 LIVE = _Live()
@@ -73,6 +76,7 @@ def start(*, alone: bool) -> None:
     LIVE.sites = dict(CALLS_IN_USE) if alone else {}
     LIVE.files = frozenset(file for file, _, _ in LIVE.sites)
     LIVE.dropped = set()
+    LIVE.answers = {}
 
 
 def forget() -> None:
@@ -80,6 +84,21 @@ def forget() -> None:
     LIVE.sites = {}
     LIVE.files = frozenset()
     LIVE.dropped = set()
+    LIVE.answers = {}
+
+
+def keeps_given(code: types.CodeType, at: int) -> bool:
+    """Whether a watched call that starts at instruction ``at`` of ``code``, in a file that holds
+    a site in use, keeps its arguments as it is given them: unless a start there answered at a
+    site not in use, so that only the site's own call copies its lists and dicts."""
+    held = LIVE.answers.get((id(code), at))
+    return held is None or held[0] is not code or held[1]
+
+
+def answered_at(code: types.CodeType, at: int, site: Site) -> None:
+    """A watched call that kept its arguments, started at instruction ``at`` of ``code``,
+    answered at ``site``."""
+    LIVE.answers[(id(code), at)] = (code, (site.file, site.line, site.col) in LIVE.sites)
 
 
 def answered(

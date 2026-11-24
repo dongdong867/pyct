@@ -141,3 +141,23 @@ def test_a_watched_call_dropped_past_its_first_runs_keeps_the_run_it_failed_on()
     [drop] = [item for item in sink if type(item) is FormulaDrop]
     assert drop.run == MOST_RUNS
     assert sink.index(drop) > sink.index(runs[-1])
+
+
+def test_a_watched_call_beside_the_site_in_use_keeps_its_arguments_on_its_first_start_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied: list[object] = []
+
+    def copying(value: object) -> object:
+        copied.append(value)
+        return value
+
+    monkeypatch.setattr(watch, "as_it_went_in", copying)
+    line = here() + 3
+    with using(line, 12, CallInUse("textwrap.dedent", ("s",), stripped)) as sink:
+        for text in [" a", " b", " c"]:
+            s = ConcolicStr.made(text, "s", sink)
+            answer(called(textwrap.dedent)(given(s)), "textwrap.dedent")
+            answer(called(textwrap.indent)(given(s), " "), "textwrap.indent")
+
+    assert [str(each) for each in copied] == [" a", " a", " b", " c"]
