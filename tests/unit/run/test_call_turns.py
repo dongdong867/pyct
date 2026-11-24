@@ -9,7 +9,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyct.core.entry.calls_in_use import CALLS_IN_USE
+from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.core.foundation.branch import (
     Changed,
     DropReason,

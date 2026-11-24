@@ -13,8 +13,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.core.entry import in_use
-from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
-from pyct.core.entry.in_use import LoopInUse
+from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse, LoopInUse
 from pyct.core.foundation.branch import Site
 from pyct.intercept.hook import Interception, intercepting
 from pyct.intercept.model_code import Refused

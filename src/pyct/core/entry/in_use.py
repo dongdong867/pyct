@@ -108,6 +108,26 @@ class LoopInUse:
 # the loops in use, by the file, line and column of each
 IN_USE: dict[_Place, LoopInUse] = {}
 
+# the one name a loss site's formula gives a value for
+ANSWER = "answer"
+
+
+@dataclass(frozen=True)
+class CallInUse:
+    """A loss site's formula (`pyct.core.entry.calls_in_use`): the name of the downgrade it
+    stands for, each value going in's parameter by its position, None for a constant the formula
+    does not take, and the call that takes each parameter's value by name and answers
+    ``answer``'s."""
+
+    name: str
+    positions: tuple[str | None, ...]
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]]
+
+
+# the loss sites in use, by the file, line and column of each, which an upper layer fills as it
+# fills `IN_USE`
+CALLS_IN_USE: dict[_Place, CallInUse] = {}
+
 
 class Run:
     """A run of a loop in use, waiting on its end: the loop, the piece's names, the values that

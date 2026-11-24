@@ -36,9 +36,9 @@ import dataclasses
 import types
 from collections.abc import Callable, Sequence
 
-from pyct.core.entry import calls_in_use, in_use
+from pyct.core.entry import in_use
 from pyct.core.entry.bases import TRACKED_CLASSES
-from pyct.core.entry.calls_in_use import ANSWER
+from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE
 from pyct.core.entry.recorded import MOST_RUNS, MOST_VALUE, RUN_COUNT, VALUE_COUNT
 from pyct.core.entry.waiting import json_text
 from pyct.core.foundation.branch import (
@@ -64,13 +64,15 @@ _type = type
 
 class _Losses:
     """The live input's recording: where its runs go, the first name at each site, the runs
-    tried and the runs kept at each site, and how often each watched call started, by its
-    frame's code and instruction."""
+    tried and the runs kept at each site, how often each watched call started, by its
+    frame's code and instruction, and the files that hold a loss site in use, none unless its
+    call runs alone."""
 
-    __slots__ = ("calls", "codes", "kept", "names", "sink", "tried")
+    __slots__ = ("calls", "codes", "files", "kept", "names", "sink", "tried")
 
     def __init__(self) -> None:
         self.sink: BranchSink | None = None
+        self.files: frozenset[str] = frozenset()
         self.clear()
 
     def clear(self) -> None:
@@ -88,11 +90,17 @@ _LOSSES = _Losses()
 def start(sink: BranchSink, *, alone: bool = False) -> None:
     """An input that records loss runs goes live: from now on each site's runs go into ``sink``,
     from none, and its call uses the loss sites in use when it runs ``alone`` in a process of
-    its own (`pyct.core.entry.calls_in_use`)."""
+    its own (`pyct.core.entry.calls_in_use`), which is loaded then, when a site is in use."""
     _LOSSES.clear()
     _LOSSES.sink = sink
     HEARS[0] = _operation
-    calls_in_use.start(alone=alone)
+    _LOSSES.files = frozenset()
+    if alone and CALLS_IN_USE:
+        # imported here, once a site is in use, so that a plain run loads none of the sites' work
+        from pyct.core.entry import calls_in_use
+
+        calls_in_use.start(alone=True)
+        _LOSSES.files = calls_in_use.LIVE.files
 
 
 def forget() -> None:
@@ -100,7 +108,17 @@ def forget() -> None:
     HEARS[0] = None
     _LOSSES.sink = None
     _LOSSES.clear()
-    calls_in_use.forget()
+    if _LOSSES.files:
+        from pyct.core.entry import calls_in_use
+
+        calls_in_use.forget()
+        _LOSSES.files = frozenset()
+
+
+def watched_in(file: str) -> bool:
+    """Whether ``file`` holds a loss site in use in the live input, so that a watched call there
+    keeps its arguments as it is given them."""
+    return file in _LOSSES.files
 
 
 def _operation(lost: Downgrade, operands: tuple[object, ...], answer: object) -> object:
@@ -192,7 +210,11 @@ def _heard(
     """A loss heard: what the target gets at a site in use (`calls_in_use.answered`), the run
     recorded by ``run`` when it gives one, and the formula's drop after it. With ``run`` None the
     run is not recorded."""
-    got, drop = calls_in_use.answered(lost, given, answer)
+    got, drop = answer, None
+    if _LOSSES.files:
+        from pyct.core.entry import calls_in_use
+
+        got, drop = calls_in_use.answered(lost, given, answer)
     at = None if run is None else _record(lost, run, past=drop is not None)
     sink = _LOSSES.sink
     if drop is not None and sink is not None:

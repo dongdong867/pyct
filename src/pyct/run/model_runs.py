@@ -36,8 +36,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.annotations import Check
 from pyct.binding.builds import SelfBuild
-from pyct.core.entry.calls_in_use import CALLS_IN_USE
-from pyct.core.entry.in_use import IN_USE
+from pyct.core.entry.in_use import CALLS_IN_USE, IN_USE
 from pyct.core.entry.plain_json import plain_json
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.wrap import bound_builtins

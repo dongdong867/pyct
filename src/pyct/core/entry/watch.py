@@ -57,7 +57,7 @@ import types
 from collections.abc import Callable
 from typing import cast
 
-from pyct.core.entry import calls_in_use, losses
+from pyct.core.entry import losses
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.in_use import as_it_went_in
 from pyct.core.foundation import escapes
@@ -144,7 +144,7 @@ def called[Callee](callee: Callee, /, *, _ending: Callable[[], bool] = sys.is_fi
     if call.judged:
         call.values = losses.watching(frame)
         call.callee = callee
-        if calls_in_use.LIVE.files and calls_in_use.watched_in(frame.f_code.co_filename):
+        if losses.watched_in(frame.f_code.co_filename):
             call.given = []
     _drop_left_at(calls, call)
     if _len(calls) == MOST_OPEN:

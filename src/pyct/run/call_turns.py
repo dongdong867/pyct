@@ -26,7 +26,7 @@ import types
 from collections.abc import Callable
 from typing import Protocol
 
-from pyct.core.entry.calls_in_use import CALLS_IN_USE
+from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.results.llm_asks import SummaryState
 from pyct.results.record import InputRecord

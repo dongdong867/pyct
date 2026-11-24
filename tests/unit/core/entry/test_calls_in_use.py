@@ -10,7 +10,7 @@ import inspect
 from collections.abc import Callable, Iterator, Mapping
 
 from pyct.core.entry import calls_in_use, in_use, losses, pieces
-from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
+from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse
 from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import (

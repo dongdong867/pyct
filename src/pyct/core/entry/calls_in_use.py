@@ -1,8 +1,10 @@
 """The loss sites in use: a site whose answers a checked formula stands for, in a call that runs in
 a process of its own (`pyct.core.entry.losses` calls this module as it hears each loss).
 
-An upper layer puts each site in use in `CALLS_IN_USE`, by its file, line
-and column, before an input starts; `start` reads it then. While the input
+An upper layer puts each site in use in `pyct.core.entry.in_use.CALLS_IN_USE`,
+by its file, line and column, before an input starts; `start` reads it then.
+`pyct.core.entry.losses` loads this module only then, when the table holds a
+site and the input's call runs alone, so that a plain run loads none of it. While the input
 is live and its call runs alone, each time a site in use runs with the
 downgrade the site is in use with, the target's real answer is computed as
 it would be with no formula, then the formula is called on the values going
@@ -34,37 +36,20 @@ attributes.
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
 from typing import cast
 
 from pyct.core.entry import in_use
+from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE, CallInUse
 from pyct.core.entry.plain_copy import SCALARS
 from pyct.core.entry.waiting import json_text
 from pyct.core.foundation.branch import Downgrade, DropReason, FormulaDrop, Site, placed_at
 from pyct.core.numbers.ints import ConcolicInt
 
-# the one name a site's formula gives a value for
-ANSWER = "answer"
 # the real answers a site in use hands on tracked: Python's own, never a subclass
 _ANSWERS = frozenset({int, float, str, bool})
 
 type _Place = tuple[str, int, int]
-
-
-@dataclass(frozen=True)
-class CallInUse:
-    """A loss site's formula: the name of the downgrade it stands for, each value going in's
-    parameter by its position, None for a constant the formula does not take, and the call that
-    takes each parameter's value by name and answers ``answer``'s."""
-
-    name: str
-    positions: tuple[str | None, ...]
-    formula: Callable[[Mapping[str, object]], Mapping[str, object]]
-
-
-# the loss sites in use, by the file, line and column of each
-CALLS_IN_USE: dict[_Place, CallInUse] = {}
 
 
 class _Live:
@@ -95,12 +80,6 @@ def forget() -> None:
     LIVE.sites = {}
     LIVE.files = frozenset()
     LIVE.dropped = set()
-
-
-def watched_in(file: str) -> bool:
-    """Whether ``file`` holds a site in use in the live input, so that a watched call there keeps
-    its arguments as it is given them."""
-    return file in LIVE.files
 
 
 def answered(

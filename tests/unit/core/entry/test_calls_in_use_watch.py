@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator, Mapping
 import pytest
 
 from pyct.core.entry import losses, pieces, substitutes, watch
-from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
+from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse
 from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.entry.watch import answer, called, given
 from pyct.core.foundation import escapes

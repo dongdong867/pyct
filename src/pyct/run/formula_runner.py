@@ -35,8 +35,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
-from pyct.core.entry.in_use import IN_USE, LoopInUse
+from pyct.core.entry.in_use import CALLS_IN_USE, IN_USE, CallInUse, LoopInUse
 from pyct.intercept.model_code import Refused
 from pyct.intercept.wrap import bound_builtins
 from pyct.run.summary_form import SUMMARY, compiled_formula
