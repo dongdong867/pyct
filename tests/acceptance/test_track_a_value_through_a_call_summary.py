@@ -11,12 +11,13 @@ import json
 import textwrap
 from pathlib import Path
 
+from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.core.foundation.branch import Branch
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse
-from pyct.results.record import InputRecord, Source
+from pyct.results.record import InputRecord, Source, StopKind
 from pyct.run.isolation import Isolation
 from tests.acceptance.harness import input_lines, summary_line
 from tests.acceptance.llm_stub import Stub, llm_lines, llm_run
@@ -30,12 +31,15 @@ from tests.acceptance.llm_summaries import (
 from tests.acceptance.lost_calls import (
     CAP,
     DEDENTED,
+    DIVIDED,
     MOD,
     QUARTER,
     SHIFTED,
     SQUARED,
     WRAPPED,
     at,
+    place,
+    places,
 )
 
 # the term of `QUARTER`'s answer, as a fork's expression writes it
@@ -215,3 +219,34 @@ def test_inputs_in_pyct_s_own_process_skip_the_site_with_no_ask(stub: Stub, tmp_
     llm = summary_line(result.stdout)["llm"]
     assert isinstance(llm, dict)
     assert llm["summaries"] == []
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-in-use-under-goal-bugs
+def test_under_goal_bugs_the_site_is_asked_about_past_full_coverage() -> None:
+    bugs = FakeSummaries([QUARTER])
+
+    done = run_summaries(DIVIDED, {"n": 3}, bugs, Limits(plateau=Plateau(20), goal=Goal.BUGS))
+
+    assert places(bugs) == [place(11, 11)]
+    assert bugs.inputs_then == [1]
+    failed = [record for record in after_checked(done) if record.failure is not None]
+    assert failed, done.said
+    assert n_of(failed[0]) in range(28, 32)
+    assert failed[0].source is Source.SUMMARY
+    failure = failed[0].failure
+    assert failure is not None
+    assert "ZeroDivisionError" in failure.detail
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-in-use-under-goal-bugs, its coverage goal half. The
+# seed's input leaves no fork, so the run stops on `no fork to flip`, which the loop names before
+# `every line and branch covered` (`pyct.run.loop._attempt`)
+def test_under_goal_coverage_the_run_stops_after_the_seed_with_no_ask() -> None:
+    coverage = FakeSummaries([QUARTER])
+
+    done = run_summaries(DIVIDED, {"n": 3}, coverage, Limits(plateau=Plateau(20)))
+
+    assert done.result.stopped is not None
+    assert done.result.stopped.kind is StopKind.NO_FORK
+    assert len(done.records) == 1
+    assert coverage.requests == []

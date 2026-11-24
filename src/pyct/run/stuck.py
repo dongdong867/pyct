@@ -212,13 +212,14 @@ class Stuck:
 
     def between(self, run: Running, progress: Progress) -> None:
         """Give the tool that asks between passes its turn, while it can still ask and the run
-        goes on with a line to win, with the collector paused, as no input runs; then, with the
+        goes on with a line to win, or, for the bugs goal, goes on at all, with the collector
+        paused, as no input runs; then, with the
         collector on, the inputs it runs again. A turn is no moment: it counts toward no
         ``MOMENTS`` and starts no count of inputs in a row."""
         tool = self._between
         if tool is None:
             return
-        if tool.can_ask and _goes_on(run, progress, self._clock()):
+        if tool.can_ask and _turns_go_on(run, progress, self._clock()):
             with collector_paused():
                 tool.between(run)
         tool.run_again(run)
@@ -332,6 +333,16 @@ def _goes_on(run: Running, progress: Progress, now: float) -> bool:
         return False
     full = bounds.goal is Goal.COVERAGE and progress.full()
     return progress.missed() and not full
+
+
+def _turns_go_on(run: Running, progress: Progress, now: float) -> bool:
+    """Whether a turn between passes comes: as ``_goes_on`` says, or, for the bugs goal, which
+    goes on past every line covered, while no stop is met and the budget is not spent at
+    ``now``."""
+    bounds = run.bounds
+    if bounds.goal is not Goal.BUGS:
+        return _goes_on(run, progress, now)
+    return run.stopped is None and (bounds.until is None or bounds.until > now)
 
 
 def _left(until: float | None, now: float) -> float | None:
