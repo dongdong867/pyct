@@ -54,6 +54,7 @@ def test_a_plain_dict_s_get_tries_each_key() -> None:
     assert plain_lookups.found("US") == "us"
     at = line_of("found", "METAS.get(s)")
     assert placed(seed, at) == [(["==", "s", "'US'"], True)]
+    assert seed["downgrades"] == []
     check_every_return_is_covered("found", result.stdout)
     assert {"FR", "DE"} <= keys_tried(result.stdout)
 

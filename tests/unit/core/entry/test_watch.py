@@ -287,13 +287,11 @@ def test_a_plain_dict_s_get_is_handed_back_as_the_router() -> None:
 
     found = answer(called(metas.get)(given(s)), "get")
 
-    # one fork per key tried, and the lookup was seen: the call records no downgrade
     assert found == 33
     assert [(item.expression, item.taken) for item in sink if isinstance(item, Branch)] == [
         (["==", "s", "'US'"], False),
         (["==", "s", "'FR'"], True),
     ]
-    assert lost(sink) == []
 
 
 def test_a_dict_subclass_with_its_own_get_keeps_its_callee() -> None:

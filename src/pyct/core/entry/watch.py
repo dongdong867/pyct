@@ -6,7 +6,9 @@ and gives back a plain one.
 ``called`` notes that a call starts and whether pyct can see inside its
 callee, each argument passes through ``given``, and ``answer`` reads the
 call's answer. The callee runs from the target's own frame, with no frame of
-pyct's above it, and every function here hands back what it was given.
+pyct's above it, and every function here hands back what it was given, but
+for a plain dict's own `get`, which ``called`` hands back as the router that
+reads it as a lookup (`pyct.core.entry.lookups`).
 
 pyct sees inside a function of the target's package, whose module runs with
 the builtins pyct binds, so a call of one, reached directly or through at
@@ -57,7 +59,7 @@ import types
 from collections.abc import Callable
 from typing import cast
 
-from pyct.core.entry import losses
+from pyct.core.entry import lookups, losses
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.in_use import as_it_went_in
 from pyct.core.foundation import escapes
@@ -152,7 +154,7 @@ def called[Callee](callee: Callee, /, *, _ending: Callable[[], bool] = sys.is_fi
     if _len(calls) == MOST_OPEN:
         del calls[0]
     calls.append(call)
-    return callee
+    return lookups.routed(callee)
 
 
 def given[Value](value: Value, /, *, _ending: Callable[[], bool] = sys.is_finalizing) -> Value:
