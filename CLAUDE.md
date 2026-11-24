@@ -55,9 +55,10 @@ enforces this. `cli/` sits above the stack, `config` and `utils` below it.
 │   │                 reply read and checked, the ask on the same path, the tries, the rewrites
 │   │                 kept. run passes in the run as the tries see it, through `Around`
 │   ├── intercept/    builtin interception, one import hook: the target's package loads with
-│   │                 a fixed set of operations, `is True`, `in`, conversions and literal
-│   │                 operands, substituted by calls into core, kept in `.pyct_cache/` or
-│   │                 `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's own.
+│   │                 a fixed set of operations, `is True`, `in`, index reads `x[k]`,
+│   │                 conversions and literal operands, substituted by calls into core, kept
+│   │                 in `.pyct_cache/` or `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and
+│   │                 `chr` bound to core's own.
 │   │                 model_code.py compiles model-written code the same way, and runs none of it.
 │   │                 With the pieces switch on, loops.py writes hooks around each loop and
 │   │                 comprehension's assignment that changes a name, so core records its runs

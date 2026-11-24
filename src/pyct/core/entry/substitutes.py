@@ -49,7 +49,7 @@ from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from pyct.core.dicts.dicts import ConcolicDict
-from pyct.core.entry import bound
+from pyct.core.entry import bound, lookups
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.handed import PASSING as HANDED_PASSING
 from pyct.core.entry.handed import handed as handed  # substituted modules import it from here
@@ -488,4 +488,5 @@ PASSING: frozenset[types.CodeType] = (
     | HANDED_PASSING
     | FORMATS_PASSING
     | bound.PASSING
+    | lookups.PASSING
 )
