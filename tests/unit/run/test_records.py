@@ -25,10 +25,14 @@ def test_a_record_holds_the_recorded_runs_of_its_call_s_pieces() -> None:
     assert InputRecord(args={}, forks=(), covered_lines=frozenset()).pieces == ()
 
 
+# the site of a formula a marked fork reads
+FORMULA = Site("m.py", 4, 4)
+
+
 def aimed(*, summary: bool) -> object:
     forks = (
         Branch(["<", "x", 3], True, Site("m.py", 2, 3)),
-        Branch([">", "t", 3], False, Site("m.py", 5, 3), summary=summary),
+        Branch([">", "t", 3], False, Site("m.py", 5, 3), formulas=(FORMULA,) if summary else ()),
     )
     return plan(forks)
 
