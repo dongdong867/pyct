@@ -136,6 +136,14 @@ def test_a_later_fork_that_reads_the_formula_s_term_is_marked() -> None:
     ]
 
 
+def test_a_fork_that_reads_a_site_s_answer_names_the_site() -> None:
+    with using(by_four) as sink:
+        k = quarter(tracked(13, sink))
+        _ = bool(k == 7)
+
+    assert [fork.formulas for fork in forks(sink)] == [(QUARTER,)]
+
+
 def raising(values: Mapping[str, object]) -> Mapping[str, object]:
     raise ValueError("no")
 

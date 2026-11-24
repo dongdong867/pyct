@@ -25,7 +25,8 @@ module, hints and the build of ``self``, so their constructors run there once
 more, and reads each field through pyct's reader, which reads only what the
 instance stores (``pyct.binding.stored``); the reader's refusal fails the try
 with its reason. A rewrite's run, as each solver ask, gets the solver
-timeout, or less when the budget has less.
+timeout, or less when the budget has less; an ask whose path holds a fork that
+reads a formula's value gets a quarter of it (``pyct.run.waits.solve_limit``).
 
 The rewrite's input, and each input a kept rewrite's ask gives, says
 ``"source": "rewrite"``. A kept rewrite whose input takes the other side is
@@ -71,6 +72,7 @@ from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target, execution_context
 from pyct.run.tell import Ask, Told
 from pyct.run.token_limit import TokenLimit
+from pyct.run.waits import solve_limit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.given import Given
 
@@ -223,9 +225,9 @@ class _Around:
         return None if can_fork() else CANNOT_FORK
 
     def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
-        """The solver's answer within the seconds one ask gets, its programs handed out as the
-        run's asks are; None when no time is left."""
-        limit = self._limit()
+        """The solver's answer within the seconds one ask gets (`solve_limit`), its programs
+        handed out as the run's asks are; None when no time is left."""
+        limit = solve_limit(self.run.bounds, self._budget_left(), plan)
         if limit <= 0:
             return None
         solved = solver_answer(plan, origin, limit, asked)
@@ -234,10 +236,14 @@ class _Around:
 
     def _limit(self) -> float:
         """The solver timeout, or the budget's rest when that is less."""
-        bounds = self.run.bounds
-        if bounds.until is None:
-            return bounds.solver_timeout
-        return min(bounds.solver_timeout, bounds.until - time.monotonic())
+        left = self._budget_left()
+        timeout = self.run.bounds.solver_timeout
+        return timeout if left is None else min(timeout, left)
+
+    def _budget_left(self) -> float | None:
+        """The seconds left of the budget, none without one."""
+        until = self.run.bounds.until
+        return None if until is None else until - time.monotonic()
 
     def pause(self, seconds: float) -> None:
         self.run.pause(seconds)

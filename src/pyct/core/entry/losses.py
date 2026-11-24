@@ -250,7 +250,7 @@ def _record(lost: Downgrade, run: Callable[[], LossRun | None], *, past: bool) -
     sink = _LOSSES.sink
     with contextlib.suppress(Exception):
         site = lost.site
-        if sink is None or in_use.USING.forming:
+        if sink is None or in_use.USING.forming is not None:
             return None
         if _LOSSES.names.setdefault(site, lost.name) != lost.name:
             return None

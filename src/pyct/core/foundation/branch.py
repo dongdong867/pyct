@@ -97,9 +97,9 @@ class Branch:
     `is` held on that pass; None on any other fork. see-why reads an `is` test's sides from it
     (``results.senses``). Like ``lost_as``, it is not part of the fork, and it is not printed.
 
-    ``summary`` is set on a fork a loop's formula recorded, or whose condition reads a value a
-    formula gave (``pyct.core.entry.in_use.summed``): an input aimed at it is labeled
-    ``summary``. Like ``lost_as``, it is not part of the fork, and it is not printed.
+    ``formulas`` names, in code order, the site of each formula whose own code recorded the fork
+    or whose value its condition reads (``pyct.core.entry.in_use.summed``). Like ``lost_as``, it
+    is not part of the fork, and it is not printed.
     """
 
     expression: Expression
@@ -108,7 +108,12 @@ class Branch:
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
     is_held: bool | None = field(default=None, compare=False)
-    summary: bool = field(default=False, compare=False)
+    formulas: tuple[Site, ...] = field(default=(), compare=False)
+
+    @property
+    def summary(self) -> bool:
+        """Whether a formula gave the fork, so that an input aimed at it is labeled ``summary``."""
+        return bool(self.formulas)
 
     @property
     def where(self) -> ForkSite:

@@ -53,14 +53,16 @@ def test_a_fork_with_no_note_is_written_in_six_items() -> None:
 
 
 @pytest.mark.parametrize("held", [True, False, None])
-def test_a_summary_fork_reads_back_marked_with_its_note(held: bool | None) -> None:
-    branch = Branch(["<", "x", 9], True, SITE, is_held=held, summary=True)
+def test_a_summary_fork_reads_back_with_its_formulas(held: bool | None) -> None:
+    formulas = (Site(file="t.py", line=2, col=4), Site(file="u.py", line=8, col=0))
+    branch = Branch(["<", "x", 9], True, SITE, is_held=held, formulas=formulas)
 
     record, branches, notes = written(branch)
 
-    assert record[6:] == [held, True]
+    assert record[6:] == [held, [["t.py", 2, 4], ["u.py", 8, 0]]]
     assert branches == (branch,)
     assert notes == [held]
+    assert [each.formulas for each in branches] == [formulas]
     assert [each.summary for each in branches] == [True]
 
 

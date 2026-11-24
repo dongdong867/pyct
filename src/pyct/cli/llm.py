@@ -36,6 +36,7 @@ from pyct.run.notes import (
     SummaryNotUsed,
     SummaryRead,
     SummarySkipped,
+    SummaryTakenOut,
 )
 from pyct.run.tell import Noted
 
@@ -189,6 +190,7 @@ def note_line(note: Note) -> str | None:
             | SummarySkipped()
             | SummaryNotUsed()
             | SummaryDropped()
+            | SummaryTakenOut()
         ):
             return summary_line(note)
         case _:
@@ -209,10 +211,9 @@ def summary_line(note: SummaryNote) -> str:
             return f"{at}:" + "".join(f"\n    {_escaped(each)}" for each in formula.splitlines())
         case SummaryRead(_, formula):
             return _escaped(f"{at}: {formula}")
-        case SummaryChecked(_, runs, 0):
-            return _escaped(f"{at}: checked on {runs} past runs")
         case SummaryChecked(_, runs, not_shown):
-            return _escaped(f"{at}: checked on {runs} past runs, {not_shown} of them not shown")
+            hidden = f", {not_shown} of them not shown" if not_shown else ""
+            return _escaped(f"{at}: checked on {runs} past runs{hidden}")
         case SummaryFailed(_, attempt, reason):
             return _escaped(f"{at}, try {attempt}: {reason}")
         case SummarySkipped(_, reason):
@@ -221,6 +222,8 @@ def summary_line(note: SummaryNote) -> str:
             return _escaped(f"{at} not used: {reason}")
         case SummaryDropped(_, number, reason):
             return _escaped(f"{at} dropped at input {number}: {reason}")
+        case SummaryTakenOut(_, number, reason):
+            return _escaped(f"{at} taken out of use at input {number}: {reason}")
 
 
 def rewrite_line(note: RewriteNote) -> str:

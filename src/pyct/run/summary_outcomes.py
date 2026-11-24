@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Source, SourceKind, WhyEntry
 from pyct.results.llm_asks import SummaryState
+from pyct.run.notes import SummaryTakenOut
 from pyct.run.stuck import Outcome
 from pyct.run.summary_asks import EarlierFormula
 from pyct.run.summary_checks import CompleteRun
@@ -49,6 +50,9 @@ class LoopState:
     asked_for: set[tuple[str, int]] = field(default_factory=set, compare=False)
     kind: str = "loop"
     name: str | None = None
+    # the number of the first input that ran with the formula in use, from 1: a fork a path
+    # that ran earlier holds reads no value of it
+    in_use_from: int = field(default=0, compare=False)
 
 
 def sources_of(entry: WhyEntry, kind: SourceKind) -> list[Source]:
@@ -71,3 +75,21 @@ def outcome(
     if all(each is Asked.CHECKED for each in loops) and all(c is Outcome.TOOK for c in calls):
         return Outcome.TOOK
     return Outcome.SKIPPED
+
+
+def leave_use(state: LoopState, why: str, failed_on: CompleteRun | None) -> None:
+    """A formula that went out of use, for ``why``: its loop's state is ``dropped``, the formula
+    is kept among its earlier tries with ``why``, and ``failed_on`` is the run its next ask
+    shows first."""
+    state.last = SummaryState.DROPPED
+    state.dropped = True
+    state.tries.append(EarlierFormula(state.formula or "", why))
+    state.failed_on = failed_on
+
+
+def take_out(state: LoopState, site: Site, number: int, reason: str) -> SummaryTakenOut:
+    """A formula in use that pyct takes out because the path of the run's input ``number`` holds
+    a fork that reads its value and whose ask ran long: its state as ``leave_use`` leaves it,
+    with no run to show first, and the note to say."""
+    leave_use(state, f"taken out of use at input {number}: {reason}", None)
+    return SummaryTakenOut(site, number, reason, call=state.name)

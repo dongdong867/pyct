@@ -31,7 +31,7 @@ import enum
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
@@ -43,6 +43,8 @@ from pyct.results.record import InputRecord, Source, Stop
 from pyct.run.bounds import Bounds
 from pyct.run.collector import collector_paused
 from pyct.run.tell import Ask
+from pyct.run.waits import solve_limit
+from pyct.solver.answer import Answer, Timeout, Unknown
 
 # the most moments of a run in which a tool asked the LLM
 MOMENTS = 3
@@ -139,6 +141,46 @@ class StuckTool(Protocol):
     def waiting(self, moment: Moment) -> bool: ...
 
 
+@dataclass(frozen=True)
+class LongAsk:
+    """A pick whose ask ran long, on a path that holds a fork that reads a formula's value: its
+    plan, how its ask ended, and the seconds the ask took."""
+
+    plan: Plan
+    ended: Timeout | Unknown
+    seconds: float
+
+    @classmethod
+    def of(
+        cls, plan: Plan, ended: Answer, seconds: float, limit: float, bounds: Bounds
+    ) -> LongAsk | None:
+        """The long ask of a pick whose ask ended as ``ended`` and ran long (``site_waits``),
+        when ``plan``'s path holds a fork that reads a formula's value and ``limit``, the one
+        the ask was given, is the formula's own, which the budget did not cut."""
+        if not isinstance(ended, Timeout | Unknown):
+            return None
+        if not any(fork.formulas for fork in plan.prefix) or limit < solve_limit(
+            bounds, None, plan
+        ):
+            return None
+        return cls(plan, ended, seconds)
+
+    @property
+    def number(self) -> int:
+        """The number, from 1, of the run's input whose path the plan extends."""
+        return self.plan.path + 1
+
+    @property
+    def reason(self) -> str:
+        """Why the formula goes out of use, naming the fork the ask was for, which may read none
+        of the formula's values."""
+        site = self.plan.aim.site
+        fork = f"a fork on its path at {site.file}:{site.line}:{site.col}"
+        if isinstance(self.ended, Timeout):
+            return f"{fork} timed out"
+        return f"{fork} answered unknown after {self.seconds:.2f} s"
+
+
 class Between(Protocol):
     """A tool that asks between two passes, with no moment: summaries, about each loss site an
     input recorded a run of, then runs again the inputs the formulas it put in use were checked
@@ -150,6 +192,14 @@ class Between(Protocol):
     def between(self, run: Running) -> None: ...
 
     def run_again(self, run: Running) -> None: ...
+
+
+@runtime_checkable
+class TakesOut(Protocol):
+    """A tool between passes that holds formulas in use, and takes out of use each one whose
+    value the path of a pick whose ask ran long reads."""
+
+    def ran_long(self, long: LongAsk) -> None: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -245,6 +295,12 @@ class Stuck:
             with collector_paused():
                 tool.between(run)
         tool.run_again(run)
+
+    def ran_long(self, long: LongAsk) -> None:
+        """Tell the tool that asks between passes of a pick whose ask ran long on a path that
+        holds a formula's fork, so that it takes out the formulas that path reads."""
+        if isinstance(self._between, TakesOut):
+            self._between.ran_long(long)
 
     def heard(self, record: InputRecord, number: int) -> None:
         """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a

@@ -9,20 +9,22 @@ from typing import Any
 
 import pytest
 
+from pyct.branches.plan import Plan
 from pyct.core.entry.in_use import CALLS_IN_USE
-from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, Site
+from pyct.core.foundation.branch import Branch, Changed, GoingIn, LossKind, LossRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, SummaryState
-from pyct.results.record import InputRecord, Stop, StopKind
+from pyct.results.record import Aim, InputRecord, Stop, StopKind
 from pyct.run import model_runs
-from pyct.run.notes import Note, SummarySkipped
-from pyct.run.stuck import Moment, Outcome
+from pyct.run.notes import Note, SummarySkipped, SummaryTakenOut
+from pyct.run.stuck import LongAsk, Moment, Outcome
 from pyct.run.summaries import Summaries
 from pyct.run.summary_asks import SummaryReply, SummaryRequest
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
 from pyct.run.token_limit import TokenLimit
+from pyct.solver.answer import Timeout
 from tests.unit.run.test_summaries import Run
 
 FILE = load_target("targets.summaries.calls::deep").file
@@ -260,3 +262,30 @@ def test_a_run_parses_the_file_of_its_loss_sites_once(monkeypatch: pytest.Monkey
 
     assert len(fake.requests) == 4
     assert parsed.count(FILE) == 1
+
+
+def test_a_formula_put_in_use_after_the_path_ran_stays_in_use() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    site = Site(FILE, 37, 8)
+    # the one input so far is input 1, so the formula is in use from input 2
+    summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
+    fork = Branch(["==", ["%", "n", 4], 1], True, Site(FILE, 41, 7), formulas=(site,))
+    # the aimed fork reads no formula's value, the fork before it does
+    aimed = Branch([">", "n", 9], False, Site(FILE, 45, 7))
+
+    def long_at(path: int) -> LongAsk:
+        plan = Plan((fork, aimed), Aim(aimed.site, 1), path)
+        return LongAsk(plan, Timeout(), 2.5)
+
+    summaries.ran_long(long_at(0))
+
+    assert summaries.states()[0].state is SummaryState.IN_USE
+    assert not any(isinstance(note, SummaryTakenOut) for note in notes)
+
+    summaries.ran_long(long_at(1))
+
+    assert summaries.states()[0].state is SummaryState.DROPPED
+    assert [note for note in notes if isinstance(note, SummaryTakenOut)] == [
+        SummaryTakenOut(site, 2, f"a fork on its path at {FILE}:45:7 timed out", call="__pow__")
+    ]

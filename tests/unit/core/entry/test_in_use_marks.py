@@ -1,5 +1,6 @@
 """A fork that reads a value a loop's formula gave, or that the formula's own code records, is
-marked ``summary`` (`pyct.core.entry.in_use.summed`); every other fork is handed back as it is."""
+marked ``summary`` and names the formulas whose values it reads (`pyct.core.entry.in_use.summed`);
+every other fork is handed back as it is."""
 
 from collections.abc import Mapping
 
@@ -46,6 +47,19 @@ def marked_with(
     source: str, loops: Mapping[tuple[int, int], LoopInUse], s: str
 ) -> list[tuple[int, bool]]:
     """As `marked`, with each loop at its line and column in use."""
+    return [(each.site.line, each.summary) for each in forks_of(source, loops, s)]
+
+
+def named(
+    source: str, loops: Mapping[tuple[int, int], LoopInUse], s: str
+) -> list[tuple[int, tuple[Site, ...]]]:
+    """Each fork of the source's `f` on ``s``, with each loop in use, as the line it sits at and
+    the sites of the formulas it names."""
+    return [(each.site.line, each.formulas) for each in forks_of(source, loops, s)]
+
+
+def forks_of(source: str, loops: Mapping[tuple[int, int], LoopInUse], s: str) -> list[Branch]:
+    """Each fork of the source's `f` on ``s``, with each loop in use, as `summed` marked it."""
     f = hooked(source)
     sink = Marking()
     in_use.IN_USE.update({(FILE, *at): loop for at, loop in loops.items()})
@@ -55,7 +69,11 @@ def marked_with(
     finally:
         pieces.forget()
         in_use.IN_USE.clear()
-    return [(each.site.line, each.summary) for each in sink if type(each) is Branch]
+    return [each for each in sink if type(each) is Branch]
+
+
+def loop_at(line: int, col: int) -> Site:
+    return Site(FILE, line, col)
 
 
 def test_a_fork_after_the_loop_that_reads_the_formula_s_value_is_marked() -> None:
@@ -72,6 +90,80 @@ def test_a_fork_the_formula_s_own_code_records_is_marked() -> None:
         return {"t": t + s.count("z")}
 
     assert marked(AROUND, AT, guarded, "ab") == [(2, False), (5, True), (8, True), (10, False)]
+
+
+def test_a_fork_that_reads_a_formula_s_value_names_its_loop() -> None:
+    loops = {AT: LoopInUse(("s", "t"), ("t",), counted)}
+
+    assert named(AROUND, loops, "ab") == [(2, ()), (8, (loop_at(*AT),)), (10, ())]
+
+
+def test_a_fork_the_formula_s_own_code_records_names_its_loop() -> None:
+    def guarded(values: Mapping[str, object]) -> Mapping[str, object]:
+        s, t = values["s"], values["t"]
+        assert isinstance(s, str)
+        assert isinstance(t, int)
+        if s.count("z") > 5:
+            return {"t": t + 5}
+        return {"t": t + s.count("z")}
+
+    loop = loop_at(*AT)
+
+    assert named(AROUND, {AT: LoopInUse(("s", "t"), ("t",), guarded)}, "ab") == [
+        (2, ()),
+        (5, (loop,)),
+        (8, (loop,)),
+        (10, ()),
+    ]
+
+
+TWO_LOOPS = """\
+def f(s):
+    t = 0
+    for c in s:
+        if c == "z":
+            t += 1
+    n = {start}
+    for c in s:
+        if c == "y":
+            n += 1
+    if {test}:
+        return 1
+    return 0
+"""
+
+
+def letter(name: str, wanted: str) -> Formula:
+    """The formula of a loop that adds the count of ``wanted`` in ``s`` to ``name``."""
+
+    def formula(values: Mapping[str, object]) -> Mapping[str, object]:
+        s, held = values["s"], values[name]
+        assert isinstance(s, str)
+        assert isinstance(held, int)
+        return {name: held + s.count(wanted)}
+
+    return formula
+
+
+def test_a_fork_that_reads_two_formulas_values_names_both() -> None:
+    loops = {
+        (3, 4): LoopInUse(("s", "t"), ("t",), letter("t", "z")),
+        (7, 4): LoopInUse(("n", "s"), ("n",), letter("n", "y")),
+    }
+    # the condition reads `n` first, and the fork names the loops in code order
+    source = TWO_LOOPS.format(start="0", test="n + t > 3")
+
+    assert named(source, loops, "ab") == [(10, (loop_at(3, 4), loop_at(7, 4)))]
+
+
+def test_a_value_a_formula_built_from_another_s_names_both() -> None:
+    loops = {
+        (3, 4): LoopInUse(("s", "t"), ("t",), letter("t", "z")),
+        (7, 4): LoopInUse(("n", "s"), ("n",), letter("n", "y")),
+    }
+    source = TWO_LOOPS.format(start="t", test="n > 3")
+
+    assert named(source, loops, "ab") == [(10, (loop_at(3, 4), loop_at(7, 4)))]
 
 
 def test_a_fork_with_no_formula_value_in_the_input_is_handed_back_as_it_is() -> None:
@@ -107,18 +199,16 @@ INNER = (5, 8)
 def test_a_part_found_clean_is_not_walked_again_after_a_later_match_in_the_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    walked = in_use._reads_a_formula
+    walked = in_use._formulas_read
     known: list[bool] = []
 
-    def watched(
-        expression: Expression, reads: dict[int, list[Expression]], clean: set[int]
-    ) -> bool:
+    def watched(expression: Expression) -> frozenset[Site]:
         # each `u == "zzx"` is a new list; the term of `u` inside it is the same one
         assert isinstance(expression, list)
-        known.append(id(expression[1]) in clean)
-        return walked(expression, reads, clean)
+        known.append(id(expression[1]) in in_use.USING.clean)
+        return walked(expression)
 
-    monkeypatch.setattr(in_use, "_reads_a_formula", watched)
+    monkeypatch.setattr(in_use, "_formulas_read", watched)
 
     assert marked(TWICE, INNER, counted, "ab") == [(8, False), (8, False)]
     # the second `u == "zzx"` comes after the inner loop's second match, and `u` is known clean
