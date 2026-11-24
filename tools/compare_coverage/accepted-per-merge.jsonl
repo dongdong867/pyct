@@ -177,6 +177,10 @@
 {"set": "v2", "target": "targets.intercept.threaded_identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [18]}
 {"set": "v2", "target": "targets.intercept.type_errors::in_set", "seed": {"items": [1]}, "status": "differs", "only_legacy": [10], "only_v2": []}
 {"set": "v2", "target": "targets.intercept.walked_codes::high", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.ints.bit_check::parity", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.ints.bit_fields::each_operator", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [11, 13, 15, 17, 20]}
+{"set": "v2", "target": "targets.ints.bit_fields::field", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.ints.bit_fields::two_masks", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [26, 28]}
 {"set": "v2", "target": "targets.ints.compare_deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.constant_power::root", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ints.counted_up::count_up", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}
