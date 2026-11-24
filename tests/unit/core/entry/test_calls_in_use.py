@@ -145,6 +145,13 @@ def test_a_mismatch_a_raise_and_a_missing_answer_each_drop_the_formula() -> None
         (squared, "169", DropReason.MISMATCH),
         (raising, "ValueError", DropReason.RAISED),
         (lambda values: {}, "", DropReason.MISSING),
+        # an answer with no JSON text, written as Python writes it, cut short
+        (lambda values: {"answer": (3, 1)}, "(3, 1)", DropReason.MISMATCH),
+        (
+            lambda values: {"answer": tuple(range(99))},
+            "(0, 1, 2, 3, 4, 5, ...)",
+            DropReason.MISMATCH,
+        ),
     ]
     for formula, got, reason in cases:
         with using(formula) as sink:

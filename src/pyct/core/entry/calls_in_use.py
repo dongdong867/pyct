@@ -36,6 +36,7 @@ attributes.
 from __future__ import annotations
 
 import contextlib
+import reprlib
 import types
 from collections.abc import Mapping, Sequence
 from typing import cast
@@ -149,7 +150,8 @@ def _formed(
     result = got[ANSWER]
     text = json_text(result)
     if text is None or text != json_text(real):
-        return real, _dropped(place, site, real, text or "", DropReason.MISMATCH)
+        got_text = text if text is not None else _written(result)
+        return real, _dropped(place, site, real, got_text, DropReason.MISMATCH)
     if type(result) not in SCALARS:
         return real, None
     tracked = cast(ConcolicInt, result)
@@ -166,6 +168,14 @@ def _forming(call: CallInUse, given: Mapping[str, object]) -> Mapping[str, objec
         return call.formula(given)
     finally:
         in_use.USING.forming = False
+
+
+def _written(value: object) -> str:
+    """A formula answer with no JSON text as Python writes it, cut short (`reprlib`), or its
+    type's name when that raises."""
+    with contextlib.suppress(Exception):
+        return reprlib.repr(value)
+    return type(value).__name__
 
 
 def _dropped(place: _Place, site: Site, real: object, got: str, reason: DropReason) -> FormulaDrop:
