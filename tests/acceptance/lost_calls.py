@@ -1,5 +1,6 @@
-"""The fixtures and replies of the summarize-a-lost-call story's criteria: `C`, its functions,
-`QUARTER` and `MOD`, and how a test names a loss site's place and its site."""
+"""The fixtures and replies of the summarize-a-lost-call and track-a-value-through-a-call-summary
+stories' criteria: `C`, its functions, `QUARTER`, `MOD`, `WRONG` and `CAP`, and how a test names a
+loss site's place and its site."""
 
 from __future__ import annotations
 
@@ -17,6 +18,10 @@ MEASURED = "targets.summaries.calls::measured"
 DEDENTED = "targets.summaries.calls::dedented"
 WRAPPED = "targets.summaries.calls::wrapped"
 MATCHED = "targets.summaries.calls::matched"
+BOUNDED = "targets.summaries.calls::bounded"
+DIVIDED = "targets.summaries.calls::divided"
+EACH_DEDENTED = "targets.summaries.calls::each_dedented"
+FORKED = "targets.summaries.calls::forked"
 # the module `C` is, as a place names it
 MODULE = "targets.summaries.calls"
 
@@ -26,6 +31,12 @@ MOD_CODE = 'def summary(n):\n    return {"answer": n * n % 10}'
 QUARTER = code_reply(QUARTER_CODE)
 MOD = code_reply(MOD_CODE)
 HALF = code_reply('def summary(n):\n    return {"answer": n // 2}')
+WRONG_CODE = 'def summary(n):\n    return {"answer": n * n}'
+# `WRONG` and `CAP` of track-a-value-through-a-call-summary's criteria
+WRONG = code_reply(WRONG_CODE)
+CAP = code_reply(
+    'def summary(n):\n    q = n // 4\n    if q > 9:\n        q = 9\n    return {"answer": q}'
+)
 
 
 def at(line: int, col: int) -> str:

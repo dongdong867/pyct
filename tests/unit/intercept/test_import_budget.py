@@ -145,3 +145,37 @@ def test_a_module_compiled_with_the_pieces_switch_off_loads_no_hook_of_a_piece(
     )
 
     assert finished.stdout.strip() == str(loaded)
+
+
+# a plain run of `WATCHED`'s `f` in pyct's own process, in a fresh interpreter: whether it loaded
+# core's module of the loss sites in use
+PLAIN_RUN = """
+import contextlib, io, sys
+sys.path.insert(0, ".")
+from pyct.cli import main
+with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+    main(["run", "watched::f", "--args", '{"s": "a"}', "--in-process"])
+print("pyct.core.entry.calls_in_use" in sys.modules)
+"""
+WATCHED = (
+    'import textwrap\n\n\ndef f(s):\n    if textwrap.dedent(s) == "ab":\n        return 1\n'
+    "    return 0\n"
+)
+
+
+def test_a_plain_run_loads_no_module_of_the_loss_sites_in_use(tmp_path: Path) -> None:
+    (tmp_path / "watched.py").write_text(WATCHED)
+    environment = {k: v for k, v in os.environ.items() if k not in COVERAGE_STARTUP}
+    environment["PYCT_CACHE_DIR"] = str(tmp_path / "cache")
+
+    finished = subprocess.run(
+        [sys.executable, "-c", PLAIN_RUN],
+        cwd=tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+
+    assert finished.stdout.strip() == "False"

@@ -20,7 +20,7 @@ from pyct.core.foundation.branch import (
     caller_site,
     lost_at,
 )
-from pyct.core.foundation.escapes import lost
+from pyct.core.foundation.escapes import escape_keys, lost
 from pyct.core.foundation.heard_losses import HEARS
 
 # the mark that says a raise came out of a call pyct made for the target. The call that made it
@@ -226,12 +226,16 @@ def downgraded(
         # the call's own caller is where the walk for the site starts
         lost_as = lost_at(name, sys._getframe(1))
         operands = (self, *args, *kwargs.values())
-        lost(self.sink, lost_as, operands)
         answer = own(plain, self, base) if result is self else result
-        # a live input that records loss runs hears the loss, with what the target gets
+        # a live input that records loss runs hears the loss, and hands back what the target
+        # gets: at a site in use, the answer tracked, which records no downgrade
         hears = HEARS[0]
         if hears is not None:
-            hears(lost_as, operands, answer)
+            given = hears(lost_as, operands, answer)
+            if given is not answer:
+                escape_keys(self.sink, operands)
+                return given
+        lost(self.sink, lost_as, operands)
         return answer
 
     return downgrade

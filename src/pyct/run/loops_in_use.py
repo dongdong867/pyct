@@ -85,6 +85,12 @@ def unused_because(
     never = never_used_because(site, isolated)
     if never is not None:
         return never
+    return kinds_unused_because(runs, changed)
+
+
+def kinds_unused_because(runs: Sequence[CompleteRun], changed: Sequence[str]) -> str | None:
+    """Why a checked formula does not come into use by what its runs recorded, or None when it
+    may: a changed value of one of them is not an int, float, str or bool."""
     for each in runs:
         for value in each.run.changed:
             kind = _kind(value.value) if value.name in changed else None

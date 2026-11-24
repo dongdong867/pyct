@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from pyct.binding.bind import Seed
+from pyct.config.goal import Goal
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, Tries, WhyEntry
 from pyct.results.coverage import Progress, Reach, Scope
@@ -301,13 +302,23 @@ def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
 
 @dataclass
 class Turns:
-    """A tool that asks between passes, and counts its turns."""
+    """A tool that asks between passes, and counts its turns, and keeps what it was called on in
+    order."""
 
     can_ask: bool = True
     turns: int = 0
+    calls: list[tuple[str, object]] = field(default_factory=list)
 
     def between(self, run: object) -> None:
         self.turns += 1
+        self.calls.append(("between", run))
+
+    def run_again(self, run: object) -> None:
+        self.calls.append(("run again", run))
+
+
+# the bounds of a run whose goal is bugs, which goes on past full coverage
+BUGS = Bounds(goal=Goal.BUGS)
 
 
 def missing(*lines: int) -> Progress:
@@ -324,9 +335,22 @@ def missing(*lines: int) -> Progress:
         pytest.param(FakeRun(), missing(), 0, id="every line covered"),
         pytest.param(FakeRun(stopped=Stop(kind=StopKind.BUDGET)), missing(5), 0, id="a stop met"),
         pytest.param(FakeRun(bounds=Bounds(until=0.0)), missing(5), 0, id="the budget spent"),
+        pytest.param(FakeRun(bounds=BUGS), missing(), 1, id="every line covered, goal bugs"),
+        pytest.param(
+            FakeRun(bounds=BUGS, stopped=Stop(kind=StopKind.BUDGET)),
+            missing(),
+            0,
+            id="a stop met, goal bugs",
+        ),
+        pytest.param(
+            FakeRun(bounds=Bounds(until=0.0, goal=Goal.BUGS)),
+            missing(),
+            0,
+            id="the budget spent, goal bugs",
+        ),
     ],
 )
-def test_the_turn_between_passes_comes_only_while_the_run_goes_on_with_a_line_to_win(
+def test_the_turn_between_passes_comes_while_the_run_goes_on_for_its_goal(
     run: FakeRun, progress: Progress, turns: int
 ) -> None:
     tool = Turns()
@@ -334,3 +358,12 @@ def test_the_turn_between_passes_comes_only_while_the_run_goes_on_with_a_line_to
     Stuck([], between=tool).between(run, progress)
 
     assert tool.turns == turns
+
+
+def test_the_inputs_a_turn_used_run_again_after_it() -> None:
+    tool = Turns()
+    run = FakeRun()
+
+    Stuck([], between=tool).between(run, missing(5))
+
+    assert tool.calls == [("between", run), ("run again", run)]

@@ -19,15 +19,26 @@ while it fits in what the input's recorded runs count together with the
 pieces' runs (`pyct.core.entry.pieces.counted`). When two downgrade names
 share a site, the first one recorded there is the site's. Nothing here
 raises into the target.
+
+Each loss goes first to the loss sites in use (`pyct.core.entry.calls_in_use`),
+which hand back what the target gets: the real answer, or at a site in use
+the real answer tracked, which records no downgrade. The run a site's
+formula is dropped on is recorded also past the first `MOST_RUNS`, and the
+drop follows it in the sink, with the run's position among the input's
+recorded runs of the site. While a formula runs, a loop's or a site's, no
+run is recorded.
 """
 
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
+from pyct.core.entry import in_use
 from pyct.core.entry.bases import TRACKED_CLASSES
+from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE
 from pyct.core.entry.recorded import MOST_RUNS, MOST_VALUE, RUN_COUNT, VALUE_COUNT
 from pyct.core.entry.waiting import json_text
 from pyct.core.foundation.branch import (
@@ -46,8 +57,6 @@ from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 
-# the one changed name of a loss run
-ANSWER = "answer"
 # the receivers whose untaught operations are loss sites
 _SCALARS = frozenset({ConcolicInt, ConcolicFloat, ConcolicBool, ConcolicStr})
 _type = type
@@ -55,32 +64,43 @@ _type = type
 
 class _Losses:
     """The live input's recording: where its runs go, the first name at each site, the runs
-    tried at each site, and how often each watched call started, by its frame's code and
-    instruction."""
+    tried and the runs kept at each site, how often each watched call started, by its
+    frame's code and instruction, and the files that hold a loss site in use, none unless its
+    call runs alone."""
 
-    __slots__ = ("calls", "codes", "names", "sink", "tried")
+    __slots__ = ("calls", "codes", "files", "kept", "names", "sink", "tried")
 
     def __init__(self) -> None:
         self.sink: BranchSink | None = None
+        self.files: frozenset[str] = frozenset()
         self.clear()
 
     def clear(self) -> None:
         self.names: dict[Site, str] = {}
         self.tried: dict[Site, int] = {}
+        self.kept: dict[Site, int] = {}
         self.calls: dict[tuple[int, int], int] = {}
         # each code a watched call's start is counted by, held so its id stays its own
         self.codes: list[types.CodeType] = []
 
 
 _LOSSES = _Losses()
+# core's module of the loss sites in use, once loaded (`load_calls_in_use`)
+_CALLS: list[types.ModuleType | None] = [None]
 
 
-def start(sink: BranchSink) -> None:
+def start(sink: BranchSink, *, alone: bool = False) -> None:
     """An input that records loss runs goes live: from now on each site's runs go into ``sink``,
-    from none."""
+    from none, and its call uses the loss sites in use when it runs ``alone`` in a process of
+    its own (`pyct.core.entry.calls_in_use`)."""
     _LOSSES.clear()
     _LOSSES.sink = sink
     HEARS[0] = _operation
+    _LOSSES.files = frozenset()
+    if alone and CALLS_IN_USE:
+        sites = load_calls_in_use()
+        sites.start(alone=True)
+        _LOSSES.files = sites.LIVE.files
 
 
 def forget() -> None:
@@ -88,18 +108,56 @@ def forget() -> None:
     HEARS[0] = None
     _LOSSES.sink = None
     _LOSSES.clear()
+    if _LOSSES.files:
+        load_calls_in_use().forget()
+        _LOSSES.files = frozenset()
 
 
-def _operation(lost: Downgrade, operands: tuple[object, ...], answer: object) -> None:
-    """An operation's loss, on a tracked receiver, ``operands[0]``."""
-    if operands and _type(operands[0]) in _SCALARS:
-        _record(lost, LossKind.OPERATION, lambda: _values(operands), answer)
+def load_calls_in_use() -> types.ModuleType:
+    """Core's module of the loss sites in use, imported the first time only, so that a plain run
+    loads none of it: by an upper layer as a site first comes into use in pyct's own process,
+    so that each forked input has it, or as a fresh interpreter is handed one, else by `start`."""
+    module = _CALLS[0]
+    if module is None:
+        from pyct.core.entry import calls_in_use
+
+        module = _CALLS[0] = calls_in_use
+    return module
 
 
-def math_lost(lost: Downgrade, args: tuple[object, ...], answer: object) -> None:
-    """A `math` call's loss, given its arguments, by position then by keyword."""
-    if _LOSSES.sink is not None:
-        _record(lost, LossKind.MATH, lambda: _values(args), answer)
+def watched_in(file: str) -> bool:
+    """Whether ``file`` holds a loss site in use in the live input, so that a watched call there
+    keeps its arguments as it is given them."""
+    return file in _LOSSES.files
+
+
+def keeps_given(code: types.CodeType, at: int) -> bool:
+    """Whether a watched call that starts at instruction ``at`` of ``code``, in a file
+    `watched_in` names, keeps its arguments (`pyct.core.entry.calls_in_use.keeps_given`)."""
+    return load_calls_in_use().keeps_given(code, at)
+
+
+def answered_at(code: types.CodeType, at: int, site: Site) -> None:
+    """A watched call that kept its arguments answered at ``site``
+    (`pyct.core.entry.calls_in_use.answered_at`)."""
+    load_calls_in_use().answered_at(code, at, site)
+
+
+def _operation(lost: Downgrade, operands: tuple[object, ...], answer: object) -> object:
+    """An operation's loss, on a tracked receiver, ``operands[0]``: what the target gets."""
+    if not operands or _type(operands[0]) not in _SCALARS:
+        return answer
+    return _heard(
+        lost, operands, answer, lambda: _run(lost, LossKind.OPERATION, _values(operands), answer)
+    )
+
+
+def math_lost(lost: Downgrade, args: tuple[object, ...], answer: object) -> object:
+    """A `math` call's loss, given its arguments, by position then by keyword: what the target
+    gets."""
+    if _LOSSES.sink is None:
+        return answer
+    return _heard(lost, args, answer, lambda: _run(lost, LossKind.MATH, _values(args), answer))
 
 
 def watching(frame: types.FrameType) -> list[GoingIn] | None:
@@ -133,42 +191,98 @@ def written(values: list[GoingIn], value: object) -> list[GoingIn] | None:
 
 
 def call_lost(
-    lost: Downgrade, values: list[GoingIn] | None, answer: object, callee: object
-) -> None:
-    """A watched call's loss: the arguments the watch wrote, its answer and its callee."""
-    if _LOSSES.sink is not None and values is not None:
-        _record(lost, LossKind.CALL, lambda: tuple(values), answer, callee)
-
-
-def _record(
     lost: Downgrade,
-    kind: LossKind,
-    going_in: Callable[[], tuple[GoingIn, ...] | None],
+    values: list[GoingIn] | None,
     answer: object,
-    callee: object = None,
-) -> None:
-    """Record a run of the site, when it is among its first runs, its name is the site's, and
-    its values are kept and fit. ``going_in`` gives the values going in, or None."""
+    callee: object,
+    given: list[object] | None = None,
+) -> object:
+    """A watched call's loss: the arguments the watch wrote, its answer, its callee, and, at a
+    file that holds a loss site in use, the arguments as it was given them. What the target
+    gets. Past the call's first starts the watch writes none, and its run, recorded only when a
+    formula is dropped on it, is written from the arguments as it was given them."""
+    if _LOSSES.sink is None or (values is None and given is None):
+        return answer
+
+    def run() -> LossRun | None:
+        kept = values if values is not None else _all_written(given or [])
+        if kept is None:
+            return None
+        return _run(lost, LossKind.CALL, tuple(kept), answer, callee_of(callee))
+
+    return _heard(lost, given, answer, run)
+
+
+def _all_written(given: list[object]) -> list[GoingIn] | None:
+    """Each argument as `written` writes it, or None when one is not kept."""
+    values: list[GoingIn] | None = []
+    for value in given:
+        if values is None:
+            return None
+        values = written(values, value)
+    return values
+
+
+def _heard(
+    lost: Downgrade,
+    given: Sequence[object] | None,
+    answer: object,
+    run: Callable[[], LossRun | None] | None,
+) -> object:
+    """A loss heard: what the target gets at a site in use (`calls_in_use.answered`), the run
+    recorded by ``run`` when it gives one, and the formula's drop after it. With ``run`` None the
+    run is not recorded."""
+    got, drop = answer, None
+    if _LOSSES.files:
+        got, drop = load_calls_in_use().answered(lost, given, answer)
+    at = None if run is None else _record(lost, run, past=drop is not None)
+    sink = _LOSSES.sink
+    if drop is not None and sink is not None:
+        with contextlib.suppress(Exception):
+            sink.append(dataclasses.replace(drop, run=at))
+    return got
+
+
+def _record(lost: Downgrade, run: Callable[[], LossRun | None], *, past: bool) -> int | None:
+    """Record a run of the site, when it is among its first runs, or ``past`` them as the run a
+    formula was dropped on, its name is the site's, no formula is running, and its values are
+    kept and fit: its position among the input's recorded runs of the site, else None."""
     sink = _LOSSES.sink
     with contextlib.suppress(Exception):
         site = lost.site
-        if sink is None or _LOSSES.names.setdefault(site, lost.name) != lost.name:
-            return
+        if sink is None or in_use.USING.forming:
+            return None
+        if _LOSSES.names.setdefault(site, lost.name) != lost.name:
+            return None
         tried = _LOSSES.tried.get(site, 0)
-        if tried >= MOST_RUNS:
-            return
+        if tried >= MOST_RUNS and not past:
+            return None
         _LOSSES.tried[site] = tried + 1
-        values = going_in()
-        text = json_text(answer, MOST_VALUE)
-        if values is None or text is None:
-            return
-        named = None if kind is not LossKind.CALL else callee_of(callee)
-        run = LossRun(site, lost.name, kind, values, (Changed(ANSWER, text),), named)
+        made = run()
         # imported here, once a run is kept, so that a plain import loads no hook of a piece
         from pyct.core.entry import pieces
 
-        if pieces.counted(size(run)):
-            sink.append(run)
+        if made is None or not pieces.counted(size(made)):
+            return None
+        sink.append(made)
+        at = _LOSSES.kept.get(site, 0)
+        _LOSSES.kept[site] = at + 1
+        return at
+    return None
+
+
+def _run(
+    lost: Downgrade,
+    kind: LossKind,
+    values: tuple[GoingIn, ...] | None,
+    answer: object,
+    callee: Callee | None = None,
+) -> LossRun | None:
+    """The run of the site, or None when its values or its answer are not kept."""
+    text = json_text(answer, MOST_VALUE)
+    if values is None or text is None:
+        return None
+    return LossRun(lost.site, lost.name, kind, values, (Changed(ANSWER, text),), callee)
 
 
 def _values(operands: tuple[object, ...]) -> tuple[GoingIn, ...] | None:

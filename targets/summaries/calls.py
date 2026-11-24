@@ -1,5 +1,5 @@
 """Values lost at an operation pyct has not taught, at a call into code it cannot see inside,
-and inside the standard library, for the summaries story summarize-a-lost-call."""
+and inside the standard library, for the summaries story summarize-a-lost-call and its next."""
 
 import io
 import json
@@ -77,4 +77,35 @@ def matched(s: str) -> str:
     t = re.findall("a", s)
     if len(t) == 3:
         return "three"
+    return "other"
+
+
+def bounded(n: int) -> str:
+    r = pow(n, 2, 10)
+    if r == 9:
+        return "nine"
+    if r > 9:
+        return "never"
+    return "other"
+
+
+def divided(n: int) -> int:
+    k = _quarter(n)
+    return 10 // (k - 7)
+
+
+def each_dedented(texts: list[str]) -> int:
+    n = 0
+    for s in texts:
+        if textwrap.dedent(s) == "ab":
+            n += 1
+    return n
+
+
+def forked(n: int) -> str:
+    if n > 5:
+        n = n - 5
+    r = pow(n, 2, 10)
+    if r == 9:
+        return "nine"
     return "other"

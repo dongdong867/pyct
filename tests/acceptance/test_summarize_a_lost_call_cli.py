@@ -49,7 +49,8 @@ def test_the_asks_about_loss_sites_end_at_the_token_limit(stub: Stub, tmp_path: 
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
-# llm-summary-for-a-call-pyct-cannot-follow-checked-state
+# llm-summary-for-a-call-pyct-cannot-follow-checked-state; the formula is in use since
+# track-a-value-through-a-call-summary (its -in-use-state)
 def test_the_summary_line_lists_a_loss_site_with_its_checked_formula(
     stub: Stub, tmp_path: Path
 ) -> None:
@@ -70,7 +71,7 @@ def test_the_summary_line_lists_a_loss_site_with_its_checked_formula(
             "changes": ["answer"],
             "formula": f"{QUARTER_CODE}\n",
             "condition": None,
-            "state": "checked",
+            "state": "in use",
             "tries": 1,
             "checked_on": 1,
         }

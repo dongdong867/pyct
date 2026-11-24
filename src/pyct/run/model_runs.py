@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.annotations import Check
 from pyct.binding.builds import SelfBuild
-from pyct.core.entry.in_use import IN_USE
+from pyct.core.entry.in_use import CALLS_IN_USE, IN_USE
 from pyct.core.entry.plain_json import plain_json
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.wrap import bound_builtins
@@ -140,9 +140,10 @@ def _serve(
     call: ModelCall, until: float, answers: mmap.mmap, watch: JournalWriter
 ) -> Failure | None:
     """In the child: call the function under the time limit, then write its answer, or the
-    text of the ending error that ended it. The child meets no loop in use: its call is no
-    input's."""
+    text of the ending error that ended it. The child meets no loop or loss site in use: its
+    call is no input's."""
     IN_USE.clear()
+    CALLS_IN_USE.clear()
     returned: list[object] = []
     ended: list[str] = []
     building = call.building

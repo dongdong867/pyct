@@ -7,8 +7,10 @@ on (`pyct.core.entry.losses`). The summaries tool hears each input the run keeps
 site whose first recorded run the input holds, in the order the input recorded them, under the
 name of the first downgrade recorded there (``LossSites``). Before each pass picks a fork, and
 before the run would stop on ``no fork to flip``, the tool asks about each noted site that had
-no turn this run, one at a time, in the order noted (`pyct.run.summaries.Summaries.between`);
-each site has one turn per run, whatever came of it.
+no turn this run, one at a time, in the order noted (`pyct.run.call_turns`); each site has one
+turn per run, whatever came of it, and one more each time an input drops its formula in use.
+An ask after a drop holds the dropped formula among the earlier tries, with why, and shows the
+run it failed on first.
 
 A site is skipped with no ask when Python converts its answer to a plain int or bool before the
 target sees it (``CONVERTS``), or when an answer it recorded is no int, float, str or bool. Its
@@ -28,14 +30,24 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from pyct.core.entry.losses import ANSWER
-from pyct.core.foundation.branch import Callee, Changed, GoingIn, LossKind, LossRun, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Callee,
+    Changed,
+    FormulaDrop,
+    GoingIn,
+    LossKind,
+    LossRun,
+    PieceRun,
+    Site,
+)
 from pyct.results.losses import loss_code
 from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
 from pyct.results.source_files import SourceFiles
 from pyct.run.code_context import CODE_LIMIT, code_with_piece, function_code
-from pyct.run.summary_asks import CallAsk, EarlierFormula, SummaryRequest
+from pyct.run.summary_asks import CallAsk, SummaryRequest
 from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_outcomes import LoopState
 from pyct.run.summary_runs import AskedLoop, not_shown, shown_runs
 from pyct.run.target import Target
 
@@ -74,7 +86,8 @@ class LossSites:
 class AskedCall:
     """A loss site as an ask sees it: as a piece that changes ``answer``, with its complete runs
     and its parameters (``AskedLoop``), the downgrade's name and kind, the site's code as
-    written, the latest run's callee, and each run's first answer as recorded."""
+    written, the latest run's callee, each run's first answer as recorded, and each value going
+    in's parameter by its position, None for a constant."""
 
     loop: AskedLoop
     name: str
@@ -82,6 +95,7 @@ class AskedCall:
     written: str
     callee: Callee | None
     answer: object
+    positions: tuple[str | None, ...]
 
 
 def asked_call(
@@ -108,7 +122,8 @@ def asked_call(
     piece = Piece(site.line, site.col, parameters, (ANSWER,), code.lines)
     loop = AskedLoop(site, piece, complete, parameters)
     callee = runs[-1][1].callee
-    return AskedCall(loop, name, first.kind, code.written, callee, json.loads(_answer(first)))
+    answer = json.loads(_answer(first))
+    return AskedCall(loop, name, first.kind, code.written, callee, answer, code.names)
 
 
 def _as_piece_run(run: LossRun, names: tuple[str | None, ...]) -> PieceRun:
@@ -124,6 +139,22 @@ def _as_piece_run(run: LossRun, names: tuple[str | None, ...]) -> PieceRun:
 
 def _answer(run: LossRun) -> str:
     return run.changed[0].value
+
+
+def failed_call_run(
+    drop: FormulaDrop, record: InputRecord, number: int, files: SourceFiles
+) -> CompleteRun | None:
+    """The run of the loss site an input's drop names by its position, as the input's record
+    holds it and as the site's ask shows it, the input numbered ``number``. None when the drop
+    names no run, the record holds none there, or its values do not fit the site's code."""
+    runs = [each for each in record.losses if each.site == drop.site]
+    if drop.run is None or not 0 <= drop.run < len(runs):
+        return None
+    run = runs[drop.run]
+    code = loss_code(run.site, run.name, run.kind, len(run.going_in), files)
+    if len(run.going_in) != len(code.names):
+        return None
+    return CompleteRun(number, _as_piece_run(run, code.names))
 
 
 def skipped_because(call: AskedCall) -> str | None:
@@ -143,24 +174,25 @@ def call_request(
     target: Target,
     call: AskedCall,
     place: str,
-    tries: tuple[EarlierFormula, ...],
     files: SourceFiles,
+    state: LoopState | None = None,
 ) -> SummaryRequest:
-    """The ask about a loss site, at its ``place``, with its earlier tries, its code read through
-    the run's ``files``."""
+    """The ask about a loss site, at its ``place``, its code read through the run's ``files``,
+    with the earlier tries its ``state`` keeps, and the run its last formula was dropped on first
+    among the runs shown."""
     loop = call.loop
     code = code_with_piece(target, loop.site.file, loop.piece.lines, CALL, files)
     callee, source = _callee(call.callee, CODE_LIMIT - len(code) - 2, files)
     if source is not None:
         code = f"{code}\n\n{source}" if code else source
-    shown = shown_runs(loop)
+    shown = shown_runs(loop, None if state is None else state.failed_on)
     return SummaryRequest(
         place=place,
         code=code,
         parameters=loop.parameters,
         changed=loop.piece.changed,
         runs=shown,
-        tries=tries,
+        tries=() if state is None else tuple(state.tries),
         not_shown=not_shown(loop, shown),
         call=CallAsk(call.name, call.written, callee, source is not None),
     )

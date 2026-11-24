@@ -78,6 +78,13 @@ def lost(sink: BranchSink, downgrade: Downgrade, on: Iterable[object] = ()) -> N
     the keys leave the registry, and a downgrade inside a walk looks at each key once."""
     sink.append(downgrade)
     RECORDED[0] += 1
+    escape_keys(sink, on)
+
+
+def escape_keys(sink: BranchSink, on: Iterable[object] = ()) -> None:
+    """Escape each walk key handed out into ``sink``, as a downgrade there does, unless the
+    operation was given ``on``, its operands, and none may hold a key: an operation whose answer
+    a loss site's formula stands for still ran Python's own code on them."""
     operands = tuple(on)
     if operands and not any(_may_hold_a_key(operand) for operand in operands):
         return
