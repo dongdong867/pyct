@@ -9,6 +9,8 @@ from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.lookups import item, routed
 from pyct.core.foundation.branch import SinkItem
 from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.entry.test_substitutes import expressions
@@ -39,6 +41,25 @@ def test_a_tracked_key_forks_on_each_key_until_one_holds() -> None:
 
     assert item(METAS, text("FR", sink)) == 33
     assert expressions(sink) == tried("US", found="FR")
+
+
+@pytest.mark.parametrize(
+    ("kind", "value", "table"),
+    [
+        (ConcolicInt, 7, {3: "a", 7: "b"}),
+        (ConcolicBool, True, {0: "a", 1: "b"}),
+        (ConcolicFloat, 1.0, {0: "a", 1: "b"}),
+    ],
+)
+def test_a_tracked_int_bool_or_float_key_forks_on_each_key_until_one_holds(
+    kind: type[ConcolicInt | ConcolicBool | ConcolicFloat], value: object, table: dict[int, str]
+) -> None:
+    first, second = table
+    for read in (lambda key: item(table, key), lambda key: routed(table.get)(key)):
+        sink: list[SinkItem] = []
+
+        assert read(kind.made(value, expression="k", sink=sink)) == table[value]
+        assert expressions(sink) == [(["==", "k", first], False), (["==", "k", second], True)]
 
 
 def test_a_miss_records_one_fork_per_key_in_the_dict_s_order() -> None:
