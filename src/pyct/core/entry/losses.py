@@ -159,15 +159,28 @@ def call_lost(
 ) -> object:
     """A watched call's loss: the arguments the watch wrote, its answer, its callee, and, at a
     file that holds a loss site in use, the arguments as it was given them. What the target
-    gets."""
+    gets. Past the call's first starts the watch writes none, and its run, recorded only when a
+    formula is dropped on it, is written from the arguments as it was given them."""
     if _LOSSES.sink is None or (values is None and given is None):
         return answer
-    if values is None:
-        return _heard(lost, given, answer, None)
-    kept = tuple(values)
-    return _heard(
-        lost, given, answer, lambda: _run(lost, LossKind.CALL, kept, answer, callee_of(callee))
-    )
+
+    def run() -> LossRun | None:
+        kept = values if values is not None else _all_written(given or [])
+        if kept is None:
+            return None
+        return _run(lost, LossKind.CALL, tuple(kept), answer, callee_of(callee))
+
+    return _heard(lost, given, answer, run)
+
+
+def _all_written(given: list[object]) -> list[GoingIn] | None:
+    """Each argument as `written` writes it, or None when one is not kept."""
+    values: list[GoingIn] | None = []
+    for value in given:
+        if values is None:
+            return None
+        values = written(values, value)
+    return values
 
 
 def _heard(

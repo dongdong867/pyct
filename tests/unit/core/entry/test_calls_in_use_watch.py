@@ -3,6 +3,7 @@ runs on the arguments as the watch was given them, each list as a copy made then
 `math` call's arguments, and on a match the target gets the real answer tracked."""
 
 import contextlib
+import json
 import math
 import sys
 import textwrap
@@ -12,9 +13,10 @@ import pytest
 
 from pyct.core.entry import losses, pieces, substitutes, watch
 from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
+from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.entry.watch import answer, called, given
 from pyct.core.foundation import escapes
-from pyct.core.foundation.branch import Downgrade, FormulaDrop, SinkItem
+from pyct.core.foundation.branch import Downgrade, FormulaDrop, LossRun, SinkItem
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 
@@ -117,3 +119,25 @@ def test_a_watched_call_in_a_call_that_does_not_run_alone_keeps_its_downgrade() 
 
     assert type(t) is str
     assert [each.name for each in downgrades(sink)] == ["d"]
+
+
+def lstripped(values: Mapping[str, object]) -> Mapping[str, object]:
+    s = values["s"]
+    assert isinstance(s, str)
+    return {"answer": s.lstrip()}
+
+
+def test_a_watched_call_dropped_past_its_first_runs_keeps_the_run_it_failed_on() -> None:
+    texts = [" a", " b", " c", " d\n e"]
+    line = here() + 3
+    with using(line, 12, CallInUse("textwrap.dedent", ("s",), lstripped)) as sink:
+        for text in texts:
+            s = ConcolicStr.made(text, "s", sink)
+            answer(called(textwrap.dedent)(given(s)), "textwrap.dedent")
+
+    runs = [item for item in sink if type(item) is LossRun]
+    assert len(runs) == MOST_RUNS + 1 == len(texts)
+    assert runs[-1].going_in[0].value == json.dumps(" d\n e")
+    [drop] = [item for item in sink if type(item) is FormulaDrop]
+    assert drop.run == MOST_RUNS
+    assert sink.index(drop) > sink.index(runs[-1])

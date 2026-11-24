@@ -931,6 +931,7 @@
     {"set": "v2", "target": "targets.summaries.calls::dedented", "seed": {"s": "  ab"}},
     {"set": "v2", "target": "targets.summaries.calls::deep", "seed": {"n": 3}},
     {"set": "v2", "target": "targets.summaries.calls::divided", "seed": {"n": 3}},
+    {"set": "v2", "target": "targets.summaries.calls::each_dedented", "seed": {"texts": [" a", " b", " c", " d\n e"]}},
     {"set": "v2", "target": "targets.summaries.calls::late", "seed": {"s": "a", "n": 3}},
     {"set": "v2", "target": "targets.summaries.calls::matched", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.summaries.calls::measured", "seed": {"s": "{\"k\": 1}"}},

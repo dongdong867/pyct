@@ -20,6 +20,7 @@ WRAPPED = "targets.summaries.calls::wrapped"
 MATCHED = "targets.summaries.calls::matched"
 BOUNDED = "targets.summaries.calls::bounded"
 DIVIDED = "targets.summaries.calls::divided"
+EACH_DEDENTED = "targets.summaries.calls::each_dedented"
 # the module `C` is, as a place names it
 MODULE = "targets.summaries.calls"
 

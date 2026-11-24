@@ -92,3 +92,11 @@ def bounded(n: int) -> str:
 def divided(n: int) -> int:
     k = _quarter(n)
     return 10 // (k - 7)
+
+
+def each_dedented(texts: list[str]) -> int:
+    n = 0
+    for s in texts:
+        if textwrap.dedent(s) == "ab":
+            n += 1
+    return n

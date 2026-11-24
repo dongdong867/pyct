@@ -10,6 +10,9 @@ each loop's runs, and each input in a forked child; no test calls a model.
 import json
 import re
 
+from pyct.config.goal import Goal
+from pyct.config.limits import Limits
+from pyct.config.plateau import Plateau
 from pyct.results.jsonl import render_summary
 from pyct.results.llm_asks import LlmUse
 from pyct.results.record import InputRecord
@@ -17,10 +20,19 @@ from tests.acceptance.llm_summaries import (
     TOKENS,
     FakeSummaries,
     Summarized,
+    code_reply,
     one_thread,  # noqa: F401
     run_summaries,
 )
-from tests.acceptance.lost_calls import BOUNDED, MOD, WRONG, WRONG_CODE, at, place
+from tests.acceptance.lost_calls import (
+    BOUNDED,
+    EACH_DEDENTED,
+    MOD,
+    WRONG,
+    WRONG_CODE,
+    at,
+    place,
+)
 from tests.acceptance.test_track_a_value_through_a_call_summary import (
     LONGER,
     after_checked,
@@ -90,3 +102,30 @@ def test_a_dropped_site_is_asked_about_again_at_the_next_turn() -> None:
     assert said.index(read) > dropped_at
     assert any(": checked on " in line for line in said[said.index(read) :])
     assert state_of(done) == "in use"
+
+
+# the site of `textwrap.dedent(s)` in `each_dedented`, and a formula for it that holds on the first
+# three items of `TEXTS`, the runs the input records, and one that holds there too but not on the
+# fourth
+DEDENT = place(100, 11)
+LSTRIP = code_reply('def summary(s):\n    return {"answer": s.lstrip()}')
+STRIP = code_reply('def summary(s):\n    return {"answer": s.strip()}')
+TEXTS = [" a", " b", " c", " d\n e"]
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-asked-again-after-a-drop, at a watched call's fourth
+# start in one input, past the runs the input records
+def test_a_watched_call_dropped_past_its_recorded_runs_is_asked_about_with_that_run_first() -> None:
+    provider = FakeSummaries([LSTRIP, STRIP])
+    limits = Limits(plateau=Plateau(20), goal=Goal.BUGS)
+
+    done = run_summaries(EACH_DEDENTED, {"texts": TEXTS}, provider, limits)
+
+    assert [request.place for request in provider.requests] == [DEDENT] * 2
+    again = provider.requests[1]
+    [earlier] = again.tries
+    number = int(re.fullmatch(r"dropped at input (\d+): .*", earlier.reason, re.S)[1])
+    assert again.runs[0].going_in == (("s", json.dumps(" d\n e")),)
+    refused = f'at input {number}, answer was "d\\ne", the formula gave "d\\n e"'
+    at_dedent = f"llm: summary for the call textwrap.dedent at {at(100, 11)}"
+    assert f"{at_dedent}, try 2: {refused}" in done.llm_said()
