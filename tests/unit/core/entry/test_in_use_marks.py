@@ -199,18 +199,16 @@ INNER = (5, 8)
 def test_a_part_found_clean_is_not_walked_again_after_a_later_match_in_the_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    walked = in_use._reads_a_formula
+    walked = in_use._formulas_read
     known: list[bool] = []
 
-    def watched(
-        expression: Expression, reads: dict[int, list[Expression]], clean: set[int]
-    ) -> bool:
+    def watched(expression: Expression) -> frozenset[Site]:
         # each `u == "zzx"` is a new list; the term of `u` inside it is the same one
         assert isinstance(expression, list)
-        known.append(id(expression[1]) in clean)
-        return walked(expression, reads, clean)
+        known.append(id(expression[1]) in in_use.USING.clean)
+        return walked(expression)
 
-    monkeypatch.setattr(in_use, "_reads_a_formula", watched)
+    monkeypatch.setattr(in_use, "_formulas_read", watched)
 
     assert marked(TWICE, INNER, counted, "ab") == [(8, False), (8, False)]
     # the second `u == "zzx"` comes after the inner loop's second match, and `u` is known clean

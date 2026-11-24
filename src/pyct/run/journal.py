@@ -34,10 +34,10 @@ kind) and its payload, padded to 8 bytes:
   places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col, raising]``, the
   expression a leaf or ``[n]``, and a seventh item, a bool, for a fork an
-  `is` noted with whether it held (``Branch.is_held``). A formula's fork
-  (``Branch.summary``), one a loop's formula recorded or one that reads a
-  value a formula gave, has a seventh item, that bool or null, and an
-  eighth, ``true``.
+  `is` noted with whether it held (``Branch.is_held``). A formula's fork,
+  one a formula recorded or one that reads a value a formula gave, has a
+  seventh item, that bool or null, and an eighth, the site of each formula
+  it names (``Branch.formulas``) as ``[file, line, col]``.
 - fact: a fact the path holds beside its forks (``Fact``), written as a fork
   is, its expression null for a fact that is only a place, and a seventh item
   for its place, written the same way. Its ``after`` is not written: the
@@ -192,10 +192,10 @@ class JournalWriter:
         try:
             expression = self._written(branch.expression)
             fork = [expression, branch.taken, site.file, site.line, site.col, branch.raising]
-            if branch.is_held is not None or branch.summary:
+            if branch.is_held is not None or branch.formulas:
                 fork.append(branch.is_held)
-            if branch.summary:
-                fork.append(True)
+            if branch.formulas:
+                fork.append([[each.file, each.line, each.col] for each in branch.formulas])
             self._json(FORK, fork)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:

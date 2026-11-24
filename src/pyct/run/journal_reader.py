@@ -357,9 +357,10 @@ class _Facts:
                 *note,
             ] if _fork_notes(note):
                 site = self._site(file, line, col)
-                held, summary = (note[0] if note else None), len(note) == 2
+                held = note[0] if note else None
+                formulas = tuple(self._site(*each) for each in note[1]) if len(note) == 2 else ()
                 read = self._expression(expression)
-                return Branch(read, taken, site, raising, is_held=held, summary=summary)
+                return Branch(read, taken, site, raising, is_held=held, formulas=formulas)
         raise ValueError("a fork is [expression, taken, file, line, col, raising] and its notes")
 
     def _fact(self, value: object) -> Fact:
@@ -484,7 +485,13 @@ def _ending(value: object) -> Failure | None:
 
 def _fork_notes(note: Sequence[object]) -> bool:
     """Whether a fork's items past its sixth are its notes: none, an `is`'s bool, or that bool or
-    null and ``true`` for a fork that reads a formula's value."""
+    null and the ``[file, line, col]`` sites of the formulas a formula's fork names."""
     if len(note) == 2:
-        return note[1] is True and (note[0] is None or type(note[0]) is bool)
+        sites = note[1]
+        named = type(sites) is list and len(sites) > 0 and all(map(_is_site, sites))
+        return named and (note[0] is None or type(note[0]) is bool)
     return len(note) < 2 and all(type(each) is bool for each in note)
+
+
+def _is_site(value: object) -> bool:
+    return isinstance(value, list) and [type(each) for each in value] == [str, int, int]

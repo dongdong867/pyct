@@ -13,8 +13,8 @@ parameter names, a constant left out: an operation's receiver and other
 operands, a `math` call's arguments, or a watched call's arguments as the
 watch was given them, each list or dict as a copy made then
 (`pyct.core.entry.in_use.as_it_went_in`). Each fork, fact and downgrade the
-formula records is placed at the site, and each fork it records is marked
-``summary``.
+formula records is placed at the site, and each fork it records names the
+site.
 
 The two answers are compared by their JSON text. On a match the target
 gets the real answer tracked with the formula's term, and no downgrade is
@@ -136,7 +136,7 @@ def _applies(
     the values as many as its positions, and a real answer of Python's own scalar types."""
     return (
         call.name == lost.name
-        and not in_use.USING.forming
+        and in_use.USING.forming is None
         and values is not None
         and len(values) == len(call.positions)
         and type(real) in _ANSWERS
@@ -148,7 +148,7 @@ def _formed(
 ) -> tuple[object, FormulaDrop | None]:
     """The formula run on ``given`` at the site, and its answer compared with the real one."""
     try:
-        got = placed_at(site, lambda: _forming(call, given))
+        got = placed_at(site, lambda: _forming(site, call, given))
     except Exception as error:
         return real, _dropped(place, site, real, type(error).__name__, DropReason.RAISED)
     if not isinstance(got, Mapping) or ANSWER not in got:
@@ -163,17 +163,17 @@ def _formed(
     tracked = cast(ConcolicInt, result)
     # the real answer is of the formula answer's kind, as their JSON texts are one
     made = type(tracked).made(cast(int, real), tracked.expression, tracked.sink)
-    in_use.gave((made,))
+    in_use.gave((made,), site)
     return made, None
 
 
-def _forming(call: CallInUse, given: Mapping[str, object]) -> Mapping[str, object]:
-    """The formula's answer for the values ``given``, each fork it records marked."""
-    in_use.USING.forming = True
+def _forming(site: Site, call: CallInUse, given: Mapping[str, object]) -> Mapping[str, object]:
+    """The formula's answer for the values ``given``, each fork it records naming ``site``."""
+    in_use.USING.forming = site
     try:
         return call.formula(given)
     finally:
-        in_use.USING.forming = False
+        in_use.USING.forming = None
 
 
 def _written(value: object) -> str:
