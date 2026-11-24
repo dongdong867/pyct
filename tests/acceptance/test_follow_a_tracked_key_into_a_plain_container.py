@@ -153,7 +153,7 @@ def test_a_dict_past_the_limit_is_python_s_own_and_names_get() -> None:
     seed = first_line(result.stdout)
     assert plain_lookups.past_limit("k0") == "other"
     at = line_of("past_limit", "LARGE.get(s)")
-    assert placed(seed, at) == []
+    assert placed(seed, at) == [(["==", "s", "'k0'"], True)]
     column = DICTS_FILE.read_text().splitlines()[at - 1].index("LARGE")
     assert seed["downgrades"] == [
         downgrade("get", 1, f"targets/dicts/plain_lookups.py:{at}:{column}")

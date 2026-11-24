@@ -135,10 +135,10 @@ def test_three_hundred_keys_are_searched_and_three_hundred_one_are_not() -> None
     assert expressions(sink) == tried(*(f"k{n}" for n in range(299)), found="k299")
     sink.clear()
     assert item(past, text("k300", sink)) == 300
-    assert expressions(sink) == ["__getitem__"]
+    assert expressions(sink) == [(["==", "s", "'k300'"], True), "__getitem__"]
     sink.clear()
     assert routed(past.get)(text("k300", sink)) == 300
-    assert expressions(sink) == ["get"]
+    assert expressions(sink) == [(["==", "s", "'k300'"], True), "get"]
     sink.clear()
     assert item(list(range(301)), number(300, sink)) == 300
     assert expressions(sink) == ["__getitem__"]
@@ -156,7 +156,7 @@ def test_a_key_pyct_does_not_compare_is_python_s_own_and_a_downgrade() -> None:
         sink: list[SinkItem] = []
 
         assert item(table, text("a", sink)) == 1
-        assert expressions(sink) == ["__getitem__"]
+        assert expressions(sink) == [(["==", "s", "'a'"], True), "__getitem__"]
         sink.clear()
         assert routed(table.get)(text("a", sink)) == 1
-        assert expressions(sink) == ["get"]
+        assert expressions(sink) == [(["==", "s", "'a'"], True), "get"]
