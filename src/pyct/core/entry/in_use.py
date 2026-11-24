@@ -339,7 +339,7 @@ def summed(fork: Branch) -> Branch:
         sites |= {forming}
     if not sites:
         return fork
-    named = tuple(sorted(sites, key=lambda site: (site.file, site.line, site.col)))
+    named = tuple(sorted(sites, key=dataclasses.astuple))
     return dataclasses.replace(fork, formulas=named)
 
 

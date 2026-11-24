@@ -174,7 +174,7 @@ class Summaries:
         named = {each.site for entry in entries for each in sources_of(entry, SourceKind.LOOP)}
         sites = sorted(
             named | set(self._dropped_for(moment)),
-            key=lambda site: (site.file, site.line, site.col),
+            key=place_of,
         )
         came: dict[Site, Asked] = {}
         asked = False
@@ -347,7 +347,7 @@ class Summaries:
         self.calls.heard(record, number)
         if not self.in_use.sites or self.isolated():
             return
-        for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
+        for site in sorted(self.in_use.sites, key=place_of):
             self.in_use.stop(site)
             self.loops[site].last = SummaryState.CHECKED
             self.say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS))
@@ -371,7 +371,7 @@ class Summaries:
         whose path it is ran, goes out of use from the next input on, said with why. A loop is
         asked about again at the next moment, a loss site at the next turn."""
         read = {site for fork in long.plan.prefix for site in fork.formulas}
-        for site in sorted(read, key=lambda site: (site.file, site.line, site.col)):
+        for site in sorted(read, key=place_of):
             state = self.loops.get(site)
             if state is None or state.in_use_from > long.number:
                 continue
@@ -444,7 +444,5 @@ class Summaries:
                 state.kind,
                 state.name,
             )
-            for site, state in sorted(
-                self.loops.items(), key=lambda item: (item[0].file, item[0].line, item[0].col)
-            )
+            for site, state in sorted(self.loops.items(), key=lambda item: place_of(item[0]))
         )
