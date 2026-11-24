@@ -4,10 +4,13 @@ LLM tool the entries it takes, in the order summaries, rewrites, guesses.
 A run is stuck when 5 inputs in a row cover no new line, or a quarter of
 its budget passes with no new line, both counted from after the last seed
 and again from after each moment's last input, or when no fork is left to
-flip while a line is still missed. A run with no tool switched on, or
+flip while a line is still missed. After each moment in which no tool
+asked, both waits double, twice at most, until a tool asks or an input
+covers a new line. A run with no tool switched on, or
 none that can still ask, is never stuck, so it runs as it would with no
-LLM at all. Decisions llm-one-stuck-moment-for-summaries-rewrites-and-guesses
-and llm-stuck-on-time-as-well-as-inputs.
+LLM at all. Decisions llm-one-stuck-moment-for-summaries-rewrites-and-guesses,
+llm-stuck-on-time-as-well-as-inputs and
+llm-a-moment-that-asks-nothing-doubles-the-wait-before-the-next.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
 fork`` entry, with or without a source, to summaries, a ``not taken``
@@ -48,6 +51,10 @@ IN_A_ROW = 5
 # the share of the budget that passes with no new line before a run is stuck, as 5 inputs in a
 # row do: 11.25 s of the 45 s default
 STRETCH_SHARE = 0.25
+
+# the times both waits double after moments in a row in which no tool asked: 5, 10, then 20
+# inputs, and a quarter, a half, then the whole budget, which no stretch from a moment's end reaches
+QUIET_DOUBLINGS = 2
 
 # how long a moment works out the causes of the missed lines, at most
 CAUSE_SECONDS = 2.0
@@ -163,9 +170,10 @@ def owner(entry: WhyEntry) -> Kind | None:
 
 class Stuck:
     """When a run is stuck, and what each moment hands each tool. It keeps the moments' count,
-    where the inputs in a row and the stretch with no new line start, and the entries a tool
-    gave up on. ``clock`` is the one the run's deadline is read on. ``between`` is the tool
-    that takes a turn before each pass picks a fork (``between``)."""
+    where the inputs in a row and the stretch with no new line start, how often both waits
+    doubled, and the entries a tool gave up on. ``clock`` is the one the run's deadline is
+    read on. ``between`` is the tool that takes a turn before each pass picks a fork
+    (``between``)."""
 
     def __init__(
         self,
@@ -185,6 +193,10 @@ class Stuck:
         # where the stretch with no new line starts: the inputs the run had then, and the
         # budget left, None before the first pass after the seeds
         self._mark: tuple[int, float] | None = None
+        # the times both waits doubled, and the inputs the run had as the last moment that
+        # doubled them started: an input after those that covers a new line undoes them
+        self._doublings = 0
+        self._quiet_from = 0
 
     def due(self, run: Running, progress: Progress, *, empty: bool) -> bool:
         """Whether a moment comes now: a tool that can still ask is on, a moment that asks is
@@ -195,16 +207,21 @@ class Stuck:
         input ran since the last one ended, so one that ran none ends the run.
         Otherwise it comes on 5 inputs in a row with no new line, or on a
         stretch of the budget with no new line (``_stretched``), each counted
-        from the last moment's end, or from after the last seed.
+        from the last moment's end, or from after the last seed, and each
+        doubled as ``_waits`` says.
         """
         asking = any(tool.can_ask for tool in self._tools.values())
         if not asking or self._asked >= MOMENTS or not _goes_on(run, progress, self._clock()):
             return False
+        # read before the no-fork rule too, so a new line before a no-fork moment undoes the
+        # doublings that moment would otherwise add to
+        waits = self._waits(progress)
         inputs = len(run.records)
         if empty:
             return self._ended is None or inputs > self._ended
         since = run.bounds.seeds if self._ended is None else self._ended
-        in_a_row = inputs - since >= IN_A_ROW and no_gain(progress.covered, IN_A_ROW)
+        wait = IN_A_ROW * waits
+        in_a_row = inputs - since >= wait and no_gain(progress.covered, wait)
         return in_a_row or self._stretched(run.bounds, progress, since)
 
     def between(self, run: Running, progress: Progress) -> None:
@@ -225,8 +242,10 @@ class Stuck:
     def hold(self, run: Running) -> None:
         """Hold one moment: work out the causes, within ``CAUSE_SECONDS`` of now and the run's
         deadline, then hand each tool its entries in turn, until a tool meets the run's stop.
-        The moment counts toward ``MOMENTS`` when a tool asked."""
+        The moment counts toward ``MOMENTS`` when a tool asked, and doubles the waits when
+        none did."""
         self._held += 1
+        started = len(run.records)
         moment = Moment(self._held, run.causes(_cause_stop(run.bounds.until)), run)
         outcomes: dict[_Key, Outcome] = {}
         asked = False
@@ -238,6 +257,7 @@ class Stuck:
             if entries or tool.waiting(moment):
                 asked = self._handed(tool, entries, moment, outcomes) or asked
         self._asked += asked
+        self._double(asked, started)
         self._ended = len(run.records)
         left = _left(run.bounds.until, self._clock())
         self._mark = None if left is None else (self._ended, left)
@@ -259,7 +279,24 @@ class Stuck:
         start = max(since, self._gains.last(progress.covered))
         if self._mark is None or self._mark[0] < start:
             self._mark = (start, left)
-        return self._mark[1] - left >= bounds.budget * STRETCH_SHARE
+        return self._mark[1] - left >= bounds.budget * STRETCH_SHARE * self._waits(progress)
+
+    def _double(self, asked: bool, started: int) -> None:
+        """Double both waits after a moment that started with ``started`` inputs and in which no
+        tool asked, up to ``QUIET_DOUBLINGS`` times; undo the doublings after one that asked."""
+        if asked:
+            self._doublings = 0
+        else:
+            self._doublings = min(self._doublings + 1, QUIET_DOUBLINGS)
+            self._quiet_from = started
+
+    def _waits(self, progress: Progress) -> int:
+        """What both waits are multiplied by: 2 for each moment in a row in which no tool asked,
+        up to ``QUIET_DOUBLINGS``, and 1 again once an input since the last such moment started
+        covered a new line."""
+        if self._gains.last(progress.covered) > self._quiet_from:
+            self._doublings = 0
+        return 2**self._doublings
 
     def _handed(
         self,
