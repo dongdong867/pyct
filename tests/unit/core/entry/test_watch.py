@@ -11,7 +11,7 @@ import pytest
 
 from pyct.core.entry import watch
 from pyct.core.entry.watch import answer, called, given
-from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 
@@ -278,3 +278,33 @@ def test_forget_drops_the_calls_every_thread_left_open() -> None:
 
     assert seen == [2, 0]
     assert lost(sink) == []
+
+
+def test_a_plain_dict_s_get_is_handed_back_as_the_router() -> None:
+    sink: list[SinkItem] = []
+    metas = {"US": 1, "FR": 33}
+    s = ConcolicStr.made("FR", expression="s", sink=sink)
+
+    found = answer(called(metas.get)(given(s)), "get")
+
+    # one fork per key tried, and the lookup was seen: the call records no downgrade
+    assert found == 33
+    assert [(item.expression, item.taken) for item in sink if isinstance(item, Branch)] == [
+        (["==", "s", "'US'"], False),
+        (["==", "s", "'FR'"], True),
+    ]
+    assert lost(sink) == []
+
+
+def test_a_dict_subclass_with_its_own_get_keeps_its_callee() -> None:
+    class Own(dict[str, int]):
+        def get(self, key: str, default: int | None = None) -> int | None:  # type: ignore[override]
+            return 5
+
+    sink: list[SinkItem] = []
+    callee = Own(US=1).get
+    s = ConcolicStr.made("US", expression="s", sink=sink)
+
+    assert called(callee) is callee
+    assert answer(called(callee)(given(s)), "get") == 5
+    assert [item for item in sink if isinstance(item, Branch)] == []
