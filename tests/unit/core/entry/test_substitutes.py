@@ -441,6 +441,8 @@ def test_the_passing_frames_are_the_routers() -> None:
         # link hands on to the next
         "__contains__",
         "forward",
+        # the index read's router
+        "item",
     }
     assert {
         code.co_qualname for code in PASSING if code.co_name in ("__contains__", "forward")
