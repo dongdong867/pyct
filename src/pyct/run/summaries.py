@@ -53,8 +53,9 @@ token limit refused sent nothing and leaves that as it was.
 
 Before each pass picks a fork, the tool also asks about each loss site an
 input recorded a run of, once per run, in the order recorded, with no stuck
-moment (``pyct.run.call_turns``). Decision
-llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
+moment, puts a formula that passes both checks in use when it can, and,
+after the turn, runs again the input its check used (``pyct.run.call_turns``).
+Decision llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
 
 ``SummaryProvider`` and the ask's request and reply are declared in ``pyct.run.summary_asks``.
 """
@@ -181,8 +182,7 @@ class Summaries:
             came[site], made = self._turn(site, moment.run)
             asked = asked or made
             self._asked_for(site, entries)
-        again, self.again = self.again, []
-        run_again(moment.run, again, self.target)
+        self.run_again(moment.run)
         outcomes = tuple(outcome(entry, came, self.calls.came) for entry in entries)
         return Handled(outcomes, asked)
 
@@ -297,7 +297,7 @@ class Summaries:
         state.checked_on = len(loop.runs)
         self.told.note(SummaryChecked(site, len(loop.runs), hidden, call=state.name))
         if state.name is not None:
-            state.last = SummaryState.CHECKED
+            state.last = self.calls.used(loop, state.name, reply.code, file, formula.code)
             return Asked.CHECKED
         state.last = self._used(loop, reply.code, file, formula.code)
         return Asked.CHECKED
@@ -316,15 +316,22 @@ class Summaries:
         self.again.append(loop.runs[-1].number)
         return SummaryState.IN_USE
 
+    def run_again(self, run: Running) -> None:
+        """Run again the inputs the formulas put in use since the last time were checked on, each
+        once, in run order, labeled ``summary`` (``pyct.run.summary_runs.run_again``)."""
+        again, self.again = self.again, []
+        run_again(run, again, self.target)
+
     def heard(self, record: InputRecord, number: int) -> None:
         """An input the run kept as its input ``number``: each loss site it first recorded a run
         of is noted; each loop in use its record says was dropped goes out of use, said with
-        why; then, once the run's inputs run in pyct's own process, each loop still in use goes
-        out of use, kept as checked."""
+        why; then, once the run's inputs run in pyct's own process, each loop and loss site
+        still in use goes out of use, kept as checked."""
         self.calls.sites.heard(record)
         for drop in record.drops:
             if drop.site in self.in_use.sites:
                 self._dropped(drop, record, number)
+        self.calls.fell_back()
         if not self.in_use.sites or self.isolated():
             return
         for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
@@ -348,8 +355,9 @@ class Summaries:
         self.told.note(SummaryDropped(site, number, reason))
 
     def close(self) -> None:
-        """The run ends: no loop of its is in use any more."""
+        """The run ends: no loop or loss site of its is in use any more."""
         self.in_use.close()
+        self.calls.in_use.close()
 
     def _failed(self, state: LoopState, site: Site, reason: str) -> Asked:
         """A failed try, said and kept for the loop's later asks."""

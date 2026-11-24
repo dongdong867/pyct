@@ -309,6 +309,9 @@ class Turns:
     def between(self, run: object) -> None:
         self.turns += 1
 
+    def run_again(self, run: object) -> None:
+        pass
+
 
 def missing(*lines: int) -> Progress:
     """The progress of a run of `FILE`'s lines 4 and 5 whose one input covered the others."""

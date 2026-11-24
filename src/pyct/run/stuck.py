@@ -136,12 +136,15 @@ class StuckTool(Protocol):
 
 class Between(Protocol):
     """A tool that asks between two passes, with no moment: summaries, about each loss site an
-    input recorded a run of. ``can_ask`` as a ``StuckTool``'s."""
+    input recorded a run of, then runs again the inputs the formulas it put in use were checked
+    on. ``can_ask`` as a ``StuckTool``'s."""
 
     @property
     def can_ask(self) -> bool: ...
 
     def between(self, run: Running) -> None: ...
+
+    def run_again(self, run: Running) -> None: ...
 
 
 # an entry as moments tell it apart: by its file and condition, which stay as they were when
@@ -209,12 +212,16 @@ class Stuck:
 
     def between(self, run: Running, progress: Progress) -> None:
         """Give the tool that asks between passes its turn, while it can still ask and the run
-        goes on with a line to win, with the collector paused, as no input runs. A turn is no
-        moment: it counts toward no ``MOMENTS`` and starts no count of inputs in a row."""
+        goes on with a line to win, with the collector paused, as no input runs; then, with the
+        collector on, the inputs it runs again. A turn is no moment: it counts toward no
+        ``MOMENTS`` and starts no count of inputs in a row."""
         tool = self._between
-        if tool is not None and tool.can_ask and _goes_on(run, progress, self._clock()):
+        if tool is None:
+            return
+        if tool.can_ask and _goes_on(run, progress, self._clock()):
             with collector_paused():
                 tool.between(run)
+        tool.run_again(run)
 
     def heard(self, record: InputRecord, number: int) -> None:
         """Tell each tool of an input the run kept as its input ``number``, from 1: a seed's, a

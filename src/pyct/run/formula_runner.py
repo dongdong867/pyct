@@ -33,6 +33,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from pyct.core.entry.calls_in_use import CallInUse
 from pyct.core.entry.in_use import IN_USE, LoopInUse
 from pyct.intercept.model_code import Refused
 from pyct.intercept.wrap import bound_builtins
@@ -46,14 +47,18 @@ class FormulaInPyctProcessError(RuntimeError):
 @dataclass(frozen=True)
 class FormulaText:
     """A formula in use as a fresh interpreter compiles it: its text as the reply wrote it, its
-    parameters, the names it gives a value, its loop's file, line and column, and the file name
-    its code objects carry."""
+    parameters, the names it gives a value, its loop's or loss site's file, line and column, and
+    the file name its code objects carry. A loss site's formula also names the site's downgrade
+    and each value going in's parameter by its position (`pyct.core.entry.calls_in_use`); a
+    loop's names neither."""
 
     text: str
     parameters: tuple[str, ...]
     changed: tuple[str, ...]
     place: tuple[str, int, int]
     file: str
+    name: str | None = None
+    positions: tuple[str | None, ...] | None = None
 
 
 class FormulaRunner:
@@ -83,6 +88,14 @@ class FormulaRunner:
         summary = namespace[SUMMARY]
         assert callable(summary)
         return summary
+
+
+def call_in_use(runner: FormulaRunner) -> CallInUse | None:
+    """The loss site in use the runner's formula stands for, or None for a loop's formula."""
+    text = runner.text
+    if text.name is None or text.positions is None:
+        return None
+    return CallInUse(text.name, text.positions, runner)
 
 
 def handed_formulas() -> tuple[FormulaText, ...]:

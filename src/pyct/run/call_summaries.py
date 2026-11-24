@@ -74,7 +74,8 @@ class LossSites:
 class AskedCall:
     """A loss site as an ask sees it: as a piece that changes ``answer``, with its complete runs
     and its parameters (``AskedLoop``), the downgrade's name and kind, the site's code as
-    written, the latest run's callee, and each run's first answer as recorded."""
+    written, the latest run's callee, each run's first answer as recorded, and each value going
+    in's parameter by its position, None for a constant."""
 
     loop: AskedLoop
     name: str
@@ -82,6 +83,7 @@ class AskedCall:
     written: str
     callee: Callee | None
     answer: object
+    positions: tuple[str | None, ...]
 
 
 def asked_call(
@@ -108,7 +110,8 @@ def asked_call(
     piece = Piece(site.line, site.col, parameters, (ANSWER,), code.lines)
     loop = AskedLoop(site, piece, complete, parameters)
     callee = runs[-1][1].callee
-    return AskedCall(loop, name, first.kind, code.written, callee, json.loads(_answer(first)))
+    answer = json.loads(_answer(first))
+    return AskedCall(loop, name, first.kind, code.written, callee, answer, code.names)
 
 
 def _as_piece_run(run: LossRun, names: tuple[str | None, ...]) -> PieceRun:
