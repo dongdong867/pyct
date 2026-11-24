@@ -124,3 +124,39 @@ def test_a_tracked_int_into_a_plain_str_is_a_tracked_character() -> None:
         ([">", ["len", f"'{ALPHA}'"], "n"], True),
         ([">=", ["len", f"'{ALPHA}'"], ["-", "n"]], True),
     ]
+
+
+def test_three_hundred_keys_are_searched_and_three_hundred_one_are_not() -> None:
+    searched = {f"k{n}": n for n in range(300)}
+    past = {f"k{n}": n for n in range(301)}
+    sink: list[SinkItem] = []
+
+    assert item(searched, text("k299", sink)) == 299
+    assert expressions(sink) == tried(*(f"k{n}" for n in range(299)), found="k299")
+    sink.clear()
+    assert item(past, text("k300", sink)) == 300
+    assert expressions(sink) == ["__getitem__"]
+    sink.clear()
+    assert routed(past.get)(text("k300", sink)) == 300
+    assert expressions(sink) == ["get"]
+    sink.clear()
+    assert item(list(range(301)), number(300, sink)) == 300
+    assert expressions(sink) == ["__getitem__"]
+
+
+class Odd(str):
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    __hash__ = str.__hash__
+
+
+def test_a_key_pyct_does_not_compare_is_python_s_own_and_a_downgrade() -> None:
+    for table in ({(1, 2): 5, "a": 1}, {Odd("b"): 5, "a": 1}):
+        sink: list[SinkItem] = []
+
+        assert item(table, text("a", sink)) == 1
+        assert expressions(sink) == ["__getitem__"]
+        sink.clear()
+        assert routed(table.get)(text("a", sink)) == 1
+        assert expressions(sink) == ["get"]

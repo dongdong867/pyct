@@ -13,7 +13,7 @@ import pytest
 from targets.dicts import plain_lookups
 from targets.lists import plain_lookups as list_lookups
 from targets.strs import plain_lookups as str_lookups
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, input_lines, run_pyct
 from tests.acceptance.test_bool_parameters import covered
 from tests.acceptance.test_follow_an_int_subclass_on_the_left import placed
 from tests.acceptance.test_lists import failure_detail
@@ -143,3 +143,18 @@ def test_a_tracked_int_into_a_plain_str_gives_a_tracked_character() -> None:
     ]
     check_every_return_is_covered("lettered", result.stdout, STRS_FILE)
     assert 16 in keys_tried(result.stdout, "n")
+
+
+# follow-a-tracked-key-into-a-plain-container-run-plain-lookup-past-limit
+def test_a_dict_past_the_limit_is_python_s_own_and_names_get() -> None:
+    result = run_pyct(f"{DICTS}::past_limit", '{"s": "k0"}', "--goal", "bugs")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    assert plain_lookups.past_limit("k0") == "other"
+    at = line_of("past_limit", "LARGE.get(s)")
+    assert placed(seed, at) == []
+    column = DICTS_FILE.read_text().splitlines()[at - 1].index("LARGE")
+    assert seed["downgrades"] == [
+        downgrade("get", 1, f"targets/dicts/plain_lookups.py:{at}:{column}")
+    ]

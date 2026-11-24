@@ -30,3 +30,13 @@ def defaulted(s):
 
 def raised(s):
     return METAS[s]
+
+
+LARGE = {f"k{n}": n for n in range(301)}
+
+
+def past_limit(s):
+    count = LARGE.get(s)
+    if count == 300:
+        return "last"
+    return "other"

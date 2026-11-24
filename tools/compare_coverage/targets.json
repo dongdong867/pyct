@@ -156,6 +156,7 @@
     {"set": "v2", "target": "targets.dicts.plain_lookups::guarded", "seed": {"s": "US"}},
     {"set": "v2", "target": "targets.dicts.plain_lookups::defaulted", "seed": {"s": "US"}},
     {"set": "v2", "target": "targets.dicts.plain_lookups::raised", "seed": {"s": "US"}},
+    {"set": "v2", "target": "targets.dicts.plain_lookups::past_limit", "seed": {"s": "k0"}},
     {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}},
     {"set": "v2", "target": "targets.dicts.settled::only_a", "seed": {"d": {"a": 9}}},
     {"set": "v2", "target": "targets.dicts.walk_keys::int_below", "seed": {"d": {"1": 0}}},
