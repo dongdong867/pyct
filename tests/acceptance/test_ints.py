@@ -30,6 +30,7 @@ REFLECTED_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_check.py"
 TRUTH_TEST = "targets.ints.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
 BIT_CHECK = "targets.ints.bit_check::parity"
+BIT_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "bit_check.py")
 TRUE_DIVISION = "targets.ints.true_division::halve"
 ARITHMETIC_CHECK = "targets.ints.arithmetic_check::grade"
 ARITHMETIC_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "arithmetic_check.py")
@@ -117,16 +118,17 @@ def test_flips_a_truth_test() -> None:
     assert union_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
 
 
-# follow-integers-keeps-bit-operations-as-downgrades
-def test_keeps_bit_operations_as_downgrades() -> None:
+# follow-integers-keeps-bit-operations-as-downgrades, until follow-bit-operations taught them
+def test_follows_a_bit_operation_into_a_fork() -> None:
     result = run_pyct(BIT_CHECK, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
-    assert seed["downgrades"] == [downgrade("__and__", 1, "targets/ints/bit_check.py:2:7")]
-    # `x & 1` is a plain int, and the truth of a plain int is nothing pyct can flip
-    assert seed["forks"] == []
-    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+    seed, solved = two_lines(result.stdout)
+    assert seed["downgrades"] == []
+    # `x & 1` is a tracked int, and its truth test is a fork the solver flips
+    assert [fork["expression"] for fork in forks_of(seed)] == [["!=", ["&", "x", 1], 0]]
+    assert argument(solved, "x") % 2 == 0
+    assert union_of([seed, solved]) == {BIT_CHECK_FILE: [2, 3, 4]}
 
 
 # follow-integers-keeps-true-division-as-a-downgrade, until follow-floats-that-meet-ints taught
