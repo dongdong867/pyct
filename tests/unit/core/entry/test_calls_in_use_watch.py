@@ -1,0 +1,188 @@
+"""A loss site in use at a watched call and at a `math` call pyct does not follow: the formula
+runs on the arguments as the watch was given them, each list as a copy made then, or on the
+`math` call's arguments, and on a match the target gets the real answer tracked."""
+
+import builtins
+import contextlib
+import json
+import math
+import sys
+import textwrap
+from collections.abc import Callable, Iterator, Mapping
+from typing import Any
+
+import pytest
+
+from pyct.core.entry import losses, pieces, substitutes, watch
+from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse
+from pyct.core.entry.recorded import MOST_RUNS
+from pyct.core.entry.watch import answer, called, given
+from pyct.core.foundation import escapes
+from pyct.core.foundation.branch import Downgrade, FormulaDrop, LossRun, SinkItem
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
+
+type Formula = Callable[[Mapping[str, object]], Mapping[str, object]]
+
+
+@pytest.fixture(autouse=True)
+def no_call_open() -> None:
+    watch.forget()
+
+
+@contextlib.contextmanager
+def using(line: int, col: int, call: CallInUse, *, alone: bool = True) -> Iterator[list[SinkItem]]:
+    """A live input whose call runs alone unless ``alone`` is False, ``call`` in use at the line
+    and column of this file, whose sink is the list yielded."""
+    CALLS_IN_USE[(__file__, line, col)] = call
+    sink: list[SinkItem] = []
+    pieces.start(sink, alone=alone)
+    losses.start(sink, alone=alone)
+    try:
+        yield sink
+    finally:
+        losses.forget()
+        pieces.forget()
+        escapes.forget()
+        CALLS_IN_USE.clear()
+
+
+def here() -> int:
+    """The line after the one that called this."""
+    return sys._getframe(1).f_lineno + 1
+
+
+def stripped(values: Mapping[str, object]) -> Mapping[str, object]:
+    s = values["s"]
+    assert isinstance(s, str)
+    return {"answer": s.strip()}
+
+
+def downgrades(sink: list[SinkItem]) -> list[Downgrade]:
+    return [item for item in sink if type(item) is Downgrade]
+
+
+def test_a_watched_call_s_formula_runs_on_its_arguments_as_given() -> None:
+    line = here() + 2
+    with using(line, 12, CallInUse("textwrap.dedent", ("s",), stripped)) as sink:
+        s = ConcolicStr.made("  ab", "s", sink)
+        t = answer(called(textwrap.dedent)(given(s)), "textwrap.dedent")
+
+    assert type(t) is ConcolicStr
+    assert (str(t), t.expression) == ("ab", ["strip", "s"])
+    assert downgrades(sink) == []
+
+
+def grown(items: list[object]) -> int:
+    """A Python function outside the target's package, which adds to its list."""
+    items.append(0)
+    return len(items)
+
+
+def test_a_watched_call_s_formula_reads_each_list_as_it_was_given() -> None:
+    seen: list[int] = []
+
+    def counted(values: Mapping[str, object]) -> Mapping[str, object]:
+        items = values["items"]
+        assert isinstance(items, list)
+        seen.append(len(items))
+        return {"answer": len(items) + 1}
+
+    line = here() + 2
+    with using(line, 12, CallInUse("grown", ("items",), counted)) as sink:
+        items: list[object] = [ConcolicInt.made(3, expression="x", sink=sink)]
+        n = answer(called(grown)(given(items)), "grown")
+
+    assert (n, items[1:], seen) == (2, [0], [1])
+    assert [item for item in sink if type(item) is FormulaDrop] == []
+
+
+def gave_n(values: Mapping[str, object]) -> Mapping[str, object]:
+    return {"answer": values["n"]}
+
+
+def test_a_math_call_s_formula_runs_on_its_arguments() -> None:
+    gcd = substitutes.call(math.gcd)
+    line = here() + 2
+    with using(line, 12, CallInUse("gcd", ("n", None), gave_n)) as sink:
+        n = ConcolicInt.made(12, expression="n", sink=sink)
+        k = gcd(n, 0)
+
+    assert type(k) is ConcolicInt
+    assert (int.__int__(k), k.expression) == (12, "n")
+    assert downgrades(sink) == []
+
+
+def test_a_watched_call_in_a_call_that_does_not_run_alone_keeps_its_downgrade() -> None:
+    line = here() + 2
+    with using(line, 12, CallInUse("d", ("s",), stripped), alone=False) as sink:
+        s = ConcolicStr.made("  ab", "s", sink)
+        t = answer(called(textwrap.dedent)(given(s)), "d")
+
+    assert type(t) is str
+    assert [each.name for each in downgrades(sink)] == ["d"]
+
+
+def lstripped(values: Mapping[str, object]) -> Mapping[str, object]:
+    s = values["s"]
+    assert isinstance(s, str)
+    return {"answer": s.lstrip()}
+
+
+def test_a_watched_call_dropped_past_its_first_runs_keeps_the_run_it_failed_on() -> None:
+    texts = [" a", " b", " c", " d\n e"]
+    line = here() + 3
+    with using(line, 12, CallInUse("textwrap.dedent", ("s",), lstripped)) as sink:
+        for text in texts:
+            s = ConcolicStr.made(text, "s", sink)
+            answer(called(textwrap.dedent)(given(s)), "textwrap.dedent")
+
+    runs = [item for item in sink if type(item) is LossRun]
+    assert len(runs) == MOST_RUNS + 1 == len(texts)
+    assert runs[-1].going_in[0].value == json.dumps(" d\n e")
+    [drop] = [item for item in sink if type(item) is FormulaDrop]
+    assert drop.run == MOST_RUNS
+    assert sink.index(drop) > sink.index(runs[-1])
+
+
+def test_a_watched_call_beside_the_site_in_use_keeps_its_arguments_on_its_first_start_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    copied: list[object] = []
+
+    def copying(value: object) -> object:
+        copied.append(value)
+        return value
+
+    monkeypatch.setattr(watch, "as_it_went_in", copying)
+    line = here() + 3
+    with using(line, 12, CallInUse("textwrap.dedent", ("s",), stripped)) as sink:
+        for text in [" a", " b", " c"]:
+            s = ConcolicStr.made(text, "s", sink)
+            answer(called(textwrap.dedent)(given(s)), "textwrap.dedent")
+            answer(called(textwrap.indent)(given(s), " "), "textwrap.indent")
+
+    assert [str(each) for each in copied] == [" a", " a", " b", " c"]
+
+
+def test_a_watched_call_at_a_site_in_use_runs_no_import_statement_once_it_recorded_its_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    imported: list[str] = []
+    real = builtins.__import__
+
+    def counted(name: str, *args: Any, **kwargs: Any) -> object:
+        imported.append(name)
+        return real(name, *args, **kwargs)
+
+    t: object = None
+    line = here() + 4
+    with using(line, 16, CallInUse("d", ("s",), stripped)) as sink:
+        for each in range(MOST_RUNS + 2):
+            if each == MOST_RUNS:
+                monkeypatch.setattr(builtins, "__import__", counted)
+            t = answer(called(textwrap.dedent)(given(ConcolicStr.made(" ab", "s", sink))), "d")
+        monkeypatch.undo()
+
+    assert type(t) is ConcolicStr
+    assert imported == []

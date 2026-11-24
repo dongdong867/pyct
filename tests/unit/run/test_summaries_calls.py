@@ -3,12 +3,13 @@ of, and asks about each once per run, in the order noted, while it can still ask
 sites a formula cannot stand for; given records made by hand."""
 
 import ast
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
 
+from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
@@ -61,8 +62,12 @@ class Fake:
 
 
 @pytest.fixture(autouse=True)
-def one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+def one_thread(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """pyct's process as a run has it, one thread, and core's table of loss sites in use empty
+    after the test, since a formula that passes comes into use."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
+    yield
+    CALLS_IN_USE.clear()
 
 
 def tool(fake: Fake, notes: list[Note], limit: TokenLimit | None = None) -> Summaries:
@@ -127,7 +132,7 @@ def test_no_ask_starts_once_the_run_met_a_stop() -> None:
     assert fake.requests == []
 
 
-def test_a_checked_formula_is_kept_as_checked_with_its_name() -> None:
+def test_a_checked_formula_is_kept_with_its_name() -> None:
     fake, notes = Fake(), []
     summaries = tool(fake, notes)
 
@@ -137,7 +142,7 @@ def test_a_checked_formula_is_kept_as_checked_with_its_name() -> None:
     assert (state.kind, state.name, state.state, state.checked_on) == (
         "call",
         "__rshift__",
-        SummaryState.CHECKED,
+        SummaryState.IN_USE,
         1,
     )
     assert (state.line, state.col, state.changes, state.formula) == (37, 8, ("answer",), QUARTER)

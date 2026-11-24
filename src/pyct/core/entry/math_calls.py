@@ -20,7 +20,8 @@ call runs, `pyct.core.entry.bound` hands the call one of these routers (`ROUTERS
   not encoded here, is Python's own answer on the plain values, and a
   downgrade named by the function after it, so a call that raises records
   nothing; a live input that records loss runs records its run
-  (`pyct.core.entry.losses`).
+  (`pyct.core.entry.losses`), and at a loss site in use the answer comes
+  back tracked, with no downgrade (`pyct.core.entry.calls_in_use`).
 
 A call with no tracked argument is Python's own. `floor`, `ceil` and
 `trunc` ask the number for its own `__floor__`, `__ceil__` and `__trunc__`,
@@ -39,7 +40,7 @@ from typing import Any, cast
 
 from pyct.core.entry import losses
 from pyct.core.foundation.branch import BranchSink, Downgrade, Expression, caller_site
-from pyct.core.foundation.escapes import lost
+from pyct.core.foundation.escapes import escape_keys, lost
 from pyct.core.foundation.values import forked, own, plain
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers import numbers
@@ -193,8 +194,12 @@ def _tracked_call(
     answer = own(function, *plain_args, **{key: _plain(value) for key, value in kwargs.items()})
     lost_as = Downgrade(name=function.__name__, site=caller_site())
     given = (*args, *kwargs.values())
+    # at a loss site in use, the answer tracked, which records no downgrade
+    got = losses.math_lost(lost_as, given, answer)
+    if got is not answer:
+        escape_keys(sink, given)
+        return got
     lost(sink, lost_as, given)
-    losses.math_lost(lost_as, given, answer)
     return answer
 
 

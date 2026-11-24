@@ -108,6 +108,26 @@ class LoopInUse:
 # the loops in use, by the file, line and column of each
 IN_USE: dict[_Place, LoopInUse] = {}
 
+# the one name a loss site's formula gives a value for
+ANSWER = "answer"
+
+
+@dataclass(frozen=True)
+class CallInUse:
+    """A loss site's formula (`pyct.core.entry.calls_in_use`): the name of the downgrade it
+    stands for, each value going in's parameter by its position, None for a constant the formula
+    does not take, and the call that takes each parameter's value by name and answers
+    ``answer``'s."""
+
+    name: str
+    positions: tuple[str | None, ...]
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]]
+
+
+# the loss sites in use, by the file, line and column of each, which an upper layer fills as it
+# fills `IN_USE`
+CALLS_IN_USE: dict[_Place, CallInUse] = {}
+
 
 class Run:
     """A run of a loop in use, waiting on its end: the loop, the piece's names, the values that
@@ -124,7 +144,7 @@ class Run:
         self.site = Site(*place)
         self.loop = loop
         self.names = names
-        self.kept = {name: _as_it_went_in(each) for name, each in kept.items()}
+        self.kept = {name: as_it_went_in(each) for name, each in kept.items()}
         self.written = {name: plain(each) for name, each in kept.items() if type(each) in _SCALARS}
         self.key = key
         self.entry: object = None
@@ -265,7 +285,7 @@ def _finished(run: Run, real: Mapping[str, object]) -> dict[str, object] | None:
             # the loop's value is of the formula value's kind, as their JSON texts are one
             real_value = cast(int, plain(value))
             made[name] = type(tracked).made(real_value, tracked.expression, tracked.sink)
-    _gave(made.values())
+    gave(made.values())
     return made
 
 
@@ -278,7 +298,7 @@ def _forming(loop: LoopInUse, given: Mapping[str, object]) -> Mapping[str, objec
         USING.forming = False
 
 
-def _gave(values: Iterable[object]) -> None:
+def gave(values: Iterable[object]) -> None:
     """Keep the term of each tracked value a formula gave, for `summed`. A walk that finds no term
     adds every part it reached to the clean parts, so a clean part can hold a term kept now only
     when that term is itself clean, as when the formula hands back a term it was given; only
@@ -367,7 +387,7 @@ def _rebound(frame: types.FrameType, run: Run, made: Mapping[str, object]) -> No
     rebind(frame, back)
 
 
-def _as_it_went_in(value: object) -> object:
+def as_it_went_in(value: object) -> object:
     """A list or dict going in as a copy of the list or dict itself, one level deep, taken on every
     run of a loop in use: a loop that adds, removes or replaces its items leaves the copy as it went
     in. A tracked one's copy is tracked by the same form and records no fork. One with no form, or
