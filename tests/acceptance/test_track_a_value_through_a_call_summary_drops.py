@@ -124,7 +124,9 @@ def test_a_watched_call_dropped_past_its_recorded_runs_is_asked_about_with_that_
     assert [request.place for request in provider.requests] == [DEDENT] * 2
     again = provider.requests[1]
     [earlier] = again.tries
-    number = int(re.fullmatch(r"dropped at input (\d+): .*", earlier.reason, re.S)[1])
+    found = re.fullmatch(r"dropped at input (\d+): .*", earlier.reason, re.S)
+    assert found is not None
+    number = int(found[1])
     assert again.runs[0].going_in == (("s", json.dumps(" d\n e")),)
     refused = f'at input {number}, answer was "d\\ne", the formula gave "d\\n e"'
     at_dedent = f"llm: summary for the call textwrap.dedent at {at(100, 11)}"
