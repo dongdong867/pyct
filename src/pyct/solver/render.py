@@ -298,7 +298,7 @@ class _Program:
             return None
         kind = self._kind(head, operands)
         if kind is not None and (bounded := BOUNDED.get((head, kind))) is not None:
-            return partial(self._bounded, bounded, SORTS[kind])
+            return partial(self._bounded, bounded, SORTS[RESULTS[head] or kind])
         if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
             return ON_A_CHARACTER[head]
         form = None if kind is None else self.forms.get((head, kind))

@@ -10,6 +10,7 @@ from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import argv, options
+from pyct.solver.lists import Origin
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
 from tests.unit.solver.test_cvc5 import fork
@@ -179,3 +180,21 @@ def test_a_program_that_holds_an_iand_runs_with_cvc5_s_bitwise_refinement() -> N
     assert "(set-option :iand-mode bitwise)" in options(1.0, iand)
     assert "--iand-mode=bitwise" not in argv(1.0, plain)
     assert not any("iand" in each for each in options(1.0, plain))
+
+
+@pytest.mark.parametrize(
+    ("condition", "leaves", "sort"),
+    [
+        (["==", ["&", "x", "y"], 12], {"x": int, "y": int}, "Int"),
+        (["==", ["float", "s"], 1e-30], {"s": str}, "Float64"),
+    ],
+    ids=["an int's and", "a float read from a str"],
+)
+def test_the_term_past_a_bound_is_declared_in_the_sort_of_its_value(
+    condition: Expression, leaves: dict[str, type], sort: str
+) -> None:
+    loose = Origin(shapes={}, bounded=False)
+
+    text = program((fork(condition, taken=True),), leaves, loose).text
+
+    assert f"(declare-const e!0 {sort})" in text
