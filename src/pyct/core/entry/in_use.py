@@ -161,7 +161,17 @@ class _Using:
     else, where its drops go, the loops dropped in it, each run waiting on its end, by line,
     the site of the formula running, and what `summed` knows of the input's terms."""
 
-    __slots__ = ("clean", "dropped", "forming", "given", "lines", "reads", "sink", "waiting")
+    __slots__ = (
+        "clean",
+        "dropped",
+        "formed",
+        "forming",
+        "given",
+        "lines",
+        "reads",
+        "sink",
+        "waiting",
+    )
 
     def __init__(self) -> None:
         self.lines: frozenset[int] = frozenset()
@@ -180,6 +190,9 @@ class _Using:
         self.reads: dict[int, _Named] = {}
         # the ids of the parts known to hold none, each reachable from a fork the input keeps
         self.clean: set[int] = set()
+        # each part filed while formulas ran, by its id, in the order filed, since the last
+        # `gave` and the last fork recorded outside a formula
+        self.formed: dict[int, list[Expression]] = {}
 
 
 USING = _Using()
@@ -308,8 +321,8 @@ def _forming(site: Site, loop: LoopInUse, given: Mapping[str, object]) -> Mappin
 
 def gave(values: Iterable[object], place: Site) -> None:
     """Keep the term of each tracked value the formula at ``place`` gave, for `summed`. A term
-    already filed without that formula, as when a formula hands back a term it was given, makes
-    `summed` file every part again: each part filed above it is out of date."""
+    already filed without that formula is filed again with it, and so is each part filed above
+    it (`_refile`)."""
     for each in values:
         term = _term(each)
         if not isinstance(term, list):
@@ -317,8 +330,25 @@ def gave(values: Iterable[object], place: Site) -> None:
         _, sites = USING.given.get(id(term), (term, frozenset()))
         USING.given[id(term)] = (term, sites | {place})
         if _filed(term) and place not in _sites_filed(term):
-            USING.reads.clear()
-            USING.clean.clear()
+            _refile(term)
+    USING.formed.clear()
+
+
+def _refile(term: list[Expression]) -> None:
+    """File again a term a formula now gives, and each part filed above it. A term first filed
+    while formulas ran, as by a fork of the formula's own code, has each part filed above it
+    among ``USING.formed``, since a part is filed after the lists it holds; for any other term,
+    as one a formula hands back as it was given, nothing stays filed."""
+    formed = USING.formed
+    if id(term) not in formed:
+        USING.reads.clear()
+        USING.clean.clear()
+        return
+    above: set[int] = set()
+    for key, part in formed.items():
+        if key == id(term) or any(id(each) in above for each in part if isinstance(each, list)):
+            above.add(key)
+            _file(part)
 
 
 def _term(value: object) -> Expression:
@@ -328,7 +358,7 @@ def _term(value: object) -> Expression:
 def summed(fork: Branch) -> Branch:
     """The fork, naming the site of the formula running, which recorded it, and of each formula
     whose value's term its condition holds, as the very list, in code order; else the fork
-    itself. A part is filed once in the input, unless `gave` clears what is filed."""
+    itself. A part is filed once in the input, unless `gave` files it again."""
     forming = USING.forming
     if forming is None and not USING.given:
         return fork
@@ -343,17 +373,29 @@ def summed(fork: Branch) -> Branch:
 
 def _formulas_read(expression: Expression) -> frozenset[Site]:
     """The sites of the formulas whose terms the expression is or holds. Each part not filed yet
-    in the input is filed: in ``USING.reads`` with the sites it names, or in ``USING.clean``
-    when it names none, so that no later walk in the input goes below it."""
+    in the input is filed (`_file`), so that no later walk in the input goes below it, and kept
+    in ``USING.formed`` too while a formula runs."""
     if not isinstance(expression, list):
         return frozenset()
+    forming = USING.forming is not None
+    if not forming:
+        USING.formed.clear()
     for part in _unfiled(expression):
-        sites = _named(part)
-        if sites:
-            USING.reads[id(part)] = (part, sites)
-        else:
-            USING.clean.add(id(part))
+        _file(part)
+        if forming:
+            USING.formed[id(part)] = part
     return _sites_filed(expression)
+
+
+def _file(part: list[Expression]) -> None:
+    """File the part in ``USING.reads`` with the sites it names, or in ``USING.clean`` when it
+    names none."""
+    sites = _named(part)
+    if sites:
+        USING.clean.discard(id(part))
+        USING.reads[id(part)] = (part, sites)
+    else:
+        USING.clean.add(id(part))
 
 
 def _unfiled(expression: list[Expression]) -> Iterator[list[Expression]]:
