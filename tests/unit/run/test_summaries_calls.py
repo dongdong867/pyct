@@ -287,5 +287,5 @@ def test_a_formula_put_in_use_after_the_path_ran_stays_in_use() -> None:
 
     assert summaries.states()[0].state is SummaryState.DROPPED
     assert [note for note in notes if isinstance(note, SummaryTakenOut)] == [
-        SummaryTakenOut(site, 2, f"its fork at {FILE}:45:7 timed out", call="__pow__")
+        SummaryTakenOut(site, 2, f"a fork on its path at {FILE}:45:7 timed out", call="__pow__")
     ]

@@ -129,7 +129,7 @@ def test_a_call_formula_whose_fork_times_out_goes_out_of_use(
     done = run_summaries(BOUNDED, {"n": 2}, provider, LIMITS)
 
     [(_, reason)] = taken_out(done, POW)
-    assert reason == f"its fork at {LATER_FORK} timed out"
+    assert reason == f"a fork on its path at {LATER_FORK} timed out"
     assert states_of(done) == [(84, "dropped")]
     line = next(each for each in done.llm_said() if "taken out of use" in each)
     said = done.said.index(line)
@@ -148,7 +148,7 @@ def test_a_slow_unknown_on_a_formula_s_path_takes_it_out_and_a_quick_one_does_no
 
     [(_, reason)] = taken_out(slow, POW)
     assert re.fullmatch(
-        rf"its fork at {re.escape(LATER_FORK)} answered unknown after 0.30 s", reason
+        rf"a fork on its path at {re.escape(LATER_FORK)} answered unknown after 0.30 s", reason
     )
     assert states_of(slow) == [(84, "dropped")]
 
@@ -171,7 +171,7 @@ def test_a_loop_formula_whose_fork_times_out_goes_out_of_use(
     loop = line_of("capped", "for c in s:")
     fork = f"{G}:{line_of('capped', 'if t == 4:')}:7"
     [(_, reason)] = taken_out(done, f"{G}:{loop}", "loop")
-    assert reason == f"its fork at {fork} timed out"
+    assert reason == f"a fork on its path at {fork} timed out"
     assert states_of(done) == [(loop, "dropped")]
     assert not any(record.drops for record in done.records)
 
