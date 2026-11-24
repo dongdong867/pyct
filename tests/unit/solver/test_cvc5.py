@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import shutil
 import time
 from pathlib import Path
@@ -44,8 +45,13 @@ def fake_cvc5(directory: Path, *, out: str = "", err: str = "", code: int = 0) -
 
 def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand the solver's clock still, so no millisecond passes between setting a limit and
-    handing cvc5 what is left of it."""
-    now = time.monotonic()
+    handing cvc5 what is left of it.
+
+    It stands at a whole second, the next one, so a limit added to it and taken back off is
+    the limit again. Linux's clock counts from boot: after about 24 days a fraction of a second
+    there rounds the sum, and a limit of weeks comes back a millisecond longer.
+    """
+    now = float(math.ceil(time.monotonic()))
     monkeypatch.setattr(cvc5_module, "monotonic", lambda: now)
 
 

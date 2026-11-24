@@ -99,6 +99,10 @@ def _cpu_seconds() -> float:
     return time.process_time() + children.ru_utime + children.ru_stime
 
 
+# CPU time is not proof against load where two threads share a core: on Linux, with 24 busy
+# loops on 16 cores of two threads each, the 400-pass solve used 1.02 s, against 0.60 s alone,
+# so it runs apart from the other workers
+@pytest.mark.serial
 @needs_cvc5
 @pytest.mark.parametrize(
     ("passes", "far"), [(400, 1000), (40, 20_000)], ids=["400-1000", "40-20000"]

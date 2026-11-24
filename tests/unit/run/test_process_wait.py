@@ -4,6 +4,9 @@ It sets no timer and takes no signal while it waits, so nothing lands in
 pyct's own code after the wait.
 """
 
+# the kqueue stand-in's annotation names select.kevent, which only a system with kqueue has
+from __future__ import annotations
+
 import contextlib
 import errno
 import os
@@ -109,6 +112,7 @@ class FailingQueue:
         pass
 
 
+@pytest.mark.skipif(not hasattr(select, "kqueue"), reason="kqueue is macOS's and the BSDs'")
 def test_a_kqueue_that_cannot_watch_the_process_raises_and_ends_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

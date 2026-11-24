@@ -231,7 +231,9 @@ def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
         ("sorted_row_floor", {"grid": [[2.5, 0.5], [1]], "i": 0}),
         ("sorted_row_is_true", {"grid": [[False, False], [1]], "i": 0}),
         ("sorted_cut_equal", {"xs": [1, 2.5, 0.5]}),
-        ("popped_and_sorted", {"xs": [0.5, 2, False]}),
+        # its flip took cvc5 past the run's budget beside 20 other workers on Linux, and passed
+        # alone and beside 21 CPU burners
+        pytest.param("popped_and_sorted", {"xs": [0.5, 2, False]}, marks=pytest.mark.serial),
         ("tracked_index_above", {"xs": [1, 0.5], "i": 1}),
         ("gains_later", {"xs": [1], "i": 0, "f": 0.5}),
     ],

@@ -2,6 +2,7 @@
 thread or handler, so nothing that lands on the process, a Ctrl-C say, meets a stop of its."""
 
 import dis
+import gc
 import itertools
 import signal
 import textwrap
@@ -279,7 +280,27 @@ SHAPES = {
 }
 
 
+@pytest.fixture
+def heap_set_aside() -> Iterator[None]:
+    """Keep every object the test process held before the test out of the collector's way.
+
+    A worker late in a run holds thousands of tests' worth, and pyct's process only its run's,
+    which the test builds after this, so a collection over them still counts in a stretch.
+    With three million held before, one collection, which no clock read can split, took up to
+    1.0 s of CPU on Linux and 0.27 s on macOS. Set aside, the longest stretch was 0.093 s on
+    Linux under 24 CPU burners and 0.087 s on a Mac, [spread_inputs] at most 0.032 s. A Mac
+    whose load average was two to four times its cores still reached 0.186 s in [jumps], on
+    its slower cores.
+    """
+    gc.freeze()
+    try:
+        yield
+    finally:
+        gc.unfreeze()
+
+
 @pytest.mark.serial
+@pytest.mark.usefixtures("heap_set_aside")
 @pytest.mark.parametrize("shape", list(SHAPES))
 def test_the_clock_is_read_often_through_each_large_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
@@ -432,6 +453,9 @@ def test_the_label_pass_is_asked_for_no_less_than_it_takes() -> None:
     assert asked[0] >= took, (asked[0], took)
 
 
+# its 0.3 s ran out before the small function was worked out in two full runs on Linux, beside
+# 20 and 27 other workers, and it passed alone and beside 21 CPU burners
+@pytest.mark.serial
 def test_a_function_too_large_to_read_in_time_is_left_and_the_rest_worked_out(
     tmp_path: Path,
 ) -> None:
