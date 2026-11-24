@@ -67,7 +67,7 @@ import contextlib
 import copy
 import dataclasses
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -307,18 +307,16 @@ def _forming(site: Site, loop: LoopInUse, given: Mapping[str, object]) -> Mappin
 
 
 def gave(values: Iterable[object], place: Site) -> None:
-    """Keep the term of each tracked value the formula at ``place`` gave, for `summed`. A term a
-    walk already reached that now names one more formula, as when a formula hands back a term it
-    was given, makes `summed` forget what its walks found: each part above it is out of date."""
+    """Keep the term of each tracked value the formula at ``place`` gave, for `summed`. A term
+    already filed without that formula, as when a formula hands back a term it was given, makes
+    `summed` file every part again: each part filed above it is out of date."""
     for each in values:
         term = _term(each)
         if not isinstance(term, list):
             continue
-        key = id(term)
-        _, sites = USING.given.get(key, (term, frozenset()))
-        USING.given[key] = (term, sites | {place})
-        known = USING.reads.get(key)
-        if (known is not None and place not in known[1]) or key in USING.clean:
+        _, sites = USING.given.get(id(term), (term, frozenset()))
+        USING.given[id(term)] = (term, sites | {place})
+        if _filed(term) and place not in _sites_filed(term):
             USING.reads.clear()
             USING.clean.clear()
 
@@ -330,7 +328,7 @@ def _term(value: object) -> Expression:
 def summed(fork: Branch) -> Branch:
     """The fork, naming the site of the formula running, which recorded it, and of each formula
     whose value's term its condition holds, as the very list, in code order; else the fork
-    itself. A part is walked once in the input, unless `gave` makes the walks start over."""
+    itself. A part is filed once in the input, unless `gave` clears what is filed."""
     forming = USING.forming
     if forming is None and not USING.given:
         return fork
@@ -344,39 +342,52 @@ def summed(fork: Branch) -> Branch:
 
 
 def _formulas_read(expression: Expression) -> frozenset[Site]:
-    """The sites of the formulas whose terms the expression is or holds. Each part walked joins
-    ``USING.reads`` with the sites it names, or ``USING.clean`` when it names none, so that no
-    later walk in the input goes below it."""
+    """The sites of the formulas whose terms the expression is or holds. Each part not filed yet
+    in the input is filed: in ``USING.reads`` with the sites it names, or in ``USING.clean``
+    when it names none, so that no later walk in the input goes below it."""
     if not isinstance(expression, list):
         return frozenset()
-    reads, clean, given = USING.reads, USING.clean, USING.given
+    for part in _unfiled(expression):
+        sites = _named(part)
+        if sites:
+            USING.reads[id(part)] = (part, sites)
+        else:
+            USING.clean.add(id(part))
+    return _sites_filed(expression)
+
+
+def _unfiled(expression: list[Expression]) -> Iterator[list[Expression]]:
+    """Each part of the expression not filed yet, each after the lists it holds; the caller files
+    each part before it takes the next."""
+    # a part comes off the stack once to put its lists above it, and again to be handed out
     pending: list[tuple[list[Expression], bool]] = [(expression, False)]
     while pending:
-        part, below = pending.pop()
-        key = id(part)
-        if key in reads or key in clean:
+        part, lists_filed = pending.pop()
+        if _filed(part):
             continue
-        if not below:
-            pending.append((part, True))
-            pending.extend((each, False) for each in part if isinstance(each, list))
+        if lists_filed:
+            yield part
             continue
-        sites = _named(part, given, reads)
-        if sites:
-            reads[key] = (part, sites)
-        else:
-            clean.add(key)
-    held = reads.get(id(expression))
+        pending.append((part, True))
+        pending.extend((each, False) for each in part if isinstance(each, list))
+
+
+def _filed(part: list[Expression]) -> bool:
+    return id(part) in USING.reads or id(part) in USING.clean
+
+
+def _sites_filed(part: list[Expression]) -> frozenset[Site]:
+    """The sites filed for the part, none when it is clean or not filed."""
+    held = USING.reads.get(id(part))
     return frozenset() if held is None else held[1]
 
 
-def _named(
-    part: list[Expression], given: dict[int, _Named], reads: dict[int, _Named]
-) -> frozenset[Site]:
-    """The sites a part names, each list in it already walked: its own, when a formula gave it,
+def _named(part: list[Expression]) -> frozenset[Site]:
+    """The sites a part names, each list in it already filed: its own, when a formula gave it,
     and those of each list in it."""
-    own: frozenset[Site] = given[id(part)][1] if id(part) in given else frozenset()
-    inside = (reads[id(each)][1] for each in part if isinstance(each, list) and id(each) in reads)
-    return own.union(*inside)
+    given = USING.given.get(id(part))
+    own: frozenset[Site] = frozenset() if given is None else given[1]
+    return own.union(*(_sites_filed(each) for each in part if isinstance(each, list)))
 
 
 def _dropped(run: Run, real: Mapping[str, object], name: str, got: str, reason: DropReason) -> None:
