@@ -14,11 +14,9 @@ in core's table of loss sites in use (`pyct.core.entry.calls_in_use`), when
 the run's inputs run in a process of their own and every answer its runs
 recorded is an int, float, str or bool; else it is kept as checked, and why
 is said once. Once it is in use, the latest input whose run its check used
-runs again after the turn, labeled ``summary``. A site in use also goes out of use,
-said, when a pick's solver ask ran long on a path that holds a fork that reads its answer
-(`CallTurns.took_out`), and is asked about at the next turn. Once the run's inputs run in
-pyct's own process, each site in use goes out of use and is kept as
-checked, said once for each site.
+runs again after the turn, labeled ``summary``. `CallTurns.took_out` also takes a site
+out of use. Once the run's inputs run in pyct's own process, each site in use goes out
+of use and is kept as checked, said once for each site.
 """
 
 from __future__ import annotations
