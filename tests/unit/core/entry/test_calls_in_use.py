@@ -29,10 +29,10 @@ type Formula = Callable[[Mapping[str, object]], Mapping[str, object]]
 
 
 def quarter(n: int) -> int:
-    return n >> 2
+    return pow(n, 1, 4)
 
 
-# the site of `n >> 2` in `quarter`
+# the site of `pow(n, 1, 4)` in `quarter`
 QUARTER = Site(__file__, inspect.getsourcelines(quarter)[1] + 1, 11)
 
 
@@ -46,15 +46,15 @@ class Marking(list[SinkItem]):
 def by_four(values: Mapping[str, object]) -> Mapping[str, object]:
     n = values["n"]
     assert isinstance(n, int)
-    return {"answer": n // 4}
+    return {"answer": n % 4}
 
 
 def capped(values: Mapping[str, object]) -> Mapping[str, object]:
     n = values["n"]
     assert isinstance(n, int)
-    q = n // 4
-    if q > 9:
-        q = 9
+    q = n % 4
+    if q > 2:
+        q = 2
     return {"answer": q}
 
 
@@ -66,11 +66,11 @@ def squared(values: Mapping[str, object]) -> Mapping[str, object]:
 
 @contextlib.contextmanager
 def using(formula: Formula, *, alone: bool = True, recording: bool = True) -> Iterator[Marking]:
-    """A live input, the site of `quarter`'s shift in use with ``formula``, whose sink is the
+    """A live input, the site of `quarter`'s `pow` in use with ``formula``, whose sink is the
     list yielded, in a call that runs alone unless ``alone`` is False, its loss runs recorded
     with ``recording``."""
     CALLS_IN_USE[(QUARTER.file, QUARTER.line, QUARTER.col)] = CallInUse(
-        "__rshift__", ("n", None), formula
+        "__pow__", ("n", None, None), formula
     )
     sink = Marking()
     pieces.start(sink, alone=alone)
@@ -106,7 +106,7 @@ def test_a_match_hands_the_target_the_real_answer_tracked_with_the_formula_s_ter
         k = quarter(tracked(13, sink))
 
     assert type(k) is ConcolicInt
-    assert (int.__int__(k), k.expression, k.sink) == (3, ["//", "n", 4], sink)
+    assert (int.__int__(k), k.expression, k.sink) == (1, ["%", "n", 4], sink)
     assert downgrades(sink) == []
     assert drops(sink) == []
 
@@ -118,7 +118,7 @@ def test_a_fork_the_formula_records_sits_at_the_site_and_is_marked() -> None:
     [fork] = forks(sink)
     assert (fork.site, fork.expression, fork.taken, fork.summary) == (
         QUARTER,
-        [">", ["//", "n", 4], 9],
+        [">", ["%", "n", 4], 2],
         False,
         True,
     )
@@ -131,7 +131,7 @@ def test_a_later_fork_that_reads_the_formula_s_term_is_marked() -> None:
         _ = bool(tracked(1, sink) == 2)
 
     assert [(fork.expression, fork.summary) for fork in forks(sink)] == [
-        (["==", ["//", "n", 4], 7], True),
+        (["==", ["%", "n", 4], 7], True),
         (["==", "n", 2], False),
     ]
 
@@ -164,9 +164,9 @@ def test_a_mismatch_a_raise_and_a_missing_answer_each_drop_the_formula() -> None
         with using(formula) as sink:
             k = quarter(tracked(13, sink))
 
-        assert (type(k), k) == (int, 3)
-        assert [(each.name, each.site) for each in downgrades(sink)] == [("__rshift__", QUARTER)]
-        assert drops(sink) == [FormulaDrop(QUARTER, "answer", "3", got, reason, run=0)]
+        assert (type(k), k) == (int, 1)
+        assert [(each.name, each.site) for each in downgrades(sink)] == [("__pow__", QUARTER)]
+        assert drops(sink) == [FormulaDrop(QUARTER, "answer", "1", got, reason, run=0)]
 
 
 def test_a_dropped_site_is_not_used_again_in_the_input() -> None:
@@ -190,7 +190,7 @@ def test_the_run_a_formula_drops_on_past_the_cap_is_recorded_before_its_drop() -
     def small(values: Mapping[str, object]) -> Mapping[str, object]:
         n = values["n"]
         assert isinstance(n, int)
-        return {"answer": n // 4 if n < 20 else -1}
+        return {"answer": n % 4 if n < 20 else -1}
 
     with using(small) as sink:
         for each in range(MOST_RUNS):
@@ -201,7 +201,7 @@ def test_the_run_a_formula_drops_on_past_the_cap_is_recorded_before_its_drop() -
     assert len(runs) == MOST_RUNS + 1
     assert runs[-1].going_in[0].value == "21"
     [drop] = drops(sink)
-    assert drop == FormulaDrop(QUARTER, "answer", "5", "-1", DropReason.MISMATCH, run=MOST_RUNS)
+    assert drop == FormulaDrop(QUARTER, "answer", "1", "-1", DropReason.MISMATCH, run=MOST_RUNS)
     assert sink.index(drop) > sink.index(runs[-1])
 
 
@@ -218,21 +218,21 @@ def test_a_formula_that_reaches_its_own_site_does_not_call_itself() -> None:
         k = quarter(tracked(13, sink))
 
     assert calls == [13]
-    assert (type(k), k) == (int, 3)
+    assert (type(k), k) == (int, 1)
     assert len([item for item in sink if type(item) is LossRun]) == 1
     assert drops(sink) == []
 
 
 class Level(enum.IntEnum):
-    LOW = 3
+    LOW = 1
 
 
 def test_only_a_real_answer_of_an_exact_int_float_str_or_bool_is_tracked() -> None:
-    lost = Downgrade(name="__rshift__", site=QUARTER)
+    lost = Downgrade(name="__pow__", site=QUARTER)
     with using(by_four) as sink:
         n = tracked(13, sink)
-        member, member_drop = calls_in_use.answered(lost, (n, 2), Level.LOW)
-        plain, plain_drop = calls_in_use.answered(lost, (n, 2), 3)
+        member, member_drop = calls_in_use.answered(lost, (n, 1, 4), Level.LOW)
+        plain, plain_drop = calls_in_use.answered(lost, (n, 1, 4), 1)
 
     assert (member, member_drop) == (Level.LOW, None)
     assert type(member) is Level
@@ -240,11 +240,11 @@ def test_only_a_real_answer_of_an_exact_int_float_str_or_bool_is_tracked() -> No
 
 
 def test_values_whose_count_differs_from_the_formula_s_positions_get_the_real_answer() -> None:
-    lost = Downgrade(name="__rshift__", site=QUARTER)
+    lost = Downgrade(name="__pow__", site=QUARTER)
     with using(squared) as sink:
-        got = calls_in_use.answered(lost, (tracked(13, sink),), 3)
+        got = calls_in_use.answered(lost, (tracked(13, sink),), 1)
 
-    assert got == (3, None)
+    assert got == (1, None)
     assert drops(sink) == []
 
 
@@ -252,7 +252,7 @@ def test_a_call_that_does_not_run_alone_uses_no_site() -> None:
     with using(by_four, alone=False) as sink:
         k = quarter(tracked(13, sink))
 
-    assert (type(k), k) == (int, 3)
+    assert (type(k), k) == (int, 1)
     assert len(downgrades(sink)) == 1
 
 

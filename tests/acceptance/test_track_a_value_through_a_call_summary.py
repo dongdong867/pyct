@@ -44,7 +44,7 @@ from tests.acceptance.lost_calls import (
 )
 
 # the term of `QUARTER`'s answer, as a fork's expression writes it
-QUARTER_TERM = ["//", "n", 4]
+QUARTER_TERM = ["%", "n", 4]
 # a run that goes on well past its first turn
 LONGER = Limits(plateau=Plateau(20))
 
@@ -107,7 +107,7 @@ def test_an_input_after_the_check_forks_on_the_formula_s_term() -> None:
 
     for record in after_checked(done):
         expressions = [each.expression for each in forks_at(record, 16)]
-        assert expressions == [["==", QUARTER_TERM, 7]], record
+        assert expressions == [["==", QUARTER_TERM, 2]], record
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-in-a-fresh-interpreter
@@ -116,7 +116,7 @@ def test_an_input_in_a_fresh_interpreter_forks_on_the_formula_s_term() -> None:
 
     for record in after_checked(done):
         expressions = [each.expression for each in forks_at(record, 16)]
-        assert expressions == [["==", QUARTER_TERM, 7]], record
+        assert expressions == [["==", QUARTER_TERM, 2]], record
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-records-no-downgrade
@@ -124,30 +124,30 @@ def test_an_input_after_the_check_names_no_downgrade_at_the_site() -> None:
     done = summarized(SHIFTED, {"n": 3}, QUARTER)
 
     for record in before_checked(done):
-        assert downgraded(record, "__rshift__") == [at(11, 11)], record
+        assert downgraded(record, "__pow__") == [at(11, 11)], record
     for record in after_checked(done):
-        assert downgraded(record, "__rshift__") == [], record
+        assert downgraded(record, "__pow__") == [], record
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-reaches-the-missed-line
 def test_an_input_the_formula_s_fork_gave_covers_the_missed_line() -> None:
     done = summarized(SHIFTED, {"n": 3}, QUARTER)
 
-    [seven] = [record for record in after_checked(done) if 17 in record.covered_lines]
-    assert n_of(seven) in range(28, 32)
-    assert seven.source is Source.SUMMARY
+    [two] = [record for record in after_checked(done) if 17 in record.covered_lines]
+    assert n_of(two) % 4 == 2
+    assert two.source is Source.SUMMARY
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-formula-if-forks-at-the-site
 def test_a_formula_s_own_if_forks_at_the_site_before_the_later_condition() -> None:
     done = summarized(SHIFTED, {"n": 3}, CAP)
 
-    below = [record for record in after_checked(done) if n_of(record) < 40]
-    assert below
-    for record in below:
+    after = after_checked(done)
+    assert after
+    for record in after:
         lines = [each.site.line for each in record.forks]
         [own] = forks_at(record, 11)
-        assert (own.expression, own.taken) == ([">", QUARTER_TERM, 9], False), record
+        assert (own.expression, own.taken) == ([">", QUARTER_TERM, 3], False), record
         assert lines.index(11) < lines.index(16), record
 
 
@@ -222,14 +222,14 @@ def test_inputs_in_pyct_s_own_process_skip_the_site_with_no_ask(stub: Stub, tmp_
     assert result.returncode == 0, result.stderr
     assert stub.received == []
     skipped = (
-        f"llm: summary for the call __rshift__ at {at(11, 11)} skipped:"
+        f"llm: summary for the call __pow__ at {at(11, 11)} skipped:"
         " inputs run in pyct's own process"
     )
     assert llm_lines(result.stderr).count(skipped) == 1
     for line in input_lines(result.stdout):
         downgrades = line["downgrades"]
         assert isinstance(downgrades, list), line
-        assert [each["name"] for each in downgrades] == ["__rshift__"], line
+        assert [each["name"] for each in downgrades] == ["__pow__"], line
     llm = summary_line(result.stdout)["llm"]
     assert isinstance(llm, dict)
     assert llm["summaries"] == []
@@ -245,7 +245,7 @@ def test_under_goal_bugs_the_site_is_asked_about_past_full_coverage() -> None:
     assert bugs.inputs_then == [1]
     failed = [record for record in after_checked(done) if record.failure is not None]
     assert failed, done.said
-    assert n_of(failed[0]) in range(28, 32)
+    assert n_of(failed[0]) % 4 == 2
     assert failed[0].source is Source.SUMMARY
     failure = failed[0].failure
     assert failure is not None

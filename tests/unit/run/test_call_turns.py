@@ -81,12 +81,12 @@ def test_a_checked_formula_comes_into_use_under_its_name_and_positions() -> None
     [state] = summaries.states()
     assert (state.kind, state.state, state.checked_on) == ("call", SummaryState.IN_USE, 1)
     call = CALLS_IN_USE[(FILE, 37, 8)]
-    assert (call.name, call.positions) == ("__rshift__", ("n", None))
+    assert (call.name, call.positions) == ("__pow__", ("n", None, None))
     assert isinstance(call.formula, FormulaRunner)
     text = call.formula.text
     assert (text.text, text.parameters, text.changed) == (QUARTER, ("n",), ("answer",))
-    assert (text.name, text.positions, text.place) == ("__rshift__", ("n", None), (FILE, 37, 8))
-    assert notes[-1] != SummaryNotUsed(SITE, IN_PYCT_S_PROCESS, call="__rshift__")
+    assert (text.name, text.positions, text.place) == ("__pow__", ("n", None, None), (FILE, 37, 8))
+    assert notes[-1] != SummaryNotUsed(SITE, IN_PYCT_S_PROCESS, call="__pow__")
 
 
 def test_the_input_its_check_used_runs_again_once_labeled_summary() -> None:
@@ -128,8 +128,8 @@ def test_inputs_in_pyct_s_own_process_skip_the_site_with_no_ask_said_once() -> N
 
     assert fake.requests == []
     assert notes == [
-        SummarySkipped(SITE, IN_PYCT_S_PROCESS, call="__rshift__"),
-        SummarySkipped(Site(FILE, 38, 8), IN_PYCT_S_PROCESS, call="__rshift__"),
+        SummarySkipped(SITE, IN_PYCT_S_PROCESS, call="__pow__"),
+        SummarySkipped(Site(FILE, 38, 8), IN_PYCT_S_PROCESS, call="__pow__"),
     ]
     assert CALLS_IN_USE == {}
 
@@ -148,7 +148,7 @@ def test_a_fall_back_to_pyct_s_own_process_takes_each_site_out_of_use_kept_check
     assert CALLS_IN_USE == {}
     [state] = summaries.states()
     assert state.state is SummaryState.CHECKED
-    assert notes.count(SummaryNotUsed(SITE, IN_PYCT_S_PROCESS, call="__rshift__")) == 1
+    assert notes.count(SummaryNotUsed(SITE, IN_PYCT_S_PROCESS, call="__pow__")) == 1
 
 
 def test_the_run_s_end_takes_each_site_out_of_core_s_table() -> None:
@@ -181,17 +181,17 @@ def dropped_by(drop: FormulaDrop, *runs: LossRun) -> InputRecord:
     ("drop", "reason"),
     [
         pytest.param(
-            FormulaDrop(SITE, "answer", "5", "6", DropReason.MISMATCH, run=1),
-            "answer was 5, the formula gave 6",
+            FormulaDrop(SITE, "answer", "1", "6", DropReason.MISMATCH, run=1),
+            "answer was 1, the formula gave 6",
             id="a mismatch",
         ),
         pytest.param(
-            FormulaDrop(SITE, "answer", "5", "ZeroDivisionError", DropReason.RAISED, run=1),
+            FormulaDrop(SITE, "answer", "1", "ZeroDivisionError", DropReason.RAISED, run=1),
             "the formula raised ZeroDivisionError",
             id="a raise",
         ),
         pytest.param(
-            FormulaDrop(SITE, "answer", "5", "", DropReason.MISSING, run=1),
+            FormulaDrop(SITE, "answer", "1", "", DropReason.MISSING, run=1),
             "the formula gave no answer",
             id="no answer",
         ),
@@ -208,7 +208,7 @@ def test_an_input_s_drop_takes_the_site_out_of_use_and_says_why(
     summaries.heard(record(shift(37, 8, 13, 2)), 3)
 
     assert CALLS_IN_USE == {}
-    assert notes[-1] == SummaryDropped(SITE, 2, reason, call="__rshift__")
+    assert notes[-1] == SummaryDropped(SITE, 2, reason, call="__pow__")
     assert notes.count(notes[-1]) == 1
     [state] = summaries.states()
     assert state.state is SummaryState.DROPPED
@@ -216,7 +216,7 @@ def test_an_input_s_drop_takes_the_site_out_of_use_and_says_why(
     assert kept.tries == [EarlierFormula(QUARTER, f"dropped at input 2: {reason}")]
     assert kept.failed_on == CompleteRun(
         2,
-        PieceRun(SITE, (GoingIn("n", "21", tracked=True),), (Changed("answer", "5"),)),
+        PieceRun(SITE, (GoingIn("n", "21", tracked=True),), (Changed("answer", "1"),)),
     )
 
 
@@ -247,7 +247,7 @@ def test_a_dropped_site_is_asked_about_again_with_its_try_and_failing_run_first(
     summaries = tool(fake, notes)
     first = record(shift(37, 8, 13, 2), shift(37, 8, 9, 2))
     summaries.between(heard(summaries, [first]))
-    drop = FormulaDrop(SITE, "answer", "5", "6", DropReason.MISMATCH, run=1)
+    drop = FormulaDrop(SITE, "answer", "1", "6", DropReason.MISMATCH, run=1)
     failing = dropped_by(drop, shift(37, 8, 5, 2), shift(37, 8, 21, 2))
     summaries.heard(failing, 2)
 
@@ -256,7 +256,7 @@ def test_a_dropped_site_is_asked_about_again_with_its_try_and_failing_run_first(
 
     assert len(fake.requests) == 2
     again = fake.requests[1]
-    reason = "dropped at input 2: answer was 5, the formula gave 6"
+    reason = "dropped at input 2: answer was 1, the formula gave 6"
     assert again.tries == (EarlierFormula(QUARTER, reason),)
-    assert again.runs[0] == ShownRun((("n", "21"),), (("answer", "5"),))
+    assert again.runs[0] == ShownRun((("n", "21"),), (("answer", "1"),))
     assert summaries.loops[SITE].last is SummaryState.IN_USE

@@ -91,7 +91,7 @@ def bounded(n: int) -> str:
 
 def divided(n: int) -> int:
     k = _quarter(n)
-    return 10 // (k - 7)
+    return 10 // (k - 2)
 
 
 def each_dedented(texts: list[str]) -> int:
