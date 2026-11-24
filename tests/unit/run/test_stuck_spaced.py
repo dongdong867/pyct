@@ -13,6 +13,7 @@ from pyct.run.stuck import Handled, Kind, Moment, Outcome, Stuck
 from tests.unit.run.test_stuck_time import FILE, Clock, FakeRun
 
 BUDGET = 40.0
+QUARTER = BUDGET / 4
 # line 99 stays missed; each new line an input covers is one of the others
 LINES = frozenset(range(1, 100))
 
@@ -69,6 +70,12 @@ def held_at(run: FakeRun, stuck: Stuck, inputs: int, new_at: Collection[int] = (
     return held
 
 
+def due_at(clock: Clock, run: FakeRun, stuck: Stuck, now: float) -> bool:
+    """Whether a moment comes at ``now``, with a fork still left to flip."""
+    clock.now = now
+    return stuck.due(run, run.progress, empty=False)
+
+
 # space-out-stuck-moments-that-ask-nothing-the-wait-doubles
 def test_moments_that_ask_nothing_wait_5_10_20_then_40_inputs() -> None:
     _, run, stuck = seeded([False])
@@ -121,8 +128,8 @@ def test_a_moment_that_asks_nothing_doubles_the_stretch_until_a_new_line() -> No
         return stuck.due(run, run.progress, empty=False)
 
     held = 0.0
-    # the fourth, twice the budget, is one no run reaches: its budget's clock holds less
-    for stretch in (quarter, 2 * quarter, BUDGET, 2 * BUDGET):
+    # the stretch stops doubling at the whole budget, which no run reaches after a moment
+    for stretch in (quarter, 2 * quarter, BUDGET, BUDGET):
         assert due_at(held + stretch - 0.1) is False
         assert due_at(held + stretch) is True
         stuck.hold(run)
@@ -150,3 +157,42 @@ def test_a_moment_that_asks_brings_the_stretch_back_to_a_quarter() -> None:
 
     assert due_at(4 * quarter - 0.1) is False
     assert due_at(4 * quarter) is True
+
+
+# space-out-stuck-moments-that-ask-nothing-each-rule-doubles-its-own-wait
+def test_quiet_moments_on_the_input_rule_leave_the_stretch_at_a_quarter() -> None:
+    # the first inputs are fast and gain nothing; then each pick times out and adds no input
+    clock, run, stuck = seeded([False], Bounds(until=BUDGET, budget=BUDGET))
+    assert held_at(run, stuck, 15) == [6, 16]
+
+    assert due_at(clock, run, stuck, QUARTER - 0.1) is False
+    assert due_at(clock, run, stuck, QUARTER) is True
+
+
+# space-out-stuck-moments-that-ask-nothing-each-rule-doubles-its-own-wait
+def test_a_quiet_moment_on_time_leaves_the_input_wait_at_5() -> None:
+    clock, run, stuck = seeded([False], Bounds(until=1000.0, budget=BUDGET))
+    assert due_at(clock, run, stuck, QUARTER) is True
+    stuck.hold(run)
+
+    assert held_at(run, stuck, 5) == [6]
+
+
+# space-out-stuck-moments-that-ask-nothing-each-rule-doubles-its-own-wait
+def test_a_quiet_no_fork_moment_leaves_the_stretch_at_a_quarter() -> None:
+    clock, run, stuck = seeded([False], Bounds(until=1000.0, budget=BUDGET))
+    assert stuck.due(run, run.progress, empty=True) is True
+    stuck.hold(run)
+
+    assert due_at(clock, run, stuck, QUARTER - 0.1) is False
+    assert due_at(clock, run, stuck, QUARTER) is True
+
+
+# space-out-stuck-moments-that-ask-nothing-the-stretch-doubles
+def test_many_quiet_moments_on_time_keep_the_stretch_at_the_budget() -> None:
+    clock, run, stuck = seeded([False], Bounds(until=1e9, budget=BUDGET))
+    held = 0.0
+    for stretch in [QUARTER, 2 * QUARTER] + [BUDGET] * 1100:
+        assert due_at(clock, run, stuck, held + stretch) is True
+        stuck.hold(run)
+        held += stretch
