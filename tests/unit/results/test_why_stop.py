@@ -451,6 +451,9 @@ def test_the_label_pass_is_asked_for_no_less_than_it_takes() -> None:
     assert asked[0] >= took, (asked[0], took)
 
 
+# its 0.3 s ran out before the small function was worked out in two full runs on Linux, beside
+# 20 and 27 other workers, and it passed alone and beside 21 CPU burners
+@pytest.mark.serial
 def test_a_function_too_large_to_read_in_time_is_left_and_the_rest_worked_out(
     tmp_path: Path,
 ) -> None:
