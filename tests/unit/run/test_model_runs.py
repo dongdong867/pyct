@@ -57,17 +57,17 @@ def test_the_answer_comes_back_as_json_with_the_forks_the_call_recorded() -> Non
 
 
 def test_the_facts_and_downgrades_the_call_recorded_come_back() -> None:
-    # `n ^ 0` is int's own, which leaves the value plain and says so; the walk of a dict that
-    # holds a key once it is stored takes its first pass as a fact
+    # `n >> (n - n)`, a shift by a tracked count, is int's own, which leaves the value plain and
+    # says so; the walk of a dict that holds a key once it is stored takes its first pass as a fact
     text = (
-        "def f(n, d):\n    d['a'] = n ^ 0\n    count = 0\n"
+        "def f(n, d):\n    d['a'] = n >> (n - n)\n    count = 0\n"
         "    for k in d:\n        count += 1\n    return [count, d]\n"
     )
 
     done = ran(text, {"n": 5, "d": {}})
 
     assert done.answer == '[1, {"a": 5}]'
-    assert [entry.name for entry in done.result.downgrades] == ["__xor__"]
+    assert [entry.name for entry in done.result.downgrades] == ["__rshift__"]
     assert [(fact.expression, fact.taken) for fact in done.result.facts] == [
         ([">", ["+", ["len", "d"], 1], 0], True)
     ]

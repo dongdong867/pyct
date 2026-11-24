@@ -117,9 +117,13 @@ def test_an_input_hands_its_loss_runs_to_pyct_s_process(isolation: Isolation) ->
     result = Inputs(target, isolation, losses=True)({"n": 13}, None)
 
     [run] = result.losses
-    assert (run.name, run.kind, run.site.file) == ("__rshift__", LossKind.OPERATION, target.file)
-    assert run.going_in == (GoingIn("arg1", "13", tracked=True), GoingIn("arg2", "2", False))
-    assert run.changed == (Changed("answer", "3"),)
+    assert (run.name, run.kind, run.site.file) == ("__pow__", LossKind.OPERATION, target.file)
+    assert run.going_in == (
+        GoingIn("arg1", "13", tracked=True),
+        GoingIn("arg2", "1", False),
+        GoingIn("arg3", "4", False),
+    )
+    assert run.changed == (Changed("answer", "1"),)
 
 
 @pytest.mark.parametrize("isolation", [Isolation.FORK, Isolation.FRESH, Isolation.IN_PROCESS])
@@ -129,4 +133,4 @@ def test_an_input_of_a_run_that_records_no_loss_runs_has_none(isolation: Isolati
     result = Inputs(target, isolation)({"n": 13}, None)
 
     assert result.losses == ()
-    assert [each.name for each in result.downgrades] == ["__rshift__"]
+    assert [each.name for each in result.downgrades] == ["__pow__"]

@@ -51,9 +51,9 @@ class Heard:
 FORKS_THEN_RAISES = """\
 def target(x):
     if x < 10:
-        x >> 1
+        x >> x
     for _ in range(2):
-        x >> 2
+        x >> x
     raise ValueError("late")
 """
 

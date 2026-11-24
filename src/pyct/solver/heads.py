@@ -10,7 +10,7 @@ from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 
 from pyct.core.foundation.branch import Expression
-from pyct.solver import floats, numerals
+from pyct.solver import bits, floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.ints import floor_division, modulo
@@ -50,10 +50,9 @@ RESULTS: Mapping[str, type | None] = {
     "not in": bool,
     "startswith": bool,
     "endswith": bool,
-    # core writes `&`, `|` and `^` between two bools only; on ints they stay downgrades
-    "&": bool,
-    "|": bool,
-    "^": bool,
+    # `&`, `|` and `^` answer a bool between two bools and an int otherwise, as `~` and the
+    # shifts answer an int
+    **dict.fromkeys(("&", "|", "^", "~", "<<", ">>"), None),
     "+": None,
     "-": None,
     "*": None,
@@ -193,6 +192,9 @@ STRING_ORDERS: Mapping[str, tuple[bool, bool]] = {
 FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("//", int): floor_division,
     ("%", int): modulo,
+    ("~", int): bits.inverted,
+    ("<<", int): bits.shifted_left,
+    (">>", int): bits.shifted_right,
     ("in", str): contains,
     ("not in", str): not_contains,
     # an int in a range, its arguments arriving as their terms
@@ -291,9 +293,13 @@ ON_A_CHARACTER: Mapping[str, Callable[[str], str]] = {
 # it once where the form is written, for cvc5 to reason with
 FACTS: Mapping[tuple[str, type], Callable[[str], str]] = {("int", str): numerals.int_fact}
 
-# a form exact only inside a bound, which answers its term and the bound, keyed as `FORMS` is.
-# Render holds the bound on the path (see `Program.bounded` in `solver/render.py`)
-BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
+# a form exact only inside a bound, which answers its term and the bound, keyed as `FORMS` is,
+# or no bound where these operands need none. Render holds the bound on the path (see
+# `Program.bounded` in `solver/render.py`)
+BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str | None]]] = {
+    ("&", int): bits.bitwise_and,
+    ("|", int): bits.bitwise_or,
+    ("^", int): bits.bitwise_xor,
     ("//", float): floats.floor_division,
     ("float", str): numerals.float_of,
 }

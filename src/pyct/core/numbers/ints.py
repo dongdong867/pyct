@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from functools import partial
-from typing import Any, Self
+from typing import Any, Self, cast
 
 from pyct.core.foundation.branch import BranchSink, Expression
 from pyct.core.foundation.counts import Count
@@ -34,9 +34,10 @@ from pyct.core.numbers.numbers import (
 )
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
-# arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
-# itself. The attributes and the classmethod int defines are named there too, since the
-# derivation reads only methods called on a value (downgrades-class-body-taught-attributes-named).
+# arithmetic, the division, the bit operations and the identities it writes stay symbolic, and a
+# copy is the value itself. The attributes and the classmethod int defines are named there too,
+# since the derivation reads only methods called on a value
+# (downgrades-class-body-taught-attributes-named).
 # The tuples numbers holds name what is left to int on purpose, and the derivation at the bottom
 # of the file downgrades every other method int defines. What each operation answers is tracked
 # by the class numbers holds for its Python type.
@@ -81,6 +82,29 @@ def _through(op: str, span: Span, number: int, *, reflected: bool) -> Span:
     if op == "+":
         return added(span, exactly(number))
     return added(scaled(span, -1), exactly(number)) if reflected else added(span, exactly(-number))
+
+
+# a shift count up to this is written as the power of 2 it multiplies or divides by. A larger one
+# is int's own answer and a downgrade: the power's numeral grows with the count
+_SHIFT_LIMIT = 4096
+
+
+def _shift(op: str, name: str) -> Callable[..., Any]:
+    """A tracked int shifted by its dunder ``name`` by a constant count, a plain int or bool from
+    0 to ``_SHIFT_LIMIT``, keeping the condition: `x << 3` is ["<<", "x", 3]. A tracked count, a
+    negative or a larger one, and any other operand are int's own answer, and a downgrade where
+    it answers. One asked of a number subclass on the right first is asked so (``asked_first``)."""
+    operation = getattr(int, name)
+    downgrade = downgraded(int, name)
+
+    def compute(self: ConcolicInt, count: object) -> Any:
+        form = numbers.operand(count)
+        if type(form) in _PLAIN and 0 <= cast(int, form) <= _SHIFT_LIMIT:
+            answer = own(operation, self, count)
+            return numbers.tracked(answer, [op, self.expression, form], self.sink)
+        return downgrade(self, count)
+
+    return asked_first(name, compute)
 
 
 def known_range(value: ConcolicInt) -> Span | None:
@@ -184,6 +208,18 @@ class ConcolicInt(int):
     __floor__ = _itself
     __ceil__ = _itself
     __round__ = numbers.rounded(_itself)
+    # Python's bit operations on its ints' infinite two's complement, a negative int among them;
+    # a float on the other side is refused, as int refuses it
+    __and__ = asked_first("__and__", numbers.arithmetic("&", int.__and__))
+    __rand__ = numbers.arithmetic("&", int.__rand__, reflected=True)
+    __or__ = asked_first("__or__", numbers.arithmetic("|", int.__or__))
+    __ror__ = numbers.arithmetic("|", int.__ror__, reflected=True)
+    __xor__ = asked_first("__xor__", numbers.arithmetic("^", int.__xor__))
+    __rxor__ = numbers.arithmetic("^", int.__rxor__, reflected=True)
+    __invert__ = numbers.unary("~", int.__invert__)
+    # a shift by a tracked count, `1 << n` among them, stays a derived downgrade
+    __lshift__ = _shift("<<", "__lshift__")
+    __rshift__ = _shift(">>", "__rshift__")
 
     # its text is a tracked str, `["str", x]`, its decimal digits as int's repr writes them, and
     # so is a format with no spec; a spec pyct does not encode is int's own and a downgrade

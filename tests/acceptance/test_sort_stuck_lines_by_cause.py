@@ -215,16 +215,16 @@ def test_records_one_downgrade_for_a_call_that_lost_inside() -> None:
     result = run_pyct(target("lost_inside"), '{"x": 3}', *SHORT)
 
     assert result.returncode == 0, result.stderr
-    at = line_of("return v ^ 0")
+    at = line_of("return v >> (v - v)")
     assert downgrades_of(result.stdout) == [
-        downgrade("__xor__", 1, f"targets/why/stuck.py:{at}:11")
+        downgrade("__rshift__", 1, f"targets/why/stuck.py:{at}:11")
     ]
 
     # the same, inside a function outside the target's package, which the call is judged at
     result = run_pyct("shop.flips::flips", '{"x": 3}', *SHORT, cwd=SCOPE)
     assert result.returncode == 0, result.stderr
     assert downgrades_of(result.stdout) == [
-        downgrade("__xor__", 1, "targets/scope/measure/flip.py:2:11")
+        downgrade("__rshift__", 1, "targets/scope/measure/flip.py:2:11")
     ]
 
 

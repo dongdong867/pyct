@@ -1,4 +1,4 @@
 def odd(n):
-    if n & 1:
+    if pow(n, 1, 2):
         return "odd"
     return "even"

@@ -44,17 +44,17 @@ def value(text: str, tracked: bool, at: int) -> GoingIn:  # noqa: FBT001
 
 def test_an_operation_pyct_has_not_taught_records_its_values_going_in_and_its_answer() -> None:
     with live() as sink:
-        n = ConcolicInt.made(13, expression="n", sink=sink)
+        n = ConcolicInt.made(2, expression="n", sink=sink)
         line = here()
-        k = n >> 2
+        k = 13 >> n
 
     assert k == 3
     [run] = runs(sink)
     assert run == LossRun(
         Site(__file__, line, 12),
-        "__rshift__",
+        "__rrshift__",
         LossKind.OPERATION,
-        (value("13", True, 1), value("2", False, 2)),
+        (value("2", True, 1), value("13", False, 2)),
         (Changed("answer", "3"),),
     )
 
@@ -86,7 +86,7 @@ def test_a_method_records_its_arguments_after_its_receiver() -> None:
 def test_each_site_records_its_first_runs_alone() -> None:
     with live() as sink:
         for each in range(MOST_RUNS + 2):
-            _ = ConcolicInt.made(each, expression="n", sink=sink) >> 1
+            _ = 1 << ConcolicInt.made(each, expression="n", sink=sink)
 
     assert [run.going_in[0].value for run in runs(sink)] == [str(each) for each in range(MOST_RUNS)]
 
@@ -94,10 +94,10 @@ def test_each_site_records_its_first_runs_alone() -> None:
 def test_a_second_name_at_a_site_records_nothing_there() -> None:
     with live() as sink:
         n = ConcolicInt.made(5, expression="n", sink=sink)
-        for name in ("__rshift__", "__lshift__"):
+        for name in ("__rrshift__", "__rlshift__"):
             _ = getattr(n, name)(1)
 
-    assert [run.name for run in runs(sink)] == ["__rshift__"]
+    assert [run.name for run in runs(sink)] == ["__rrshift__"]
 
 
 def test_a_value_that_is_not_plain_json_or_too_long_records_no_run() -> None:
@@ -134,7 +134,7 @@ def test_a_math_call_pyct_does_not_follow_records_its_arguments_and_its_answer()
 def test_with_the_recording_off_nothing_is_recorded() -> None:
     with live(recording=False) as sink:
         n = ConcolicInt.made(13, expression="n", sink=sink)
-        _ = n >> 2
+        _ = 13 >> n
         _ = substitutes.call(math.gcd)(n, 8)
 
     assert runs(sink) == []
@@ -145,7 +145,7 @@ def test_the_runs_share_what_the_input_s_recorded_runs_may_count() -> None:
     with live() as sink:
         n = ConcolicInt.made(13, expression="n", sink=sink)
         assert pieces.counted(MOST_TEXT - 10)
-        _ = n >> 2
+        _ = 13 >> n
 
     assert runs(sink) == []
 
@@ -153,6 +153,6 @@ def test_the_runs_share_what_the_input_s_recorded_runs_may_count() -> None:
 def test_no_input_live_records_nothing() -> None:
     sink: list[SinkItem] = []
 
-    _ = ConcolicInt.made(13, expression="n", sink=sink) >> 2
+    _ = 13 >> ConcolicInt.made(2, expression="n", sink=sink)
 
     assert runs(sink) == []

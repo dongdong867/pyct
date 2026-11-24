@@ -17,12 +17,11 @@ from pyct.core.strs.strs import ConcolicStr
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
-    "__lshift__": lambda x: x << 1,
-    "__rshift__": lambda x: x >> 1,
-    "__and__": lambda x: x & 1,
-    "__or__": lambda x: x | 1,
-    "__xor__": lambda x: x ^ 1,
-    "__invert__": lambda x: ~x,
+    "__lshift__": lambda x: x << x,
+    "__rlshift__": lambda x: 1 << x,
+    "__rrshift__": lambda x: 256 >> x,
+    "bit_length": lambda x: x.bit_length(),
+    "to_bytes": lambda x: x.to_bytes(2, "big"),
     "__float__": float,
 }
 
@@ -89,7 +88,7 @@ def test_a_concolic_int_is_a_real_int() -> None:
 def test_an_untaught_operation_returns_a_plain_int() -> None:
     x = ConcolicInt.made(3, expression="x", sink=[])
 
-    assert type(x >> 1) is int
+    assert type(1 << x) is int
 
 
 @pytest.mark.parametrize(("name", "call"), DOWNGRADED_CALLS.items(), ids=list(DOWNGRADED_CALLS))

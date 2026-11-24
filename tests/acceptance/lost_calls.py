@@ -25,7 +25,7 @@ FORKED = "targets.summaries.calls::forked"
 # the module `C` is, as a place names it
 MODULE = "targets.summaries.calls"
 
-QUARTER_CODE = 'def summary(n):\n    return {"answer": n // 4}'
+QUARTER_CODE = 'def summary(n):\n    return {"answer": n % 4}'
 MOD_CODE = 'def summary(n):\n    return {"answer": n * n % 10}'
 # `QUARTER` and `MOD` of the criteria, and a formula that gives `n // 2`
 QUARTER = code_reply(QUARTER_CODE)
@@ -35,7 +35,7 @@ WRONG_CODE = 'def summary(n):\n    return {"answer": n * n}'
 # `WRONG` and `CAP` of track-a-value-through-a-call-summary's criteria
 WRONG = code_reply(WRONG_CODE)
 CAP = code_reply(
-    'def summary(n):\n    q = n // 4\n    if q > 9:\n        q = 9\n    return {"answer": q}'
+    'def summary(n):\n    q = n % 4\n    if q > 2:\n        q = 2\n    return {"answer": q}'
 )
 
 

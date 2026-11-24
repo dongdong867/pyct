@@ -51,7 +51,7 @@ def test_the_ask_s_place_is_the_loss_s_in_the_function_that_holds_it() -> None:
         "# targets.summaries.calls._quarter\n"
         "def _quarter(n: int) -> int:\n"
         f"    {ABOVE}\n"
-        "    return n >> 2\n"
+        "    return pow(n, 1, 4)\n"
         f"    {BELOW}"
     )
 
@@ -120,8 +120,8 @@ def test_a_failed_try_ends_the_site_s_asks_for_the_run() -> None:
     done = run_summaries(SHIFTED, [{"n": 3}, {"n": 9}], provider, Limits(budget=Budget(5)))
 
     failed = (
-        f"llm: summary for the call __rshift__ at {at(11, 11)}, try 1:"
-        " at input 1, answer was 0, the formula gave 1"
+        f"llm: summary for the call __pow__ at {at(11, 11)}, try 1:"
+        " at input 1, answer was 3, the formula gave 1"
     )
     assert failed in done.llm_said()
     assert places(provider) == [place(11, 11)]

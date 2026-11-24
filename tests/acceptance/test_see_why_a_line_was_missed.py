@@ -119,9 +119,9 @@ def test_names_where_a_condition_was_lost() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     assert seed["downgrades"] == [
-        {"name": "__xor__", "count": 1, "file": LOST_FILE, "line": 2, "col": 8}
+        {"name": "__rshift__", "count": 1, "file": LOST_FILE, "line": 2, "col": 8}
     ]
-    assert f"downgrades __xor__ at {LOST_FILE}:2:8" in result.stderr.splitlines()
+    assert f"downgrades __rshift__ at {LOST_FILE}:2:8" in result.stderr.splitlines()
 
 
 # see-why-a-line-was-missed-prints-why-on-stderr
@@ -159,12 +159,12 @@ def test_says_a_plain_condition_recorded_no_fork() -> None:
         "lines": [4],
         "reason": "no fork",
         "condition": condition(PLAIN_FILE, 3, 7, True),
-        # c's value was lost at `x ^ 0` (sort-stuck-lines-by-cause)
-        "sources": [lost_at(PLAIN_FILE, "x", "__xor__", 2, 8)],
+        # c's value was lost at `x >> (x - x)` (sort-stuck-lines-by-cause)
+        "sources": [lost_at(PLAIN_FILE, "x", "__rshift__", 2, 8)],
     } in why_uncovered(result.stdout)
     why = (
         f"why 4 in {PLAIN_FILE}: {PLAIN_FILE}:3:7 never true, no fork;"
-        f" x lost in __xor__ at {PLAIN_FILE}:2:8"
+        f" x lost in __rshift__ at {PLAIN_FILE}:2:8"
     )
     assert why in result.stderr.splitlines()
 
@@ -238,11 +238,11 @@ def test_keeps_each_site_s_losses_apart() -> None:
 
     assert result.returncode == 0, result.stderr
     assert first_line(result.stdout)["downgrades"] == [
-        {"name": "__xor__", "count": 3, "file": SITES_FILE, "line": 3, "col": 12},
-        {"name": "__xor__", "count": 1, "file": SITES_FILE, "line": 4, "col": 8},
+        {"name": "__rshift__", "count": 3, "file": SITES_FILE, "line": 3, "col": 12},
+        {"name": "__rshift__", "count": 1, "file": SITES_FILE, "line": 4, "col": 8},
     ]
     trace = result.stderr.splitlines()
-    lost = f"downgrades __xor__ ×3 at {SITES_FILE}:3:12, __xor__ at {SITES_FILE}:4:8"
+    lost = f"downgrades __rshift__ ×3 at {SITES_FILE}:3:12, __rshift__ at {SITES_FILE}:4:8"
     assert lost in trace
 
 

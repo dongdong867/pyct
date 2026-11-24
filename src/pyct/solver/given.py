@@ -42,6 +42,12 @@ _OTHERS_ADDED = (
     ("--nl-cov", "(set-option :nl-cov true)"),
 )
 
+# cvc5 refines an integer `and` by its values by default, and on 1.4.2 that ran to the limit
+# on asks its bitwise refinement answered in under 0.3 s (decision
+# bit-operations-on-ints-in-cvc5-s-integer-and): a program that holds one gets this option
+_IAND_ADDED = (("--iand-mode=bitwise", "(set-option :iand-mode bitwise)"),)
+_IAND = re.compile(r"\(_ iand ")
+
 # a conversion between a double and a real as pyct writes one: a double read as a real, or a
 # term rounded to a double with to_fp, which pyct gives only a real
 _CONVERSION = re.compile(r"\(fp\.to_real |\(_ to_fp ")
@@ -104,7 +110,8 @@ def argv(timeout: float, text: str) -> list[str]:
     any limit above zero at 1 or more, since cvc5 reads ``--tlimit-per=0``
     as no limit.
 
-    A program that converts between a double and a real gets the options ``_added`` names.
+    A program that converts between a double and a real, or holds an integer `and`, gets the
+    options ``_added`` names.
     """
     limit = f"--tlimit-per={_milliseconds(timeout)}"
     return [str(locate()), *ARGUMENTS, limit, *(flag for flag, _ in _added(text))]
@@ -122,13 +129,14 @@ def options(timeout: float, text: str) -> tuple[str, ...]:
 
 
 def _added(text: str) -> tuple[tuple[str, str], ...]:
-    """The options a program gets beside ``ARGUMENTS`` and its limit: none unless it converts
-    between a double and a real, and then those for a program with a string or without one.
-    What a string literal spells is no term of the program."""
+    """The options a program gets beside ``ARGUMENTS`` and its limit: for a conversion between
+    a double and a real, those for a program with a string or without one, and for an integer
+    `and`, its refinement. What a string literal spells is no term of the program."""
     terms = _LITERAL.sub('""', text)
+    added = _IAND_ADDED if _IAND.search(terms) else ()
     if _CONVERSION.search(terms) is None:
-        return ()
-    return _STRINGS_ADDED if _STRING.search(terms) else _OTHERS_ADDED
+        return added
+    return (*(_STRINGS_ADDED if _STRING.search(terms) else _OTHERS_ADDED), *added)
 
 
 def answered(stdout: str | None, answer: Answer) -> str:

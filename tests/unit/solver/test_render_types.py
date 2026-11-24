@@ -49,6 +49,13 @@ INT_TERMS: list[Expression] = [
     ["int", "s"],
     ["int", "f"],
     ["int", ["<", "x", 1]],
+    # the bit operations, with a constant and on two ints
+    ["&", "x", 6],
+    ["|", "x", "n"],
+    ["^", 3, "x"],
+    ["~", "x"],
+    ["<<", "x", 2],
+    [">>", "x", 1],
 ]
 FLOAT_TERMS: list[Expression] = [
     ["+", "f", 1.5],

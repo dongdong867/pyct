@@ -1,5 +1,5 @@
 def route(x: int) -> str:
-    if x >> 1:
+    if x >> (x - x + 1):
         if x < 20:
             return "teen"
         return "big"

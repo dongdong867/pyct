@@ -83,7 +83,7 @@ def typed(x: int) -> str:
 
 
 def flipped(v: int) -> int:
-    return v ^ 0
+    return v >> (v - v)
 
 
 def lost_inside(x: int) -> int:
