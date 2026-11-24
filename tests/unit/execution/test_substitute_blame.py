@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from pyct.core.entry.lookups import item
 from pyct.core.entry.substitutes import Searched, in_
 from pyct.core.strs import strs
 from pyct.execution.execute import ExecutionContext, execute
@@ -150,3 +151,26 @@ def test_a_raise_in_python_s_own_truth_test_of_a_walked_element_is_the_target_s(
     with pytest.raises(TypeError) as raised:
         bool(Answering() == 1)
     assert detail == f"TypeError: {raised.value}"
+
+
+@pytest.mark.parametrize(
+    ("table", "seed"),
+    [
+        ({f"k{n}": n for n in range(301)}, {"key": "XX"}),
+        ({(1, 2): 5, "a": 1}, {"key": "XX"}),
+        (list(range(301)), {"key": 400}),
+    ],
+    ids=["dict past the limit", "dict with a tuple key", "list past the limit"],
+)
+def test_a_raise_in_python_s_own_read_past_what_a_lookup_searches_is_the_target_s(
+    table: object, seed: dict[str, object]
+) -> None:
+    def target(key: object) -> object:
+        return item(table, key)
+
+    with pytest.raises((KeyError, IndexError)) as plain:
+        table[seed["key"]]  # pyrefly: ignore[bad-index]
+    assert blamed(target, seed) == (
+        FailureKind.TARGET_RAISED,
+        f"{type(plain.value).__name__}: {plain.value}",
+    )
