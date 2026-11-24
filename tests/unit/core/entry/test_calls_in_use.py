@@ -274,3 +274,17 @@ def test_a_match_still_escapes_the_walk_keys_handed_out() -> None:
     assert escaped
     assert [item.expression for item in sink if type(item) is Fact] == [["==", ["key", "d", 0], 13]]
     assert downgrades(sink) == []
+
+
+def test_a_drop_s_text_of_a_set_of_tracked_values_records_no_fork() -> None:
+    def pair(values: Mapping[str, object]) -> Mapping[str, object]:
+        n = values["n"]
+        assert isinstance(n, int)
+        return {"answer": frozenset({n, n + 1})}
+
+    with using(pair) as sink:
+        quarter(tracked(13, sink))
+
+    [drop] = drops(sink)
+    assert drop.got == "frozenset({13, 14})"
+    assert [fork for fork in forks(sink) if not fork.summary] == []

@@ -36,18 +36,24 @@ attributes.
 from __future__ import annotations
 
 import contextlib
+import itertools
 import reprlib
 import types
 from collections.abc import Mapping, Sequence
-from typing import cast
+from typing import Any, cast, override
 
 from pyct.core.entry import in_use
 from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE, CallInUse
 from pyct.core.entry.plain_copy import SCALARS
 from pyct.core.entry.waiting import json_text
 from pyct.core.foundation.branch import Downgrade, DropReason, FormulaDrop, Site, placed_at
+from pyct.core.lists.list_state import plain
 from pyct.core.numbers.ints import ConcolicInt
 
+# the containers a drop's text reads beside a dict, the items it reads of each, one past those
+# `reprlib` writes, and how many levels deep, as `reprlib` writes them
+_SEQUENCES = (list, tuple, set, frozenset)
+_SHOWN, _DEEPEST = 7, 6
 # the real answers a site in use hands on tracked: Python's own, never a subclass
 _ANSWERS = frozenset({int, float, str, bool})
 
@@ -171,11 +177,39 @@ def _forming(call: CallInUse, given: Mapping[str, object]) -> Mapping[str, objec
 
 
 def _written(value: object) -> str:
-    """A formula answer with no JSON text as Python writes it, cut short (`reprlib`), or its
-    type's name when that raises."""
+    """A formula answer with no JSON text as Python writes it, cut short (`reprlib`), read as
+    plain values first (`_plain`), so that the tracked values it holds record nothing as it is
+    written, or its type's name when that raises."""
     with contextlib.suppress(Exception):
-        return reprlib.repr(value)
+        return reprlib.repr(_plain(value, _DEEPEST))
     return type(value).__name__
+
+
+class _Cut:
+    """What stands for the parts of an answer deeper than a drop's text reads."""
+
+    @override
+    def __repr__(self) -> str:
+        return "..."
+
+
+def _plain(value: object, depth: int) -> object:
+    """A value with each tracked scalar its plain value, and a list, tuple, set, frozenset or
+    dict a new one of Python's own with its first `_SHOWN` items, each read so, ``depth``
+    levels deep: each read through its base type, never its own methods, so that reading it
+    records nothing. Another value as it is."""
+    held: Any = plain(value)
+    kind = type(held)
+    if not issubclass(kind, (dict, *_SEQUENCES)):
+        return held
+    if depth <= 0:
+        return _Cut()
+    if issubclass(kind, dict):
+        pairs = itertools.islice(dict.items(held), _SHOWN)
+        return {_plain(key, depth - 1): _plain(item, depth - 1) for key, item in pairs}
+    base = next(each for each in _SEQUENCES if issubclass(kind, each))
+    items = itertools.islice(base.__iter__(held), _SHOWN)
+    return base(_plain(item, depth - 1) for item in items)
 
 
 def _dropped(place: _Place, site: Site, real: object, got: str, reason: DropReason) -> FormulaDrop:
