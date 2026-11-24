@@ -10,7 +10,8 @@ also where the code writes a name bound only to such a literal
 (`pyct.intercept.constants`), the value a `return` in a `__bool__` method
 gives back, which CPython takes only as an exact bool, the value an
 assignment unpacks into a fixed count, whose count Python reads without
-asking it, a `%` that formats with a str literal or a tuple display, whose
+asking it, an index read ``x[k]``, whose key Python hashes or reads as an
+int without asking which entry it finds, a `%` that formats with a str literal or a tuple display, whose
 operands' text Python copies into a plain str, and the three builtins. It
 is mechanical and fixed, one to one, and not a rewrite; the LLM source
 rewrite of the next paper is `pyct.rewrite`, which may hand its source to
