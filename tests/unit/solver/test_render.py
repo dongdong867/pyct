@@ -127,15 +127,15 @@ def test_an_operation_with_a_number_on_its_left_is_written_on_ints() -> None:
 
 
 def test_an_operator_nothing_encodes_is_an_error() -> None:
-    with pytest.raises(ValueError, match="<<"):
-        render((fork(["<<", "x", 1], taken=True),), {"x": int})
+    with pytest.raises(ValueError, match="@"):
+        render((fork(["@", "x", 1], taken=True),), {"x": int})
 
 
 def test_an_operator_nothing_encodes_is_an_error_where_it_is_held_twice() -> None:
-    part: Expression = ["<<", "x", 1]
+    part: Expression = ["@", "x", 1]
 
     # a part held twice is defined once, but one of no type is written out, naming its gap
-    with pytest.raises(ValueError, match="<< on int"):
+    with pytest.raises(ValueError, match="@ on int"):
         render((fork(["==", part, part], taken=True),), {"x": int})
 
 

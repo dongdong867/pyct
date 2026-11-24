@@ -297,9 +297,8 @@ class _Program:
         if not isinstance(head, str):
             return None
         kind = self._kind(head, operands)
-        bounded = None if kind is None else BOUNDED.get((head, kind))
-        if bounded is not None:
-            return partial(self._bounded, bounded)
+        if kind is not None and (bounded := BOUNDED.get((head, kind))) is not None:
+            return partial(self._bounded, bounded, SORTS[kind])
         if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
             return ON_A_CHARACTER[head]
         form = None if kind is None else self.forms.get((head, kind))
@@ -315,20 +314,18 @@ class _Program:
         """Whether a part is one character of a string, as `s[i]` hands it out."""
         return isinstance(part, list) and part[0] == "[]" and self.type_of(part[1]) is str
 
-    def _bounded(self, form: Callable[..., tuple[str, str]], *operands: str) -> str:
-        """A bounded form's term, and its bound noted once.
-
-        A program that holds its bounds writes the form exact everywhere; one
-        that leaves them out writes it past its bound as a double declared for
-        this term alone.
-        """
+    def _bounded(
+        self, form: Callable[..., tuple[str, str | None]], sort: str, *operands: str
+    ) -> str:
+        """A bounded form's term, and its bound, if it has one, noted once. Where the program
+        leaves its bounds out, the term past its bound is a constant of ``sort`` of its own."""
         if self.bounded:
             term, bound = form(*operands)
         else:
             past = f"e!{len(self.definitions)}"
-            self.definitions.append(f"(declare-const {past} Float64)")
+            self.definitions.append(f"(declare-const {past} {sort})")
             term, bound = form(*operands, past)
-        if bound not in self.bounds:
+        if bound is not None and bound not in self.bounds:
             self.bounds.append(bound)
         return term
 
