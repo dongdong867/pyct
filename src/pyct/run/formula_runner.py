@@ -35,6 +35,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from pyct.core.entry import losses
 from pyct.core.entry.in_use import CALLS_IN_USE, IN_USE, CallInUse, LoopInUse
 from pyct.intercept.model_code import Refused
 from pyct.intercept.wrap import bound_builtins
@@ -117,6 +118,7 @@ def install(formulas: Iterable[FormulaText]) -> None:
         runner = FormulaRunner(code, each, home=None)
         call = call_in_use(runner)
         if call is not None:
+            losses.load_calls_in_use()
             CALLS_IN_USE[each.place] = call
         else:
             IN_USE[each.place] = LoopInUse(each.parameters, each.changed, runner)

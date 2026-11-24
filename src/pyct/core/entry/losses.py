@@ -85,22 +85,22 @@ class _Losses:
 
 
 _LOSSES = _Losses()
+# core's module of the loss sites in use, once loaded (`load_calls_in_use`)
+_CALLS: list[types.ModuleType | None] = [None]
 
 
 def start(sink: BranchSink, *, alone: bool = False) -> None:
     """An input that records loss runs goes live: from now on each site's runs go into ``sink``,
     from none, and its call uses the loss sites in use when it runs ``alone`` in a process of
-    its own (`pyct.core.entry.calls_in_use`), which is loaded then, when a site is in use."""
+    its own (`pyct.core.entry.calls_in_use`)."""
     _LOSSES.clear()
     _LOSSES.sink = sink
     HEARS[0] = _operation
     _LOSSES.files = frozenset()
     if alone and CALLS_IN_USE:
-        # imported here, once a site is in use, so that a plain run loads none of the sites' work
-        from pyct.core.entry import calls_in_use
-
-        calls_in_use.start(alone=True)
-        _LOSSES.files = calls_in_use.LIVE.files
+        sites = load_calls_in_use()
+        sites.start(alone=True)
+        _LOSSES.files = sites.LIVE.files
 
 
 def forget() -> None:
@@ -109,16 +109,38 @@ def forget() -> None:
     _LOSSES.sink = None
     _LOSSES.clear()
     if _LOSSES.files:
+        load_calls_in_use().forget()
+        _LOSSES.files = frozenset()
+
+
+def load_calls_in_use() -> types.ModuleType:
+    """Core's module of the loss sites in use, imported the first time only, so that a plain run
+    loads none of it: by an upper layer as a site first comes into use in pyct's own process,
+    so that each forked input has it, or as a fresh interpreter is handed one, else by `start`."""
+    module = _CALLS[0]
+    if module is None:
         from pyct.core.entry import calls_in_use
 
-        calls_in_use.forget()
-        _LOSSES.files = frozenset()
+        module = _CALLS[0] = calls_in_use
+    return module
 
 
 def watched_in(file: str) -> bool:
     """Whether ``file`` holds a loss site in use in the live input, so that a watched call there
     keeps its arguments as it is given them."""
     return file in _LOSSES.files
+
+
+def keeps_given(code: types.CodeType, at: int) -> bool:
+    """Whether a watched call that starts at instruction ``at`` of ``code``, in a file
+    `watched_in` names, keeps its arguments (`pyct.core.entry.calls_in_use.keeps_given`)."""
+    return load_calls_in_use().keeps_given(code, at)
+
+
+def answered_at(code: types.CodeType, at: int, site: Site) -> None:
+    """A watched call that kept its arguments answered at ``site``
+    (`pyct.core.entry.calls_in_use.answered_at`)."""
+    load_calls_in_use().answered_at(code, at, site)
 
 
 def _operation(lost: Downgrade, operands: tuple[object, ...], answer: object) -> object:
@@ -212,9 +234,7 @@ def _heard(
     run is not recorded."""
     got, drop = answer, None
     if _LOSSES.files:
-        from pyct.core.entry import calls_in_use
-
-        got, drop = calls_in_use.answered(lost, given, answer)
+        got, drop = load_calls_in_use().answered(lost, given, answer)
     at = None if run is None else _record(lost, run, past=drop is not None)
     sink = _LOSSES.sink
     if drop is not None and sink is not None:

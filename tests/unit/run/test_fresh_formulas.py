@@ -12,7 +12,7 @@ import pytest
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
-from pyct.core.entry import in_use
+from pyct.core.entry import in_use, losses
 from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse, LoopInUse
 from pyct.core.foundation.branch import Site
 from pyct.intercept.hook import Interception, intercepting
@@ -228,3 +228,21 @@ def test_each_loss_site_handed_over_is_compiled_into_core_s_table_of_sites(
     assert isinstance(call.formula, FormulaRunner)
     assert call.formula.home is None
     assert call.formula({"n": 13}) == {"answer": 3}
+
+
+def test_a_loss_site_coming_into_use_or_handed_over_loads_core_s_module_of_sites(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: dict[tuple[str, int, int], CallInUse],
+    table: dict[tuple[str, int, int], LoopInUse],
+) -> None:
+    loaded: list[str] = []
+    monkeypatch.setattr(losses, "load_calls_in_use", lambda: loaded.append("loaded"))
+    text = call_text(("calls.py", 11, 11))
+    code = compiled_formula(text.text, text.parameters, text.changed, text.file)
+    assert not isinstance(code, Refused)
+
+    CallsInUse().use(text, code)
+    install((call_text(("calls.py", 12, 11)),))
+    install((text_of((G, 45, 4)),))
+
+    assert loaded == ["loaded", "loaded"]

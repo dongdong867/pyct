@@ -26,6 +26,7 @@ import types
 from collections.abc import Callable
 from typing import Protocol
 
+from pyct.core.entry import losses
 from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.results.llm_asks import SummaryState
@@ -96,6 +97,8 @@ class CallsInUse:
         site's downgrade and positions, and its code as pyct's process compiled it."""
         call = call_in_use(FormulaRunner(code, text, os.getpid()))
         if call is not None:
+            # loaded here, in pyct's own process, so that each forked input has it
+            losses.load_calls_in_use()
             self.sites.add(Site(*text.place))
             CALLS_IN_USE[text.place] = call
 
