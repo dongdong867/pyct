@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 METAS = {"US": 1, "FR": 33, "DE": 49}
 
 
@@ -40,3 +42,37 @@ def past_limit(s):
     if count == 300:
         return "last"
     return "other"
+
+
+class Doubled(dict):
+    def __getitem__(self, key):
+        return dict.__getitem__(self, key) * 2
+
+
+DOUBLED = Doubled(METAS)
+COUNTS = defaultdict(int, METAS)
+
+
+def plain_key(s):
+    meta = METAS["FR"]
+    if s == "x":
+        return meta
+    return 0
+
+
+def plain_key_missing(s):
+    if s:
+        return METAS["XX"]
+    return 0
+
+
+def own_read(s):
+    return DOUBLED[s]
+
+
+def counted(s):
+    return COUNTS[s]
+
+
+def held(d, s):
+    return d[s]

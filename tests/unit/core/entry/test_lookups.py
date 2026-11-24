@@ -1,10 +1,14 @@
 """An index read and a `get` on a plain dict with a tracked key: one `==` fork per key, in the
 dict's order, until one holds. An index read on a plain list, tuple or str with a tracked int."""
 
+from collections import defaultdict
+
 import pytest
 
+from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.entry.lookups import item, routed
 from pyct.core.foundation.branch import SinkItem
+from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.entry.test_substitutes import expressions
@@ -160,3 +164,73 @@ def test_a_key_pyct_does_not_compare_is_python_s_own_and_a_downgrade() -> None:
         sink.clear()
         assert routed(table.get)(text("a", sink)) == 1
         assert expressions(sink) == [(["==", "s", "'a'"], True), "get"]
+
+
+def test_a_plain_key_is_python_s_own_read() -> None:
+    assert item(METAS, "FR") == METAS["FR"]
+    assert item(CODES, 2) == CODES[2]
+    assert item(ALPHA, 3) == ALPHA[3]
+    assert routed(METAS.get)("FR") == 33
+    for container, key in ((METAS, "XX"), (CODES, 9), (CODES, "a"), (ALPHA, 99)):
+        with pytest.raises((KeyError, IndexError, TypeError)) as plain:
+            container[key]  # pyrefly: ignore[bad-index]
+        with pytest.raises(type(plain.value)) as read:
+            item(container, key)
+        assert str(read.value) == str(plain.value)
+
+
+def test_a_tracked_container_keeps_its_own_rules() -> None:
+    sink: list[SinkItem] = []
+    items = ConcolicList.made([4, 5], "items", sink)
+    table = ConcolicDict.made({"k": 1}, "d", sink)
+
+    assert item(items, number(1, sink)) == 5
+    assert item(table, text("k", sink)) == 1
+    own = expressions(sink)
+    sink.clear()
+    assert items[number(1, sink)] == 5
+    assert table[text("k", sink)] == 1
+    assert expressions(sink) == own[-len(expressions(sink)) :]
+    with pytest.raises(IndexError) as plain:
+        items[number(7, [])]
+    with pytest.raises(IndexError) as read:
+        item(items, number(7, []))
+    assert str(read.value) == str(plain.value)
+
+
+class Logged(dict[str, int]):
+    def __init__(self, values: dict[str, int]) -> None:
+        super().__init__(values)
+        self.seen: list[object] = []
+
+    def __getitem__(self, key: str) -> int:
+        self.seen.append(key)
+        return dict.__getitem__(self, key)
+
+
+def test_a_subclass_s_own_getitem_runs_once_with_the_tracked_key() -> None:
+    table = Logged(METAS)
+    key = text("FR", [])
+
+    assert item(table, key) == 33
+    assert len(table.seen) == 1 and table.seen[0] is key
+    with pytest.raises(KeyError):
+        item(table, text("XX", []))
+    assert len(table.seen) == 2
+
+
+def test_a_default_dict_s_factory_runs_once_on_a_miss() -> None:
+    made: list[int] = []
+
+    def factory() -> int:
+        made.append(1)
+        return 9
+
+    table = defaultdict(factory, METAS)
+    sink: list[SinkItem] = []
+
+    assert item(table, text("XX", sink)) == 9
+    assert made == [1]
+    assert expressions(sink) == tried("US", "FR", "DE")
+    assert item(table, text("FR", [])) == 33
+    assert made == [1]

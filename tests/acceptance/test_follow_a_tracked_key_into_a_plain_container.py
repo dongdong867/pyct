@@ -6,6 +6,7 @@ connected to the input. Each test runs pyct through the command line and reads t
 lines against the same call in plain Python.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -158,3 +159,33 @@ def test_a_dict_past_the_limit_is_python_s_own_and_names_get() -> None:
     assert seed["downgrades"] == [
         downgrade("get", 1, f"targets/dicts/plain_lookups.py:{at}:{column}")
     ]
+
+
+# follow-a-tracked-key-into-a-plain-container-run-plain-reads-unchanged
+@pytest.mark.parametrize(
+    ("function", "args", "read"),
+    [
+        ("plain_key", {"s": "x"}, "METAS["),
+        ("plain_key_missing", {"s": "a"}, "METAS["),
+        ("own_read", {"s": "XX"}, "DOUBLED["),
+        ("own_read", {"s": "US"}, "DOUBLED["),
+        ("counted", {"s": "XX"}, "COUNTS["),
+        ("held", {"d": {}, "s": "a"}, "d[s]"),
+    ],
+)
+def test_other_reads_answer_and_raise_as_plain_python_does(
+    function: str, args: dict[str, object], read: str
+) -> None:
+    result = run_pyct(f"{DICTS}::{function}", json.dumps(args), "--goal", "bugs")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    try:
+        getattr(plain_lookups, function)(**args)
+        expected = None
+    except Exception as error:
+        expected = f"{type(error).__name__}: {error}"
+    assert failure_detail(seed) == expected
+    assert seed["downgrades"] == []
+    if function.startswith("plain_key"):
+        assert placed(seed, line_of(function, read)) == []
