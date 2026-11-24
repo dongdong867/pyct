@@ -140,6 +140,11 @@ def raising(values: Mapping[str, object]) -> Mapping[str, object]:
     raise ValueError("no")
 
 
+def nested(depth: int) -> tuple[object, ...]:
+    """A tuple ``depth`` tuples deep, around a 1."""
+    return (1,) if depth == 0 else (nested(depth - 1),)
+
+
 def test_a_mismatch_a_raise_and_a_missing_answer_each_drop_the_formula() -> None:
     cases: list[tuple[Formula, str, DropReason]] = [
         (squared, "169", DropReason.MISMATCH),
@@ -152,6 +157,8 @@ def test_a_mismatch_a_raise_and_a_missing_answer_each_drop_the_formula() -> None
             "(0, 1, 2, 3, 4, 5, ...)",
             DropReason.MISMATCH,
         ),
+        (lambda values: {"answer": {(1, 2): 3}}, "{(1, 2): 3}", DropReason.MISMATCH),
+        (lambda values: {"answer": nested(8)}, "((((((...,),),),),),)", DropReason.MISMATCH),
     ]
     for formula, got, reason in cases:
         with using(formula) as sink:
