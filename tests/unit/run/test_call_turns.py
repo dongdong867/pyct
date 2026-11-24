@@ -27,10 +27,11 @@ from pyct.run.formula_runner import FormulaRunner
 from pyct.run.loops_in_use import kinds_unused_because
 from pyct.run.notes import Note, SummaryDropped, SummaryNotUsed, SummarySkipped
 from pyct.run.stuck import Outcome
-from pyct.run.summaries import EarlierFormula, Summaries
+from pyct.run.summaries import EarlierFormula, ShownRun, Summaries
 from pyct.run.summary_checks import CompleteRun
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
+from tests.unit.run.test_summaries import Run
 from tests.unit.run.test_summaries_calls import (
     FILE,
     QUARTER,
@@ -239,3 +240,23 @@ def test_a_drop_at_a_site_not_in_use_changes_nothing() -> None:
     summaries.heard(dropped_by(drop, shift(38, 8, 9, 3)), 1)
 
     assert not [note for note in notes if isinstance(note, SummaryDropped)]
+
+
+def test_a_dropped_site_is_asked_about_again_with_its_try_and_failing_run_first() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    first = record(shift(37, 8, 13, 2), shift(37, 8, 9, 2))
+    summaries.between(heard(summaries, [first]))
+    drop = FormulaDrop(SITE, "answer", "5", "6", DropReason.MISMATCH, run=1)
+    failing = dropped_by(drop, shift(37, 8, 5, 2), shift(37, 8, 21, 2))
+    summaries.heard(failing, 2)
+
+    summaries.between(Run([first, failing]))
+    summaries.between(Run([first, failing]))
+
+    assert len(fake.requests) == 2
+    again = fake.requests[1]
+    reason = "dropped at input 2: answer was 5, the formula gave 6"
+    assert again.tries == (EarlierFormula(QUARTER, reason),)
+    assert again.runs[0] == ShownRun((("n", "21"),), (("answer", "5"),))
+    assert summaries.loops[SITE].last is SummaryState.IN_USE

@@ -7,8 +7,10 @@ on (`pyct.core.entry.losses`). The summaries tool hears each input the run keeps
 site whose first recorded run the input holds, in the order the input recorded them, under the
 name of the first downgrade recorded there (``LossSites``). Before each pass picks a fork, and
 before the run would stop on ``no fork to flip``, the tool asks about each noted site that had
-no turn this run, one at a time, in the order noted (`pyct.run.summaries.Summaries.between`);
-each site has one turn per run, whatever came of it.
+no turn this run, one at a time, in the order noted (`pyct.run.call_turns`); each site has one
+turn per run, whatever came of it, and one more each time an input drops its formula in use.
+An ask after a drop holds the dropped formula among the earlier tries, with why, and shows the
+run it failed on first.
 
 A site is skipped with no ask when Python converts its answer to a plain int or bool before the
 target sees it (``CONVERTS``), or when an answer it recorded is no int, float, str or bool. Its
@@ -43,8 +45,9 @@ from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
 from pyct.results.source_files import SourceFiles
 from pyct.run.code_context import CODE_LIMIT, code_with_piece, function_code
-from pyct.run.summary_asks import CallAsk, EarlierFormula, SummaryRequest
+from pyct.run.summary_asks import CallAsk, SummaryRequest
 from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_outcomes import LoopState
 from pyct.run.summary_runs import AskedLoop, not_shown, shown_runs
 from pyct.run.target import Target
 
@@ -171,24 +174,25 @@ def call_request(
     target: Target,
     call: AskedCall,
     place: str,
-    tries: tuple[EarlierFormula, ...],
     files: SourceFiles,
+    state: LoopState | None = None,
 ) -> SummaryRequest:
-    """The ask about a loss site, at its ``place``, with its earlier tries, its code read through
-    the run's ``files``."""
+    """The ask about a loss site, at its ``place``, its code read through the run's ``files``,
+    with the earlier tries its ``state`` keeps, and the run its last formula was dropped on first
+    among the runs shown."""
     loop = call.loop
     code = code_with_piece(target, loop.site.file, loop.piece.lines, CALL, files)
     callee, source = _callee(call.callee, CODE_LIMIT - len(code) - 2, files)
     if source is not None:
         code = f"{code}\n\n{source}" if code else source
-    shown = shown_runs(loop)
+    shown = shown_runs(loop, None if state is None else state.failed_on)
     return SummaryRequest(
         place=place,
         code=code,
         parameters=loop.parameters,
         changed=loop.piece.changed,
         runs=shown,
-        tries=tries,
+        tries=() if state is None else tuple(state.tries),
         not_shown=not_shown(loop, shown),
         call=CallAsk(call.name, call.written, callee, source is not None),
     )

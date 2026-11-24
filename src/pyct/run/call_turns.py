@@ -143,9 +143,9 @@ class CallTurns:
         if call is None or reason is not None or not can_fork():
             tool.say_once(SummarySkipped(site, reason or CANNOT_FORK, call=name))
             return
-        state = LoopState(call.loop.piece.changed, kind=CALL, name=name)
+        state = tool.loops.get(site) or LoopState(call.loop.piece.changed, kind=CALL, name=name)
         self.positions[site] = call.positions
-        request = call_request(tool.target, call, tool.place(site), (), tool.files)
+        request = call_request(tool.target, call, tool.place(site), tool.files, state)
         tool.asked(call.loop, state, request, run)
 
     def used(
@@ -180,8 +180,8 @@ class CallTurns:
         self.fell_back()
 
     def _dropped(self, drop: FormulaDrop, record: InputRecord, number: int) -> None:
-        """The site in use the input ``number`` dropped: out of use, said, and its formula kept
-        among its earlier tries with why, and the run it failed on, for its next ask."""
+        """The site in use the input ``number`` dropped: out of use, said, its formula kept among
+        its earlier tries with why, and the run it failed on, for its ask at the next turn."""
         site = drop.site
         self.in_use.stop(site)
         state = self.tool.loops[site]
@@ -193,6 +193,8 @@ class CallTurns:
         )
         state.failed_on = failed_call_run(drop, record, number, self.tool.files)
         self.tool.told.note(SummaryDropped(site, number, reason, call=state.name))
+        # asked about again at the next turn
+        self.sites.turned.discard(site)
 
     def fell_back(self) -> None:
         """Once the run's inputs run in pyct's own process, each site still in use goes out of

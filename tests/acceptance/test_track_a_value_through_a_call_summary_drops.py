@@ -20,7 +20,7 @@ from tests.acceptance.llm_summaries import (
     one_thread,  # noqa: F401
     run_summaries,
 )
-from tests.acceptance.lost_calls import BOUNDED, WRONG, at
+from tests.acceptance.lost_calls import BOUNDED, MOD, WRONG, WRONG_CODE, at, place
 from tests.acceptance.test_track_a_value_through_a_call_summary import (
     LONGER,
     after_checked,
@@ -67,3 +67,26 @@ def test_the_first_input_the_formula_fails_on_drops_it() -> None:
     for record in after[: after.index(first)]:
         assert downgraded(record, "__pow__") == [], record
     assert state_of(done) == "dropped"
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-asked-again-after-a-drop
+def test_a_dropped_site_is_asked_about_again_at_the_next_turn() -> None:
+    provider = FakeSummaries([WRONG, MOD])
+
+    done = run_summaries(BOUNDED, {"n": 2}, provider, LONGER)
+
+    [(number, answer, got)] = dropped(done)
+    assert [request.place for request in provider.requests] == [place(84, 8)] * 2
+    assert provider.inputs_then[1] == number
+    assert provider.tries[place(84, 8)] == 2
+    again = provider.requests[1]
+    reason = f"dropped at input {number}: answer was {answer}, the formula gave {got}"
+    assert [(each.formula, each.reason) for each in again.tries] == [(f"{WRONG_CODE}\n", reason)]
+    n = done.records[number - 1].args["n"]
+    assert again.runs[0].going_in == (("n", json.dumps(n)),)
+    said = done.llm_said()
+    read = f"llm: summary for the call __pow__ at {POW}: answer = n * n % 10"
+    dropped_at = next(at for at, line in enumerate(said) if DROPPED.fullmatch(line))
+    assert said.index(read) > dropped_at
+    assert any(": checked on " in line for line in said[said.index(read) :])
+    assert state_of(done) == "in use"
