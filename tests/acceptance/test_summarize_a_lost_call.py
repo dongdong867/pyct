@@ -58,8 +58,8 @@ def test_pyct_asks_about_a_loss_after_the_seed_and_before_any_other_input() -> N
     done = run_summaries(SHIFTED, {"n": 3}, provider)
 
     site = at(11, 11)
-    read = f"llm: summary for the call __rshift__ at {site}: answer = n // 4"
-    checked = f"llm: summary for the call __rshift__ at {site}: checked on 1 past runs"
+    read = f"llm: summary for the call __pow__ at {site}: answer = n % 4"
+    checked = f"llm: summary for the call __pow__ at {site}: checked on 1 past runs"
     assert done.said.index("input 1") < done.said.index(read) < done.said.index(checked)
     assert "input 2" not in done.said[: done.said.index(checked)]
     assert provider.inputs_then == [1]

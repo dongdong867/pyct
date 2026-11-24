@@ -1,5 +1,5 @@
 def sites(x: int) -> int:
     for i in range(3):
-        c = x ^ i
-    d = x ^ 1
+        c = x >> (x - x)
+    d = x >> (x - x)
     return c + d

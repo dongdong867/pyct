@@ -8,13 +8,13 @@ import textwrap
 
 
 def _quarter(n: int) -> int:
-    return n >> 2
+    return pow(n, 1, 4)
 
 
 def shifted(n: int) -> str:
     k = _quarter(n)
-    if k == 7:
-        return "seven"
+    if k == 2:
+        return "two"
     return "other"
 
 
@@ -33,11 +33,11 @@ def squared(n: int) -> str:
 
 
 def _bits(n: int) -> int:
-    a = n >> 1
-    b = n >> 2
-    c = n >> 3
+    a = pow(n, 1, 2)
+    b = pow(n, 1, 4)
+    c = pow(n, 1, 8)
     del a, b, c
-    return n >> 4
+    return pow(n, 1, 16)
 
 
 def deep(n: int) -> str:
@@ -50,7 +50,7 @@ def deep(n: int) -> str:
 def late(s: str, n: int) -> object:
     if io.StringIO(s).read(1) == "x":
         return "x"
-    return n >> 2
+    return pow(n, 1, 4)
 
 
 def measured(s: str) -> str:

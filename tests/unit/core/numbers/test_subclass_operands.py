@@ -215,8 +215,11 @@ def test_an_int_flag_answers_with_its_own_flag_as_python_does() -> None:
 
     expected = 7 | Flag.A
     assert result == expected and type(result) is type(expected)
-    # IntFlag's own `|` runs `1 | n`, a downgrade of its own, and hands back a plain flag
-    assert sink == [Downgrade(name="__ror__", site=ANY), Downgrade(name="__or__", site=ANY)]
+    # IntFlag's own `|` runs `1 | n`, which stays tracked, so enum's checks of that value fork
+    # inside enum; the flag it hands back is plain, and that loss is named last
+    downgrades = [item for item in sink if isinstance(item, Downgrade)]
+    assert Downgrade(name="__ror__", site=ANY) not in downgrades
+    assert downgrades[-1] == Downgrade(name="__or__", site=ANY)
 
 
 def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() -> None:

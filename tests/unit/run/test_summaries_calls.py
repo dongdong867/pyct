@@ -25,18 +25,22 @@ from pyct.run.token_limit import TokenLimit
 from tests.unit.run.test_summaries import Run
 
 FILE = load_target("targets.summaries.calls::deep").file
-QUARTER = 'def summary(n):\n    return {"answer": n // 4}\n'
+QUARTER = 'def summary(n):\n    return {"answer": n % 4}\n'
 
 
-def shift(line: int, col: int, n: int, by: int, name: str = "__rshift__") -> LossRun:
-    """A run of the shift at the line and column of ``calls.py``."""
-    going_in = (GoingIn("arg1", str(n), tracked=True), GoingIn("arg2", str(by), tracked=False))
+def shift(line: int, col: int, n: int, by: int, name: str = "__pow__") -> LossRun:
+    """A run of ``pow(n, 1, 2**by)`` at the line and column of ``calls.py``."""
+    going_in = (
+        GoingIn("arg1", str(n), tracked=True),
+        GoingIn("arg2", "1", tracked=False),
+        GoingIn("arg3", str(2**by), tracked=False),
+    )
     return LossRun(
         Site(FILE, line, col),
         name,
         LossKind.OPERATION,
         going_in,
-        (Changed("answer", str(n >> by)),),
+        (Changed("answer", str(n % 2**by)),),
     )
 
 
@@ -136,7 +140,7 @@ def test_a_checked_formula_is_kept_as_checked_with_its_name() -> None:
     [state] = summaries.states()
     assert (state.kind, state.name, state.state, state.checked_on) == (
         "call",
-        "__rshift__",
+        "__pow__",
         SummaryState.CHECKED,
         1,
     )
@@ -184,7 +188,7 @@ def test_a_site_is_skipped_while_pyct_s_process_runs_a_second_thread(
     summaries.between(heard(summaries, [record(run)]))
 
     assert fake.requests == []
-    assert notes == [SummarySkipped(run.site, "cannot fork", call="__rshift__")]
+    assert notes == [SummarySkipped(run.site, "cannot fork", call="__pow__")]
 
 
 def moment_of(summaries: Summaries, run: Run, *entries: WhyEntry) -> tuple[Outcome, ...]:
@@ -193,7 +197,7 @@ def moment_of(summaries: Summaries, run: Run, *entries: WhyEntry) -> tuple[Outco
 
 def lost_at(line: int, col: int) -> WhyEntry:
     """An entry whose condition reads the value lost at the shift at the line and column."""
-    lost = Source(SourceKind.LOST, "n", Site(FILE, line, col), call="__rshift__")
+    lost = Source(SourceKind.LOST, "n", Site(FILE, line, col), call="__pow__")
     condition = Condition(Site(FILE, 41, 7), True)
     return WhyEntry(FILE, (42,), Reason.NO_FORK, condition=condition, sources=(lost,))
 

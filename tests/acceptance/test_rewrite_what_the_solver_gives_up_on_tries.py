@@ -92,14 +92,14 @@ def test_a_reply_pyct_cannot_use_counts_as_a_try(monkeypatch: pytest.MonkeyPatch
         return solve(held, *args)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(loop_module, "solve", counted)
-    replies = ["n & 1 == 1", '__import__("os").getcwd() == s', "this is not code", "n == 3"]
+    replies = ["1 << n == 2", '__import__("os").getcwd() == s', "this is not code", "n == 3"]
     provider = FakeRewrites(replies)
 
     ran = run_rewrites(COUNTED, {"s": "0", "n": 0}, provider)
 
     at = f"llm: rewrite for {file_of('counted')}:2:7"
     assert tries_said(ran.said, at)[:3] == [
-        f"{at}, try 1: pyct does not follow __and__",
+        f"{at}, try 1: pyct does not follow __rlshift__",
         f"{at}, try 2: a rewrite may not call __import__",
         f"{at}, try 3: the reply holds no expression",
     ]

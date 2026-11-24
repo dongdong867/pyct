@@ -1,5 +1,5 @@
 def size(x: int) -> str:
-    y = x >> 1
+    y = x >> abs(x)
     if y < 10:
         return "small"
     return "big"

@@ -63,7 +63,7 @@ def test_the_summary_line_lists_a_loss_site_with_its_checked_formula(
     assert llm["summaries"] == [
         {
             "kind": "call",
-            "name": "__rshift__",
+            "name": "__pow__",
             "file": C,
             "line": 11,
             "col": 11,

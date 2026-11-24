@@ -1,5 +1,5 @@
 def big(x: int) -> str:
-    c = x ^ 0
+    c = x >> (x - x)
     if c > 10:
         return "big"
     return "small"

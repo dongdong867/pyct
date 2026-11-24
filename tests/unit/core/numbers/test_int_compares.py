@@ -297,7 +297,7 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt.made(3, expression="x", sink=sink)
 
-    assert x >> 1 == 1
+    assert x >> x == 0
     assert x.bit_length() == 2
     assert _probe()(x < 10) == "yes"
 

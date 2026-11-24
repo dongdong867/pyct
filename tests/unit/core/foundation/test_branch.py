@@ -1,5 +1,4 @@
 import dataclasses
-import operator
 import os
 import weakref
 from collections.abc import Callable
@@ -78,15 +77,15 @@ def test_a_downgrade_names_the_call_that_dropped_the_condition_and_where() -> No
 
 def test_an_untaught_operation_records_the_site_of_the_call() -> None:
     namespace: dict[str, object] = {}
-    exec(compile("def lose(x):\n    return x ^ 0\n", "<lost>", "exec"), namespace)
+    exec(compile("def lose(x):\n    return x >> x\n", "<lost>", "exec"), namespace)
     lose = namespace["lose"]
     assert callable(lose)
     sink: list[SinkItem] = []
 
     lose(ConcolicInt.made(3, expression="x", sink=sink))
 
-    # the target's `x ^ 0`, at column 11 of its line 2; pyct's own frames are skipped
-    assert sink == [Downgrade(name="__xor__", site=Site(file="<lost>", line=2, col=11))]
+    # the target's `x >> x`, at column 11 of its line 2; pyct's own frames are skipped
+    assert sink == [Downgrade(name="__rshift__", site=Site(file="<lost>", line=2, col=11))]
 
 
 def test_a_plain_list_is_a_branch_sink() -> None:
@@ -130,7 +129,7 @@ def test_a_fork_before_an_operation_that_may_raise_is_marked_as_the_operation_s(
 
 def test_a_repeated_downgrade_at_one_instruction_is_the_one_object() -> None:
     namespace: dict[str, object] = {}
-    source = "def spin(x):\n    for _ in range(3):\n        x ^ 0\n    return x ^ 1\n"
+    source = "def spin(x):\n    for _ in range(3):\n        1 << x\n    return x << x\n"
     exec(compile(source, "<spun>", "exec"), namespace)
     spin = namespace["spin"]
     assert callable(spin)
@@ -140,7 +139,7 @@ def test_a_repeated_downgrade_at_one_instruction_is_the_one_object() -> None:
 
     first, second, third, last = sink
     assert first is second is third
-    assert last == Downgrade(name="__xor__", site=Site(file="<spun>", line=4, col=11))
+    assert last == Downgrade(name="__lshift__", site=Site(file="<spun>", line=4, col=11))
 
 
 def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
@@ -152,12 +151,12 @@ def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
     x = ConcolicInt.made(3, expression="x", sink=sink)
 
     both(x, float)
-    both(x, operator.invert)
+    both(x, int)
 
     # one call instruction, two methods lost through it
     assert [item.name for item in sink if isinstance(item, Downgrade)] == [
         "__float__",
-        "__invert__",
+        "__int__",
     ]
 
 

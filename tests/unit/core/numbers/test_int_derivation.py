@@ -9,20 +9,11 @@ from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicInt leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
-# own with no downgrade, silently. Nineteen on the floor version; a newer Python may add another
+# own with no downgrade, silently. Nine on the floor version; a newer Python may add another
 UNTAUGHT_OPERATIONS = (
     "__rpow__",
-    "__lshift__",
     "__rlshift__",
-    "__rshift__",
     "__rrshift__",
-    "__and__",
-    "__rand__",
-    "__or__",
-    "__ror__",
-    "__xor__",
-    "__rxor__",
-    "__invert__",
     "__int__",
     "__float__",
     "__format__",
@@ -43,16 +34,16 @@ def _derived_downgrades() -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the eighteen are counted on the floor; a newer Python may define another int method",
+    reason="the nine are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_int_downgrades_the_eighteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_int_downgrades_the_nine_operations_it_has_not_taught() -> None:
     assert _derived_downgrades() == set(UNTAUGHT_OPERATIONS)
 
 
 def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> None:
     derived = _derived_downgrades()
 
-    # the version gate above is on the count, not on the list; these eighteen exist on every
+    # the version gate above is on the count, not on the list; these nine exist on every
     # Python pyct runs on, so each one is a downgrade there too
     assert set(UNTAUGHT_OPERATIONS) <= derived
     # a wrapped kept name would cost a dict key a downgrade, and a wrapped `__getattribute__`

@@ -109,18 +109,18 @@ def test_a_downgrade_inside_the_call_takes_the_place_of_the_call_s_own() -> None
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer(called(lambda v: v ^ 0)(given(x)), "flip")
+    answer(called(lambda v: v >> v)(given(x)), "flip")
 
-    assert [name for name, _ in lost(sink)] == ["__xor__"]
+    assert [name for name, _ in lost(sink)] == ["__rshift__"]
 
 
 def test_a_downgrade_in_an_argument_before_the_last_leaves_the_call_s_own() -> None:
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
-    answer(called(math.gcd)(given(x), given(x ^ 0)), "math.gcd")
+    answer(called(math.gcd)(given(x), given(x >> x)), "math.gcd")
 
-    assert [name for name, _ in lost(sink)] == ["__xor__", "math.gcd"]
+    assert [name for name, _ in lost(sink)] == ["__rshift__", "math.gcd"]
 
 
 def test_a_call_inside_an_argument_answers_for_itself() -> None:

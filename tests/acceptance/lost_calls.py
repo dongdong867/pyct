@@ -20,7 +20,7 @@ MATCHED = "targets.summaries.calls::matched"
 # the module `C` is, as a place names it
 MODULE = "targets.summaries.calls"
 
-QUARTER_CODE = 'def summary(n):\n    return {"answer": n // 4}'
+QUARTER_CODE = 'def summary(n):\n    return {"answer": n % 4}'
 MOD_CODE = 'def summary(n):\n    return {"answer": n * n % 10}'
 # `QUARTER` and `MOD` of the criteria, and a formula that gives `n // 2`
 QUARTER = code_reply(QUARTER_CODE)

@@ -10,7 +10,8 @@ The lines a run prints are held against digests of what ``v2`` printed at b85bbc
 that differ between checkouts and machines taken out. count-the-lines-the-import-ran-as-covered
 changed only the summary's coverage: the ``def`` line the import ran is covered, so stdout's
 summary line and stderr's run-level ``covered``, ``uncovered`` and ``why`` lines differ from
-81fa09c9's, and nothing else does.
+81fa09c9's, and nothing else does. follow-bit-operations follows `x ^ i`, so the repeated
+downgrade's target shifts by the tracked int instead, and its digests are what that prints.
 """
 
 import hashlib
@@ -63,8 +64,8 @@ _CUT = re.compile(r"cut the expressions of (\d+) forks, from position (\d+) on,"
 _DOWNGRADES_THEN_RAISES = """\
 def f(x: int) -> int:
     for i in range(300_000):
-        c = x ^ i
-    d = x ^ 5
+        c = i >> x
+    d = 5 >> x
     raise ValueError(f"stopped after {c} and {d}")
 """
 
@@ -84,8 +85,8 @@ _PRINTED = {
         "5de5969262049b5ed880f407182f8e530c74253a3c61b31852bb53c7aaa30698",
     ),
     "downgrades": (
-        "52aa432f0ae362440eaba0f920df68d90d847117aca6ddb54a7a6c8c79ff2942",
-        "71cd1fe1ba6a022c50d9ba05b40b6c52e97d756008213882d2460b20a93cc74c",
+        "58562e9b2f990288ae88be767a93b0175fe2c39bfe619de2b8dcced8496b341b",
+        "04b63b5158bb5e8b8acca0cb5defd4476f06177e76a3803f261cbcbb9abe8d8c",
     ),
 }
 
