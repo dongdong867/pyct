@@ -70,10 +70,10 @@ def held_at(run: FakeRun, stuck: Stuck, inputs: int, new_at: Collection[int] = (
 
 
 # space-out-stuck-moments-that-ask-nothing-the-wait-doubles
-def test_moments_that_ask_nothing_wait_5_then_10_then_20_inputs() -> None:
+def test_moments_that_ask_nothing_wait_5_10_20_then_40_inputs() -> None:
     _, run, stuck = seeded([False])
 
-    assert held_at(run, stuck, 80) == [6, 16, 36, 56, 76]
+    assert held_at(run, stuck, 80) == [6, 16, 36, 76]
 
 
 # space-out-stuck-moments-that-ask-nothing-a-new-line-resets
@@ -121,7 +121,8 @@ def test_a_moment_that_asks_nothing_doubles_the_stretch_until_a_new_line() -> No
         return stuck.due(run, run.progress, empty=False)
 
     held = 0.0
-    for stretch in (quarter, 2 * quarter, BUDGET):
+    # the fourth, twice the budget, is one no run reaches: its budget's clock holds less
+    for stretch in (quarter, 2 * quarter, BUDGET, 2 * BUDGET):
         assert due_at(held + stretch - 0.1) is False
         assert due_at(held + stretch) is True
         stuck.hold(run)

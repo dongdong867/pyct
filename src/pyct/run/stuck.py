@@ -5,10 +5,10 @@ A run is stuck when 5 inputs in a row cover no new line, or a quarter of
 its budget passes with no new line, both counted from after the last seed
 and again from after each moment's last input, or when no fork is left to
 flip while a line is still missed. After each moment in which no tool
-asked, both waits double, twice at most, until a tool asks or an input
-covers a new line. A run with no tool switched on, or
-none that can still ask, is never stuck, so it runs as it would with no
-LLM at all. Decisions llm-one-stuck-moment-for-summaries-rewrites-and-guesses,
+asked, both waits double, until a tool asks or an input covers a new
+line. A run with no tool switched on, or none that can still ask, is
+never stuck, so it runs as it would with no LLM at all. Decisions
+llm-one-stuck-moment-for-summaries-rewrites-and-guesses,
 llm-stuck-on-time-as-well-as-inputs and
 llm-a-moment-that-asks-nothing-doubles-the-wait-before-the-next.
 
@@ -51,10 +51,6 @@ IN_A_ROW = 5
 # the share of the budget that passes with no new line before a run is stuck, as 5 inputs in a
 # row do: 11.25 s of the 45 s default
 STRETCH_SHARE = 0.25
-
-# the times both waits double after moments in a row in which no tool asked: 5, 10, then 20
-# inputs, and a quarter, a half, then the whole budget, which no stretch from a moment's end reaches
-QUIET_DOUBLINGS = 2
 
 # how long a moment works out the causes of the missed lines, at most
 CAUSE_SECONDS = 2.0
@@ -283,17 +279,18 @@ class Stuck:
 
     def _double(self, asked: bool, started: int) -> None:
         """Double both waits after a moment that started with ``started`` inputs and in which no
-        tool asked, up to ``QUIET_DOUBLINGS`` times; undo the doublings after one that asked."""
+        tool asked; undo the doublings after one that asked."""
         if asked:
             self._doublings = 0
         else:
-            self._doublings = min(self._doublings + 1, QUIET_DOUBLINGS)
+            self._doublings += 1
             self._quiet_from = started
 
     def _waits(self, progress: Progress) -> int:
         """What both waits are multiplied by: 2 for each moment in a row in which no tool asked,
-        up to ``QUIET_DOUBLINGS``, and 1 again once an input since the last such moment started
-        covered a new line."""
+        and 1 again once an input since the last such moment started covered a new line. From
+        the second, the stretch is the whole budget or more, which the budget's clock never
+        reaches after a moment, so no moment comes on time."""
         if self._gains.last(progress.covered) > self._quiet_from:
             self._doublings = 0
         return 2**self._doublings

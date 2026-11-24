@@ -169,17 +169,17 @@ def test_a_run_holds_at_most_three_moments_that_ask() -> None:
 
 
 # space-out-stuck-moments-that-ask-nothing-the-wait-doubles
-def test_moments_that_ask_nothing_come_after_5_10_then_20_inputs() -> None:
+def test_moments_that_ask_nothing_come_after_5_10_20_then_40_inputs() -> None:
     summaries = Tool(Kind.SUMMARIES, asks=False)
 
-    go(loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=60))), {"s": ""})
+    go(loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=100))), {"s": ""})
 
-    # inputs 4 to 63 gain nothing, and the plateau stops the run after input 63
+    # inputs 4 to 103 gain nothing, and the plateau stops the run after input 103
     assert [(number, inputs) for number, inputs, _ in summaries.moments] == [
         (1, 8),
         (2, 18),
         (3, 38),
-        (4, 58),
+        (4, 78),
     ]
 
 
