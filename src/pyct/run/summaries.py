@@ -318,7 +318,10 @@ class Summaries:
 
     def run_again(self, run: Running) -> None:
         """Run again the inputs the formulas put in use since the last time were checked on, each
-        once, in run order, labeled ``summary`` (``pyct.run.summary_runs.run_again``)."""
+        once, in run order, labeled ``summary`` (``pyct.run.summary_runs.run_again``). With none
+        waiting, as at most passes, it reads nothing."""
+        if not self.again:
+            return
         again, self.again = self.again, []
         run_again(run, again, self.target)
 
