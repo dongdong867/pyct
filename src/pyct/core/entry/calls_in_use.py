@@ -1,0 +1,176 @@
+"""The loss sites in use: a site whose answers a checked formula stands for, in a call that runs in
+a process of its own (`pyct.core.entry.losses` calls this module as it hears each loss).
+
+An upper layer puts each site in use in `CALLS_IN_USE`, by its file, line
+and column, before an input starts; `start` reads it then. While the input
+is live and its call runs alone, each time a site in use runs with the
+downgrade the site is in use with, the target's real answer is computed as
+it would be with no formula, then the formula is called on the values going
+in as they are, tracked ones included, each value at a position its
+parameter names, a constant left out: an operation's receiver and other
+operands, a `math` call's arguments, or a watched call's arguments as the
+watch was given them, each list or dict as a copy made then
+(`pyct.core.entry.in_use.as_it_went_in`). Each fork, fact and downgrade the
+formula records is placed at the site, and each fork it records is marked
+``summary``.
+
+The two answers are compared by their JSON text. On a match the target
+gets the real answer tracked with the formula's term, and no downgrade is
+recorded there; a formula answer with no term leaves the real answer plain,
+and the downgrade is recorded as before. On a mismatch, a raise of an
+``Exception`` or a missing ``answer``, the target gets the real answer
+plain, the downgrade is recorded as before, the site is not used again in
+the input, and the caller is handed a `FormulaDrop`. A raise that is not an
+``Exception``, the deadline's, passes through.
+
+A site does not apply, and the target gets the real answer as before, while
+any formula runs, a loop's or a site's, so that a formula that reaches a site
+in use does not call it; when the values going in are not as many as the
+formula's positions; and when the real answer's type is not exactly int,
+float, str or bool, so that the target never loses a subclass's own
+attributes.
+"""
+
+from __future__ import annotations
+
+import contextlib
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import cast
+
+from pyct.core.entry import in_use
+from pyct.core.entry.plain_copy import SCALARS
+from pyct.core.entry.waiting import json_text
+from pyct.core.foundation.branch import Downgrade, DropReason, FormulaDrop, Site, placed_at
+from pyct.core.numbers.ints import ConcolicInt
+
+# the one name a site's formula gives a value for
+ANSWER = "answer"
+# the real answers a site in use hands on tracked: Python's own, never a subclass
+_ANSWERS = frozenset({int, float, str, bool})
+
+type _Place = tuple[str, int, int]
+
+
+@dataclass(frozen=True)
+class CallInUse:
+    """A loss site's formula: the name of the downgrade it stands for, each value going in's
+    parameter by its position, None for a constant the formula does not take, and the call that
+    takes each parameter's value by name and answers ``answer``'s."""
+
+    name: str
+    positions: tuple[str | None, ...]
+    formula: Callable[[Mapping[str, object]], Mapping[str, object]]
+
+
+# the loss sites in use, by the file, line and column of each
+CALLS_IN_USE: dict[_Place, CallInUse] = {}
+
+
+class _Live:
+    """The live input's sites in use, when its call runs alone, none else, the files that hold
+    them, and the sites dropped in it."""
+
+    __slots__ = ("dropped", "files", "sites")
+
+    def __init__(self) -> None:
+        self.sites: dict[_Place, CallInUse] = {}
+        self.files: frozenset[str] = frozenset()
+        self.dropped: set[_Place] = set()
+
+
+LIVE = _Live()
+
+
+def start(*, alone: bool) -> None:
+    """An input goes live: its call uses the sites in `CALLS_IN_USE` now when it runs ``alone``
+    in a process of its own."""
+    LIVE.sites = dict(CALLS_IN_USE) if alone else {}
+    LIVE.files = frozenset(file for file, _, _ in LIVE.sites)
+    LIVE.dropped = set()
+
+
+def forget() -> None:
+    """The live input ends: no site is in use until the next `start`."""
+    LIVE.sites = {}
+    LIVE.files = frozenset()
+    LIVE.dropped = set()
+
+
+def watched_in(file: str) -> bool:
+    """Whether ``file`` holds a site in use in the live input, so that a watched call there keeps
+    its arguments as it is given them."""
+    return file in LIVE.files
+
+
+def answered(
+    lost: Downgrade, values: Sequence[object] | None, real: object
+) -> tuple[object, FormulaDrop | None]:
+    """What the target gets at the loss ``lost``, given the values going in, None when none were
+    kept, and the real answer: the real answer tracked on a match, else the real answer; and
+    the drop, when the formula was dropped on this run."""
+    with contextlib.suppress(Exception):
+        site = lost.site
+        place = (site.file, site.line, site.col)
+        call = LIVE.sites.get(place)
+        if call is None or not _applies(call, lost, values, real) or place in LIVE.dropped:
+            return real, None
+        given = {
+            name: value
+            for name, value in zip(call.positions, cast(Sequence[object], values), strict=True)
+            if name is not None
+        }
+        return _formed(place, site, call, given, real)
+    return real, None
+
+
+def _applies(
+    call: CallInUse, lost: Downgrade, values: Sequence[object] | None, real: object
+) -> bool:
+    """Whether the site's formula is tried on this run: its downgrade's name, no formula running,
+    the values as many as its positions, and a real answer of Python's own scalar types."""
+    return (
+        call.name == lost.name
+        and not in_use.USING.forming
+        and values is not None
+        and len(values) == len(call.positions)
+        and type(real) in _ANSWERS
+    )
+
+
+def _formed(
+    place: _Place, site: Site, call: CallInUse, given: Mapping[str, object], real: object
+) -> tuple[object, FormulaDrop | None]:
+    """The formula run on ``given`` at the site, and its answer compared with the real one."""
+    try:
+        got = placed_at(site, lambda: _forming(call, given))
+    except Exception as error:
+        return real, _dropped(place, site, real, type(error).__name__, DropReason.RAISED)
+    if not isinstance(got, Mapping) or ANSWER not in got:
+        return real, _dropped(place, site, real, "", DropReason.MISSING)
+    result = got[ANSWER]
+    text = json_text(result)
+    if text is None or text != json_text(real):
+        return real, _dropped(place, site, real, text or "", DropReason.MISMATCH)
+    if type(result) not in SCALARS:
+        return real, None
+    tracked = cast(ConcolicInt, result)
+    # the real answer is of the formula answer's kind, as their JSON texts are one
+    made = type(tracked).made(cast(int, real), tracked.expression, tracked.sink)
+    in_use.gave((made,))
+    return made, None
+
+
+def _forming(call: CallInUse, given: Mapping[str, object]) -> Mapping[str, object]:
+    """The formula's answer for the values ``given``, each fork it records marked."""
+    in_use.USING.forming = True
+    try:
+        return call.formula(given)
+    finally:
+        in_use.USING.forming = False
+
+
+def _dropped(place: _Place, site: Site, real: object, got: str, reason: DropReason) -> FormulaDrop:
+    """Drop the site's formula for the rest of the input: the drop, its run not yet placed."""
+    LIVE.dropped.add(place)
+    return FormulaDrop(site, ANSWER, json_text(real) or "", got, reason)

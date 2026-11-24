@@ -239,13 +239,14 @@ class Tally:
         names its loss to, and the hooks around the target's pieces record into. The walk keys
         an earlier call handed out are no keys of its path. A call that runs ``alone`` in a
         process of its own uses the loops in use (`pyct.core.entry.in_use`). With ``losses_on``
-        the runs of its loss sites are recorded into it (`pyct.core.entry.losses`)."""
+        the runs of its loss sites are recorded into it (`pyct.core.entry.losses`), and such a
+        call that runs ``alone`` uses the loss sites in use (`pyct.core.entry.calls_in_use`)."""
         _LIVE[0] = self
         escapes.forget()
         watch.forget()
         pieces.start(self, alone=alone)
         if losses_on:
-            losses.start(self)
+            losses.start(self, alone=alone)
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""
