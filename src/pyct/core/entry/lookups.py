@@ -6,8 +6,9 @@ A tracked key into a plain dict forks on which key the lookup finds: one `==` fo
 the dict's order, until one holds, as `in` on a dict searches (`pyct.core.entry.hashed`), up to
 `LOOKED_UP_MOST` keys. A tracked int or bool into a plain list or tuple forks on `n >= 0` and then
 on `n == i` for each position, or `n == -i` counted from the end, up to `LOOKED_UP_MOST` items,
-and into a plain str reads the str as a tracked str made from its text. Every other read is
-Python's own.
+and into a plain str reads the str as a tracked str made from its text. Past `LOOKED_UP_MOST`, or
+with a dict key pyct does not compare, Python answers and a downgrade named `__getitem__` or `get`
+follows. Every other read is Python's own.
 
 `item` and `_Get.__call__` are routers: they run Python's own read, and none of the target's
 code in their own lines, so blame reads through their frames (`PASSING`): a raise under
