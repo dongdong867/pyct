@@ -117,9 +117,9 @@ def test_a_tracked_int_into_a_plain_str_is_a_tracked_character() -> None:
 
     character = item(ALPHA, number(16, sink))
 
-    assert character == "q"
     assert isinstance(character, ConcolicStr)
     assert character.expression == ["[]", f"'{ALPHA}'", "n"]
+    assert str.__str__(character) == "q"
     assert expressions(sink) == [
         ([">", ["len", f"'{ALPHA}'"], "n"], True),
         ([">=", ["len", f"'{ALPHA}'"], ["-", "n"]], True),
