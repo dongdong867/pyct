@@ -1,7 +1,6 @@
 """The analysis's stop is its own: it reads the clock where its work grows, and touches no signal,
 thread or handler, so nothing that lands on the process, a Ctrl-C say, meets a stop of its."""
 
-import contextlib
 import dis
 import gc
 import itertools
@@ -281,15 +280,17 @@ SHAPES = {
 }
 
 
-@contextlib.contextmanager
+@pytest.fixture
 def heap_set_aside() -> Iterator[None]:
-    """Keep every object the test process holds now out of the collector's way in the block.
+    """Keep every object the test process held before the test out of the collector's way.
 
-    A worker late in a run holds thousands of tests' worth, and pyct's process only its run's.
-    With three million of them, one collection, which no clock read can split, took up to
-    1.0 s of CPU on Linux and 0.27 s on macOS. Set aside, the longest stretch was 0.096 s on
-    Linux under 24 CPU burners. A Mac whose load average was two to four times its cores
-    still reached 0.186 s in [jumps], on its slower cores.
+    A worker late in a run holds thousands of tests' worth, and pyct's process only its run's,
+    which the test builds after this, so a collection over them still counts in a stretch.
+    With three million held before, one collection, which no clock read can split, took up to
+    1.0 s of CPU on Linux and 0.27 s on macOS. Set aside, the longest stretch was 0.093 s on
+    Linux under 24 CPU burners and 0.087 s on a Mac, [spread_inputs] at most 0.032 s. A Mac
+    whose load average was two to four times its cores still reached 0.186 s in [jumps], on
+    its slower cores.
     """
     gc.freeze()
     try:
@@ -299,6 +300,7 @@ def heap_set_aside() -> Iterator[None]:
 
 
 @pytest.mark.serial
+@pytest.mark.usefixtures("heap_set_aside")
 @pytest.mark.parametrize("shape", list(SHAPES))
 def test_the_clock_is_read_often_through_each_large_shape(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shape: str
@@ -317,10 +319,10 @@ def test_the_clock_is_read_often_through_each_large_shape(
         return time.monotonic()
 
     monkeypatch.setattr(why, "clock", clock)
-    with heap_set_aside():
-        started = time.thread_time()
-        entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=time.monotonic() + 1.5))
-        marks = [started, *reads, time.thread_time()]
+    started = time.thread_time()
+
+    entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=time.monotonic() + 1.5))
+    marks = [started, *reads, time.thread_time()]
 
     assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
     # a stop lands at the first read after it, so the longest stretch between two reads, or
