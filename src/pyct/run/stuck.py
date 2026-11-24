@@ -31,7 +31,7 @@ import enum
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
@@ -183,8 +183,7 @@ class LongAsk:
 class Between(Protocol):
     """A tool that asks between two passes, with no moment: summaries, about each loss site an
     input recorded a run of, then runs again the inputs the formulas it put in use were checked
-    on. ``can_ask`` as a ``StuckTool``'s. It also takes out of use each formula whose value a
-    pick's ask that ran long reads (``ran_long``)."""
+    on. ``can_ask`` as a ``StuckTool``'s."""
 
     @property
     def can_ask(self) -> bool: ...
@@ -192,6 +191,12 @@ class Between(Protocol):
     def between(self, run: Running) -> None: ...
 
     def run_again(self, run: Running) -> None: ...
+
+
+@runtime_checkable
+class TakesOut(Protocol):
+    """A tool between passes that holds formulas in use, and takes out of use each one whose
+    value the path of a pick whose ask ran long reads."""
 
     def ran_long(self, long: LongAsk) -> None: ...
 
@@ -293,7 +298,7 @@ class Stuck:
     def ran_long(self, long: LongAsk) -> None:
         """Tell the tool that asks between passes of a pick whose ask ran long on a path that
         holds a formula's fork, so that it takes out the formulas that path reads."""
-        if self._between is not None:
+        if isinstance(self._between, TakesOut):
             self._between.ran_long(long)
 
     def heard(self, record: InputRecord, number: int) -> None:
