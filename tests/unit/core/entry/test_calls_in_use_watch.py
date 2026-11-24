@@ -2,12 +2,14 @@
 runs on the arguments as the watch was given them, each list as a copy made then, or on the
 `math` call's arguments, and on a match the target gets the real answer tracked."""
 
+import builtins
 import contextlib
 import json
 import math
 import sys
 import textwrap
 from collections.abc import Callable, Iterator, Mapping
+from typing import Any
 
 import pytest
 
@@ -161,3 +163,26 @@ def test_a_watched_call_beside_the_site_in_use_keeps_its_arguments_on_its_first_
             answer(called(textwrap.indent)(given(s), " "), "textwrap.indent")
 
     assert [str(each) for each in copied] == [" a", " a", " b", " c"]
+
+
+def test_a_watched_call_at_a_site_in_use_runs_no_import_statement_once_it_recorded_its_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    imported: list[str] = []
+    real = builtins.__import__
+
+    def counted(name: str, *args: Any, **kwargs: Any) -> object:
+        imported.append(name)
+        return real(name, *args, **kwargs)
+
+    t: object = None
+    line = here() + 4
+    with using(line, 16, CallInUse("d", ("s",), stripped)) as sink:
+        for each in range(MOST_RUNS + 2):
+            if each == MOST_RUNS:
+                monkeypatch.setattr(builtins, "__import__", counted)
+            t = answer(called(textwrap.dedent)(given(ConcolicStr.made(" ab", "s", sink))), "d")
+        monkeypatch.undo()
+
+    assert type(t) is ConcolicStr
+    assert imported == []

@@ -145,12 +145,9 @@ def called[Callee](callee: Callee, /, *, _ending: Callable[[], bool] = sys.is_fi
     if call.judged:
         call.values = losses.watching(frame)
         call.callee = callee
-        if losses.watched_in(frame.f_code.co_filename):
-            # imported here, as a file holds a site in use (`losses.start`)
-            from pyct.core.entry import calls_in_use
-
-            if calls_in_use.keeps_given(frame.f_code, call.at):
-                call.given = []
+        code = frame.f_code
+        if losses.watched_in(code.co_filename) and losses.keeps_given(code, call.at):
+            call.given = []
     _drop_left_at(calls, call)
     if _len(calls) == MOST_OPEN:
         del calls[0]
@@ -188,9 +185,7 @@ def answer[Result](
         return result
     calls.pop()
     if top.given is not None:
-        from pyct.core.entry import calls_in_use
-
-        calls_in_use.answered_at(top.frame.f_code, top.at, caller_site())
+        losses.answered_at(top.frame.f_code, top.at, caller_site())
     tracked = top.tracked
     if tracked is None or escapes.RECORDED[0] != top.count or not _plain(result):
         return result
