@@ -6,9 +6,13 @@ connected to the input. Each test runs pyct through the command line and reads t
 lines against the same call in plain Python.
 """
 
+from pathlib import Path
+
 import pytest
 
 from targets.dicts import plain_lookups
+from targets.lists import plain_lookups as list_lookups
+from targets.strs import plain_lookups as str_lookups
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
 from tests.acceptance.test_bool_parameters import covered
 from tests.acceptance.test_follow_an_int_subclass_on_the_left import placed
@@ -17,32 +21,36 @@ from tests.acceptance.test_write_an_int_subclass_operand_as_a_plain_int import s
 
 DICTS = "targets.dicts.plain_lookups"
 DICTS_FILE = REPO_ROOT / "targets" / "dicts" / "plain_lookups.py"
+LISTS = "targets.lists.plain_lookups"
+LISTS_FILE = REPO_ROOT / "targets" / "lists" / "plain_lookups.py"
+STRS = "targets.strs.plain_lookups"
+STRS_FILE = REPO_ROOT / "targets" / "strs" / "plain_lookups.py"
 
 
-def line_of(function: str, text: str) -> int:
+def line_of(function: str, text: str, file: Path = DICTS_FILE) -> int:
     """The line of the fixture's ``function`` that holds ``text``, counted from 1."""
-    lines = DICTS_FILE.read_text().splitlines()
+    lines = file.read_text().splitlines()
     start = next(n for n, line in enumerate(lines) if line.startswith(f"def {function}("))
     return next(n for n, line in enumerate(lines[start:], start + 1) if text in line)
 
 
-def returns_of(function: str) -> list[int]:
+def returns_of(function: str, file: Path = DICTS_FILE) -> list[int]:
     """The lines of the fixture's ``function`` that hold a `return`."""
-    lines = DICTS_FILE.read_text().splitlines()
+    lines = file.read_text().splitlines()
     start = next(n for n, line in enumerate(lines) if line.startswith(f"def {function}("))
     end = next((n for n, line in enumerate(lines[start:], start) if line == ""), len(lines))
     return [n for n in range(start + 1, end + 1) if "return " in lines[n - 1]]
 
 
-def check_every_return_is_covered(function: str, stdout: str) -> None:
+def check_every_return_is_covered(function: str, stdout: str, file: Path = DICTS_FILE) -> None:
     """Every `return` of the function is covered by some input."""
-    reached = {number for line in input_lines(stdout) for number in covered(line, str(DICTS_FILE))}
-    assert set(returns_of(function)) <= reached, (sorted(reached), stdout)
+    reached = {number for line in input_lines(stdout) for number in covered(line, str(file))}
+    assert set(returns_of(function, file)) <= reached, (sorted(reached), stdout)
 
 
-def keys_tried(stdout: str) -> set[object]:
-    """The `s` each of the solver's inputs hands the function."""
-    return {line["args"]["s"] for line in solver_lines(stdout)}  # type: ignore[index]
+def keys_tried(stdout: str, name: str = "s") -> set[object]:
+    """The argument `name` each of the solver's inputs hands the function."""
+    return {line["args"][name] for line in solver_lines(stdout)}  # type: ignore[index]
 
 
 # follow-a-tracked-key-into-a-plain-container-run-plain-lookup-tries-each-key
@@ -87,3 +95,51 @@ def test_a_miss_records_one_fork_per_key_and_answers_as_python_does(function: st
     else:
         assert failure_detail(seed) is None
         assert getattr(plain_lookups, function)("XX") in ("none", 7)
+
+
+# follow-a-tracked-key-into-a-plain-container-run-plain-lookup-list-item
+def test_a_tracked_int_picks_each_item_of_a_plain_list() -> None:
+    result = run_pyct(f"{LISTS}::picked", '{"n": 0}', "--goal", "bugs")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    assert list_lookups.picked(0) == 0
+    at = line_of("picked", "CODES[n]", LISTS_FILE)
+    assert placed(seed, at) == [([">=", "n", 0], True), (["==", "n", 0], True)]
+    check_every_return_is_covered("picked", result.stdout, LISTS_FILE)
+    assert {1, 2, 3} <= keys_tried(result.stdout, "n")
+
+
+# follow-a-tracked-key-into-a-plain-container-run-plain-lookup-list-item
+def test_an_input_past_either_end_raises_index_error() -> None:
+    result = run_pyct(f"{LISTS}::picked", '{"n": 0}', "--goal", "bugs")
+
+    assert result.returncode == 0, result.stderr
+    size = len(list_lookups.CODES)
+    with pytest.raises(IndexError) as plain:
+        list_lookups.CODES[size]
+    raised = {
+        line["args"]["n"]: failure_detail(line)  # type: ignore[index]
+        for line in solver_lines(result.stdout)
+        if failure_detail(line) is not None
+    }
+    assert any(n >= size for n in raised) and any(n < -size for n in raised), raised  # type: ignore[operator]
+    assert set(raised.values()) == {f"IndexError: {plain.value}"}
+
+
+# follow-a-tracked-key-into-a-plain-container-run-plain-lookup-str-char
+def test_a_tracked_int_into_a_plain_str_gives_a_tracked_character() -> None:
+    result = run_pyct(f"{STRS}::lettered", '{"n": 0}', "--goal", "bugs")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    assert str_lookups.lettered(0) == 0
+    at = line_of("lettered", "ALPHA[n]", STRS_FILE)
+    alpha = f"'{str_lookups.ALPHA}'"
+    assert placed(seed, at) == [
+        ([">", ["len", alpha], "n"], True),
+        ([">=", ["len", alpha], ["-", "n"]], True),
+        (["==", ["[]", alpha, "n"], "'q'"], False),
+    ]
+    check_every_return_is_covered("lettered", result.stdout, STRS_FILE)
+    assert 16 in keys_tried(result.stdout, "n")
