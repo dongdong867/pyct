@@ -17,5 +17,10 @@ def item(container: object, key: object) -> object:
     return container[key]  # pyrefly: ignore[bad-index]
 
 
+def routed[Callee](callee: Callee) -> Callee:
+    """The callee, or the router that reads a plain dict's `get` as a lookup."""
+    return callee
+
+
 # the frames blame reads through
 PASSING: frozenset[types.CodeType] = frozenset({item.__code__})
