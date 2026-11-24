@@ -60,6 +60,7 @@ from pyct.intercept import (
     operators,
     percents,
     positions,
+    subscripts,
     substitute,
     unpacks,
     watch,
@@ -185,7 +186,7 @@ def _version_files() -> tuple[str, ...]:
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
     rules += (unpacks.__file__, percents.__file__, bool_returns.__file__, watch.__file__)
-    rules += (loops.__file__,)
+    rules += (loops.__file__, subscripts.__file__)
     # what the rules take from outside the transform: a size, the callee's text, and a piece
     rules += (hashed.__file__, sources.__file__, pieces.__file__)
     return tuple(str(file) for file in (*rules, compiled.__file__, __file__))

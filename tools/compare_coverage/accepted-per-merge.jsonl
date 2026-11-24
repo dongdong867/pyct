@@ -69,6 +69,8 @@
 {"set": "v2", "target": "targets.dicts.measured::walked_truth", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [21, 23]}
 {"set": "v2", "target": "targets.dicts.missing_key::check", "seed": {"config": {"server": {}}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.dicts.plain_lookups::found", "seed": {"s": "US"}, "status": "differs", "only_legacy": [], "only_v2": [11, 13]}
+{"set": "v2", "target": "targets.dicts.plain_lookups::guarded", "seed": {"s": "US"}, "status": "differs", "only_legacy": [], "only_v2": [24, 25, 26]}
 {"set": "v2", "target": "targets.dicts.settled::only_a", "seed": {"d": {"a": 9}}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.tracked_store::copied_walk", "seed": {"name": "a", "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [186]}
@@ -248,6 +250,7 @@
 {"set": "v2", "target": "targets.lists.mixed_numbers::last_float", "seed": {"row": [1, 0.5]}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::row_by_position", "seed": {"row": [0, 0.5, false]}, "status": "differs", "only_legacy": [], "only_v2": [4, 5]}
 {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
+{"set": "v2", "target": "targets.lists.plain_lookups::picked", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.lists.reaches_an_index::check", "seed": {"items": [1, 2]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.lists.rows::check", "seed": {"grid": [[]]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.lists.thousands::gather", "seed": {"data": [1, 1, 1, 1, 1], "items": []}, "status": "differs", "only_legacy": [], "only_v2": [6, 8]}
@@ -333,6 +336,7 @@
 {"set": "v2", "target": "targets.strs.percent_formats::on_the_right", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [37]}
 {"set": "v2", "target": "targets.strs.percent_formats::page", "seed": {"title": "x", "body": "y"}, "status": "differs", "only_legacy": [], "only_v2": [10]}
 {"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}, "status": "differs", "only_legacy": [], "only_v2": [7, 9]}
+{"set": "v2", "target": "targets.strs.plain_lookups::lettered", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.strs.prefixes::route", "seed": {"s": "x", "t": "q"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.printed_methods::check", "seed": {"s": "b", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.strs.rebuilt::rebuild", "seed": {"s": "aaaaaaaaaaaaaaaaaa"}, "status": "differs", "only_legacy": [], "only_v2": [5]}

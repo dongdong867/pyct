@@ -337,17 +337,19 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_piece_in__": "piece_in",
         "__pyct_piece_out__": "piece_out",
         "__pyct_piece_value__": "piece_value",
+        "__pyct_item__": "item",
     }
 
 
 def test_each_bound_name_is_a_function_of_the_module_it_is_bound_from() -> None:
-    # substitutes, or pieces for the loop hooks, which a module compiled with the switch off skips
+    # substitutes, or pieces for the loop hooks, which a module compiled with the switch off
+    # skips, or lookups for the index read
     assert {FROM[name] for name in BOUND if name.startswith("__pyct_piece_")} == {
         "pyct.core.entry.pieces"
     }
-    assert {FROM[name] for name in BOUND if not name.startswith("__pyct_piece_")} == {
-        "pyct.core.entry.substitutes"
-    }
+    assert FROM["__pyct_item__"] == "pyct.core.entry.lookups"
+    others = {name for name in BOUND if not name.startswith("__pyct_piece_")} - {"__pyct_item__"}
+    assert {FROM[name] for name in others} == {"pyct.core.entry.substitutes"}
     assert all(
         hasattr(importlib.import_module(FROM[name]), function) for name, function in BOUND.items()
     )

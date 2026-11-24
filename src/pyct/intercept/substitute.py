@@ -55,8 +55,9 @@ The operators a plain number on the left may hand to a tracked value are
 `operators`', a `%` or `%=` that formats is `percents`', the calls of a
 conversion or of a method str has are `calls`', the `return` of a
 `__bool__` method is `bool_returns`', which the walk hands each class it
-meets, and an unpack into a fixed count is `unpacks`', which the walk hands
-each assignment it meets before it goes inside. Each rule takes the node
+meets, an unpack into a fixed count is `unpacks`', which the walk hands
+each assignment it meets before it goes inside, and an index read
+``x[k]`` is `subscripts`'. Each rule takes the node
 the walk meets, and a node no rule takes stays as written. A call no rule
 takes is then `watch`'s, which watches it for an answer that lost a
 tracked value.
@@ -70,7 +71,16 @@ from __future__ import annotations
 import ast
 
 from pyct.core.entry.hashed import SEARCHED_MOST
-from pyct.intercept import bool_returns, calls, loops, operators, percents, unpacks, watch
+from pyct.intercept import (
+    bool_returns,
+    calls,
+    loops,
+    operators,
+    percents,
+    subscripts,
+    unpacks,
+    watch,
+)
 from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
@@ -98,6 +108,7 @@ BOUND: dict[str, str] = {
     **unpacks.BOUND,
     **watch.BOUND,
     **loops.BOUND,
+    **subscripts.BOUND,
 }
 # every name pyct binds, which no rule takes a call of
 _RESERVED = frozenset(BOUND)
@@ -111,11 +122,13 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
 }
 
 # the module each bound name comes from: pyct.core.entry.substitutes, but for the loop hooks,
-# which a module compiled with the pieces switch off never loads
+# which a module compiled with the pieces switch off never loads, and the index read
 _SUBSTITUTES = "pyct.core.entry.substitutes"
-FROM: dict[str, str] = {
-    name: loops.HOOKS if name in loops.BOUND else _SUBSTITUTES for name in BOUND
-}
+FROM: dict[str, str] = (
+    {name: _SUBSTITUTES for name in BOUND}
+    | dict.fromkeys(loops.BOUND, loops.HOOKS)
+    | dict.fromkeys(subscripts.BOUND, subscripts.LOOKUPS)
+)
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -195,6 +208,7 @@ def _visited(node: object, pending: list[ast.AST], parts: Parts) -> object:
         or percents.replaced(node, parts)
         or operators.replaced(node, parts)
         or calls.replaced(node, parts)
+        or subscripts.replaced(node, parts)
     )
     if replacement is None and isinstance(node, ast.Call):
         watching = watch.watched(node, parts, _RESERVED)

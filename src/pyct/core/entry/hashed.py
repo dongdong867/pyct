@@ -51,6 +51,9 @@ _PLAIN: tuple[type, ...] = (bool, int, float, str)
 # what `_compared` answers for an element pyct does not compare
 _NOT_COMPARED = object()
 
+# what `found` answers when no element holds
+NOT_FOUND = object()
+
 
 def tracked(item: object) -> TypeGuard[Tracked]:
     """Whether the item is a tracked value a set or a dict can hold."""
@@ -78,17 +81,17 @@ def looked_up(item: Tracked, container: object, kind: type) -> bool:
     """
     pairs = None
     if kind.__len__(container) <= SEARCHED_MOST:
-        pairs = _pairs(kind.__iter__(container))
+        pairs = element_pairs(kind.__iter__(container))
     if pairs is None:
         answer = own(operator.contains, container, _key(item))
         # recorded after Python answered, as a downgrade is, so a lookup that raises records
         # nothing
         lost(item.sink, Downgrade(name="__contains__", site=caller_site()))
         return answer
-    return _searched(item, pairs)
+    return found(item, pairs) is not NOT_FOUND
 
 
-def _pairs(elements: Iterable[object]) -> list[tuple[object, object]] | None:
+def element_pairs(elements: Iterable[object]) -> list[tuple[object, object]] | None:
     """Each element beside the value it is compared as, in the base type's order, or None when
     one of them is an element pyct does not compare. None is never equal and is left out."""
     pairs: list[tuple[object, object]] = []
@@ -113,10 +116,13 @@ def _compared(element: object) -> object:
     return _NOT_COMPARED
 
 
-def _searched(item: Tracked, pairs: list[tuple[object, object]]) -> bool:
-    """Whether the item is one of the elements, as Python's lookup answers: identity first,
-    then one `==` fork per element tried, until one holds."""
-    return any(element is item or item == value for element, value in pairs)
+def found(item: Tracked, pairs: list[tuple[object, object]]) -> object:
+    """The element Python's lookup finds for the item, or `NOT_FOUND`: identity first, then one
+    `==` fork per element tried, until one holds."""
+    for element, value in pairs:
+        if element is item or item == value:
+            return element
+    return NOT_FOUND
 
 
 def _key(item: Tracked) -> object:

@@ -8,11 +8,13 @@ from pyct.intercept.substitute import substitute
 from tests.unit.intercept.lines_up import lined_up
 from tests.unit.intercept.test_substitute import BINDING, WATCH_NAMES
 
+LOOKUPS_BINDING = "from pyct.core.entry.lookups import "
+
 
 def watched(source: str) -> str:
-    """The source as the transform leaves it, watch included, less its binding import."""
+    """The source as the transform leaves it, watch included, less its binding imports."""
     lines = ast.unparse(substitute(ast.parse(source))).splitlines()
-    return "\n".join(line for line in lines if not line.startswith(BINDING))
+    return "\n".join(line for line in lines if not line.startswith((BINDING, LOOKUPS_BINDING)))
 
 
 @pytest.mark.parametrize(
@@ -136,6 +138,6 @@ def test_a_long_method_chain_is_watched_without_a_deep_stack() -> None:
 
 def test_a_short_callee_is_named_as_written() -> None:
     assert watched("self.items[0].count(x)") == (
-        "__pyct_answer__(__pyct_called__(self.items[0].count)(__pyct_given__(x)), "
+        "__pyct_answer__(__pyct_called__(__pyct_item__(self.items, 0).count)(__pyct_given__(x)), "
         "'self.items[0].count')"
     )
