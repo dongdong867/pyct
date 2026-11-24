@@ -66,6 +66,13 @@ def test_the_version_is_the_digest_of_pyct_s_files_read_in_order() -> None:
     assert cache._digest(files) == hashlib.sha256(whole).hexdigest()[:16]
 
 
+def test_the_index_read_rule_is_among_the_files_digested() -> None:
+    # code substituted before index reads went through pyct is never read again
+    rule = Path(cache.__file__).with_name("subscripts.py")
+
+    assert str(rule) in cache._version_files()
+
+
 @pytest.mark.usefixtures("settled")
 def test_a_kept_version_is_used_while_every_file_keeps_its_stat(
     tmp_path: Path, rules: Rules

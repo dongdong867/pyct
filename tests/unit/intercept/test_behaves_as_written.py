@@ -228,6 +228,17 @@ PROGRAMS: dict[str, str] = {
         "class Held:\n    def __bool__(self):\n        return note('a', a) and note('b', b)\n"
         "answer = not Held()"
     ),
+    # an index read, one Python answers by a type's `__class_getitem__`, and one that misses and
+    # raises under the program's own `try`. Each reads its operands as names, which no rule
+    # takes, so the read is the one substitution the program holds
+    "index read": "answer = a[b]",
+    "index read in a type expression": (
+        "held = dict[b, int]\nanswer = (held.__origin__, held.__args__)"
+    ),
+    "index read raising": (
+        "try:\n    answer = a[b]\nexcept LookupError as error:\n"
+        "    answer = (error.__class__.__name__, error.args)"
+    ),
 }
 
 
@@ -248,6 +259,10 @@ class Logged:
     def __contains__(self, item: object) -> object:
         self.log.append(("__contains__", type(item).__name__))
         return Answer(self.log)
+
+    def __getitem__(self, key: object) -> object:
+        self.log.append(("__getitem__", type(key).__name__))
+        return "item"
 
     def __iter__(self) -> Iterator[int]:
         self.log.append("__iter__")
@@ -358,6 +373,9 @@ class Raising:
 
     def __contains__(self, item: object) -> bool:
         raise ValueError("__contains__ raised")
+
+    def __getitem__(self, key: object) -> object:
+        raise ValueError("__getitem__ raised")
 
     def __iter__(self) -> Iterator[int]:
         raise ValueError("__iter__ raised")
