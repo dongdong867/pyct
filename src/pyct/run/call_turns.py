@@ -27,19 +27,33 @@ from collections.abc import Callable
 from typing import Protocol
 
 from pyct.core.entry.calls_in_use import CALLS_IN_USE
-from pyct.core.foundation.branch import Site
+from pyct.core.foundation.branch import FormulaDrop, Site
 from pyct.results.llm_asks import SummaryState
+from pyct.results.record import InputRecord
 from pyct.results.source_files import SourceFiles
-from pyct.run.call_summaries import CALL, LossSites, asked_call, call_request, skipped_because
+from pyct.run.call_summaries import (
+    CALL,
+    LossSites,
+    asked_call,
+    call_request,
+    failed_call_run,
+    skipped_because,
+)
 from pyct.run.formula_runner import FormulaRunner, FormulaText, call_in_use
-from pyct.run.loops_in_use import IN_PYCT_S_PROCESS, kinds_unused_because, place_of
+from pyct.run.loops_in_use import (
+    IN_PYCT_S_PROCESS,
+    dropped_because,
+    kinds_unused_because,
+    place_of,
+)
 from pyct.run.model_runs import CANNOT_FORK, can_fork
-from pyct.run.notes import SummaryNotUsed, SummarySkipped
+from pyct.run.notes import SummaryDropped, SummaryNotUsed, SummarySkipped
 from pyct.run.stuck import Outcome, Running, going
-from pyct.run.summary_asks import SummaryRequest
+from pyct.run.summary_asks import EarlierFormula, SummaryRequest
 from pyct.run.summary_outcomes import Asked, LoopState
 from pyct.run.summary_runs import AskedLoop
 from pyct.run.target import Target
+from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
 
 # why a loss site is not asked about: no run of it is recorded
@@ -49,12 +63,13 @@ _KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
 
 
 class Asking(Protocol):
-    """What a loss site's turn uses of the summaries tool: each state an ask was sent for, the
-    run's token limit, the files the asks read code from, the target, whether the run's inputs
-    run in a process of their own, the inputs to run again after the turn, a note said once,
-    the ask itself, and a site's place as an ask names it."""
+    """What a loss site's turn uses of the summaries tool: each state an ask was sent for, where
+    its notes are said, the run's token limit, the files the asks read code from, the target,
+    whether the run's inputs run in a process of their own, the inputs to run again after the
+    turn, a note said once, the ask itself, and a site's place as an ask names it."""
 
     loops: dict[Site, LoopState]
+    told: Told
     limit: TokenLimit
     files: SourceFiles
     target: Target
@@ -152,6 +167,32 @@ class CallTurns:
         self.in_use.use(formula, code)
         tool.again.append(loop.runs[-1].number)
         return SummaryState.IN_USE
+
+    def heard(self, record: InputRecord, number: int) -> None:
+        """An input the run kept as its input ``number``: each loss site it first recorded a run
+        of is noted; each site in use its record says was dropped goes out of use, said with
+        why; then, once the run's inputs run in pyct's own process, each site still in use goes
+        out of use, kept as checked."""
+        self.sites.heard(record)
+        for drop in record.drops:
+            if drop.site in self.in_use.sites:
+                self._dropped(drop, record, number)
+        self.fell_back()
+
+    def _dropped(self, drop: FormulaDrop, record: InputRecord, number: int) -> None:
+        """The site in use the input ``number`` dropped: out of use, said, and its formula kept
+        among its earlier tries with why, and the run it failed on, for its next ask."""
+        site = drop.site
+        self.in_use.stop(site)
+        state = self.tool.loops[site]
+        state.last = SummaryState.DROPPED
+        state.dropped = True
+        reason = dropped_because(drop)
+        state.tries.append(
+            EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
+        )
+        state.failed_on = failed_call_run(drop, record, number, self.tool.files)
+        self.tool.told.note(SummaryDropped(site, number, reason, call=state.name))
 
     def fell_back(self) -> None:
         """Once the run's inputs run in pyct's own process, each site still in use goes out of

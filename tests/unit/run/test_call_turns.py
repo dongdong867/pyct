@@ -10,15 +10,24 @@ from collections.abc import Iterator
 import pytest
 
 from pyct.core.entry.calls_in_use import CALLS_IN_USE
-from pyct.core.foundation.branch import Changed, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Changed,
+    DropReason,
+    FormulaDrop,
+    GoingIn,
+    LossRun,
+    PieceRun,
+    Site,
+)
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import SummaryState
+from pyct.results.record import InputRecord
 from pyct.results.record import Source as RecordSource
 from pyct.run.formula_runner import FormulaRunner
 from pyct.run.loops_in_use import kinds_unused_because
-from pyct.run.notes import Note, SummaryNotUsed, SummarySkipped
+from pyct.run.notes import Note, SummaryDropped, SummaryNotUsed, SummarySkipped
 from pyct.run.stuck import Outcome
-from pyct.run.summaries import Summaries
+from pyct.run.summaries import EarlierFormula, Summaries
 from pyct.run.summary_checks import CompleteRun
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
@@ -161,3 +170,72 @@ def test_a_formula_whose_runs_recorded_an_answer_of_another_kind_is_not_used() -
     assert kinds_unused_because(runs[:1], ("answer",)) is None
     assert kinds_unused_because(runs[:2], ("answer",)) == "answer is a list"
     assert kinds_unused_because(runs[2:], ("answer",)) == "answer is None"
+
+
+def dropped_by(drop: FormulaDrop, *runs: LossRun) -> InputRecord:
+    return dataclasses.replace(record(*runs), drops=(drop,))
+
+
+@pytest.mark.parametrize(
+    ("drop", "reason"),
+    [
+        pytest.param(
+            FormulaDrop(SITE, "answer", "5", "6", DropReason.MISMATCH, run=1),
+            "answer was 5, the formula gave 6",
+            id="a mismatch",
+        ),
+        pytest.param(
+            FormulaDrop(SITE, "answer", "5", "ZeroDivisionError", DropReason.RAISED, run=1),
+            "the formula raised ZeroDivisionError",
+            id="a raise",
+        ),
+        pytest.param(
+            FormulaDrop(SITE, "answer", "5", "", DropReason.MISSING, run=1),
+            "the formula gave no answer",
+            id="no answer",
+        ),
+    ],
+)
+def test_an_input_s_drop_takes_the_site_out_of_use_and_says_why(
+    drop: FormulaDrop, reason: str
+) -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
+
+    summaries.heard(dropped_by(drop, shift(37, 8, 9, 2), shift(37, 8, 21, 2)), 2)
+    summaries.heard(record(shift(37, 8, 13, 2)), 3)
+
+    assert CALLS_IN_USE == {}
+    assert notes[-1] == SummaryDropped(SITE, 2, reason, call="__rshift__")
+    assert notes.count(notes[-1]) == 1
+    [state] = summaries.states()
+    assert state.state is SummaryState.DROPPED
+    kept = summaries.loops[SITE]
+    assert kept.tries == [EarlierFormula(QUARTER, f"dropped at input 2: {reason}")]
+    assert kept.failed_on == CompleteRun(
+        2,
+        PieceRun(SITE, (GoingIn("n", "21", tracked=True),), (Changed("answer", "5"),)),
+    )
+
+
+def test_a_drop_whose_run_was_not_recorded_keeps_no_failing_run() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
+    drop = FormulaDrop(SITE, "answer", "5", "6", DropReason.MISMATCH)
+
+    summaries.heard(dropped_by(drop, shift(37, 8, 9, 2)), 2)
+
+    assert summaries.loops[SITE].failed_on is None
+    assert summaries.loops[SITE].last is SummaryState.DROPPED
+
+
+def test_a_drop_at_a_site_not_in_use_changes_nothing() -> None:
+    fake, notes = Fake(), []
+    summaries = tool(fake, notes)
+    drop = FormulaDrop(Site(FILE, 38, 8), "answer", "5", "6", DropReason.MISMATCH, run=0)
+
+    summaries.heard(dropped_by(drop, shift(38, 8, 9, 3)), 1)
+
+    assert not [note for note in notes if isinstance(note, SummaryDropped)]

@@ -28,7 +28,16 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from pyct.core.entry.losses import ANSWER
-from pyct.core.foundation.branch import Callee, Changed, GoingIn, LossKind, LossRun, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Callee,
+    Changed,
+    FormulaDrop,
+    GoingIn,
+    LossKind,
+    LossRun,
+    PieceRun,
+    Site,
+)
 from pyct.results.losses import loss_code
 from pyct.results.pieces import Piece
 from pyct.results.record import InputRecord
@@ -127,6 +136,22 @@ def _as_piece_run(run: LossRun, names: tuple[str | None, ...]) -> PieceRun:
 
 def _answer(run: LossRun) -> str:
     return run.changed[0].value
+
+
+def failed_call_run(
+    drop: FormulaDrop, record: InputRecord, number: int, files: SourceFiles
+) -> CompleteRun | None:
+    """The run of the loss site an input's drop names by its position, as the input's record
+    holds it and as the site's ask shows it, the input numbered ``number``. None when the drop
+    names no run, the record holds none there, or its values do not fit the site's code."""
+    runs = [each for each in record.losses if each.site == drop.site]
+    if drop.run is None or not 0 <= drop.run < len(runs):
+        return None
+    run = runs[drop.run]
+    code = loss_code(run.site, run.name, run.kind, len(run.going_in), files)
+    if len(run.going_in) != len(code.names):
+        return None
+    return CompleteRun(number, _as_piece_run(run, code.names))
 
 
 def skipped_because(call: AskedCall) -> str | None:

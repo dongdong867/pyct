@@ -326,12 +326,11 @@ class Summaries:
         """An input the run kept as its input ``number``: each loss site it first recorded a run
         of is noted; each loop in use its record says was dropped goes out of use, said with
         why; then, once the run's inputs run in pyct's own process, each loop and loss site
-        still in use goes out of use, kept as checked."""
-        self.calls.sites.heard(record)
+        still in use goes out of use, kept as checked (``pyct.run.call_turns``)."""
         for drop in record.drops:
             if drop.site in self.in_use.sites:
                 self._dropped(drop, record, number)
-        self.calls.fell_back()
+        self.calls.heard(record, number)
         if not self.in_use.sites or self.isolated():
             return
         for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
