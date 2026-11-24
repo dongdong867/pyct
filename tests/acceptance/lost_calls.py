@@ -35,7 +35,7 @@ WRONG_CODE = 'def summary(n):\n    return {"answer": n * n}'
 # `WRONG` and `CAP` of track-a-value-through-a-call-summary's criteria
 WRONG = code_reply(WRONG_CODE)
 CAP = code_reply(
-    'def summary(n):\n    q = n % 4\n    if q > 3:\n        q = 3\n    return {"answer": q}'
+    'def summary(n):\n    q = n % 4\n    if q > 2:\n        q = 2\n    return {"answer": q}'
 )
 
 

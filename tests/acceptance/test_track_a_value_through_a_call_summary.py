@@ -140,14 +140,15 @@ def test_an_input_the_formula_s_fork_gave_covers_the_missed_line() -> None:
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-formula-if-forks-at-the-site
 def test_a_formula_s_own_if_forks_at_the_site_before_the_later_condition() -> None:
-    done = summarized(SHIFTED, {"n": 3}, CAP)
+    # from n = 1, the cap holds while n % 4 is below 3, and is wrong at 3
+    done = summarized(SHIFTED, {"n": 1}, CAP)
 
-    after = after_checked(done)
-    assert after
-    for record in after:
+    below = [record for record in after_checked(done) if n_of(record) % 4 < 3]
+    assert below
+    for record in below:
         lines = [each.site.line for each in record.forks]
         [own] = forks_at(record, 11)
-        assert (own.expression, own.taken) == ([">", QUARTER_TERM, 3], False), record
+        assert (own.expression, own.taken) == ([">", QUARTER_TERM, 2], False), record
         assert lines.index(11) < lines.index(16), record
 
 
