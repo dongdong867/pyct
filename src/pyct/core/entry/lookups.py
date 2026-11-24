@@ -19,7 +19,7 @@ from __future__ import annotations
 import types
 from typing import TypeGuard, cast
 
-from pyct.core.entry.hashed import HASHABLE, NOT_FOUND, element_pairs, found
+from pyct.core.entry.hashed import HASHABLE, NOT_FOUND, Tracked, element_pairs, found
 from pyct.core.foundation.branch import Downgrade, caller_site
 from pyct.core.foundation.escapes import lost
 from pyct.core.foundation.values import own
@@ -45,16 +45,28 @@ def item(container: object, key: object) -> object:
     it finds, and a tracked int into a plain list, tuple or str forking on the item it picks."""
     if type(key) in HASHABLE and _plain_dict(container):
         element = _search(container, key)
-        if element is not NOT_FOUND and element is not _UNSEARCHED:
+        if element is _UNSEARCHED:
+            return _unsearched(container, key, "__getitem__")
+        if element is not NOT_FOUND:
             return _dict_getitem(container, element)
     elif type(key) in _POSITIONS:
         if type(container) is str:
             return _character(container, cast(ConcolicInt, key))
         if type(container) is list or type(container) is tuple:
+            if len(container) > LOOKED_UP_MOST:
+                return _unsearched(container, key, "__getitem__")
             at = _position(container, cast(ConcolicInt, key))
             if at is not None:
                 return container[at]
     return container[key]  # pyrefly: ignore[bad-index]
+
+
+def _unsearched(container: object, key: object, name: str) -> object:
+    """``container[key]`` as Python reads it, then a downgrade named for the read: the lookup is
+    one pyct does not follow. A read that raises records nothing."""
+    answer = container[key]  # pyrefly: ignore[bad-index]
+    lost(cast(Tracked, key).sink, Downgrade(name=name, site=caller_site()))
+    return answer
 
 
 class _Get:
@@ -71,7 +83,9 @@ class _Get:
             return self.bound(*args, **kwargs)
         element = _search(self.container, args[0])
         if element is _UNSEARCHED:
-            return self.bound(*args)
+            answer = self.bound(*args)
+            lost(cast(Tracked, args[0]).sink, Downgrade(name="get", site=caller_site()))
+            return answer
         if element is NOT_FOUND:
             return args[1] if len(args) == 2 else None
         return _dict_getitem(self.container, element)
