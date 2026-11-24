@@ -21,6 +21,7 @@ MATCHED = "targets.summaries.calls::matched"
 BOUNDED = "targets.summaries.calls::bounded"
 DIVIDED = "targets.summaries.calls::divided"
 EACH_DEDENTED = "targets.summaries.calls::each_dedented"
+FORKED = "targets.summaries.calls::forked"
 # the module `C` is, as a place names it
 MODULE = "targets.summaries.calls"
 

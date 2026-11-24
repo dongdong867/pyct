@@ -302,16 +302,19 @@ def test_no_moment_comes_for_a_waiting_tool_that_can_no_longer_ask() -> None:
 
 @dataclass
 class Turns:
-    """A tool that asks between passes, and counts its turns."""
+    """A tool that asks between passes, and counts its turns, and keeps what it was called on in
+    order."""
 
     can_ask: bool = True
     turns: int = 0
+    calls: list[tuple[str, object]] = field(default_factory=list)
 
     def between(self, run: object) -> None:
         self.turns += 1
+        self.calls.append(("between", run))
 
     def run_again(self, run: object) -> None:
-        pass
+        self.calls.append(("run again", run))
 
 
 # the bounds of a run whose goal is bugs, which goes on past full coverage
@@ -355,3 +358,12 @@ def test_the_turn_between_passes_comes_while_the_run_goes_on_for_its_goal(
     Stuck([], between=tool).between(run, progress)
 
     assert tool.turns == turns
+
+
+def test_the_inputs_a_turn_used_run_again_after_it() -> None:
+    tool = Turns()
+    run = FakeRun()
+
+    Stuck([], between=tool).between(run, missing(5))
+
+    assert tool.calls == [("between", run), ("run again", run)]

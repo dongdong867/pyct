@@ -100,3 +100,12 @@ def each_dedented(texts: list[str]) -> int:
         if textwrap.dedent(s) == "ab":
             n += 1
     return n
+
+
+def forked(n: int) -> str:
+    if n > 5:
+        n = n - 5
+    r = pow(n, 2, 10)
+    if r == 9:
+        return "nine"
+    return "other"

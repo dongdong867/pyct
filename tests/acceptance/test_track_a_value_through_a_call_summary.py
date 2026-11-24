@@ -32,6 +32,7 @@ from tests.acceptance.lost_calls import (
     CAP,
     DEDENTED,
     DIVIDED,
+    FORKED,
     MOD,
     QUARTER,
     SHIFTED,
@@ -185,6 +186,19 @@ def test_the_input_the_check_used_runs_again_before_the_run_can_stop() -> None:
     [fork] = forks_at(again, 30)
     assert fork.expression == ["==", ["%", ["*", "n", "n"], 10], 9]
     assert any(30 + 1 in record.covered_lines for record in done.records)
+
+
+# llm-summary-for-a-call-pyct-cannot-follow-in-use-runs-its-input-again, where the seed leaves a
+# fork to flip: the turn between passes runs it again itself, before any input the solver gives
+def test_the_input_the_check_used_runs_again_after_a_turn_between_passes() -> None:
+    done = summarized(FORKED, {"n": 2}, MOD)
+
+    again = after_checked(done)[0]
+    assert (again.args, again.source, again.aim) == ({"n": 2}, Source.SUMMARY, None)
+    [fork] = forks_at(again, 109)
+    assert fork.expression == ["==", ["%", ["*", "n", "n"], 10], 9]
+    assert done.result.stopped is not None
+    assert done.result.stopped.kind is not StopKind.NO_FORK
 
 
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-state
