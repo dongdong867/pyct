@@ -11,17 +11,19 @@ bound, then calls ``summary`` on the values it is handed. Called in the
 process it is told is pyct's own, it raises `FormulaInPyctProcessError`
 instead.
 
-A forked input inherits core's table of loops in use (`pyct.core.entry.in_use`)
-with each runner in it. A code object does not pickle, so a fresh
+A forked input inherits core's tables of loops in use (`pyct.core.entry.in_use`)
+and of loss sites in use (`pyct.core.entry.calls_in_use`) with each runner in
+them. A code object does not pickle, so a fresh
 interpreter is handed each runner's `FormulaText` instead, read from the
 table as its request is made, since formulas come into use and are dropped
 during a run. It compiles each text through the compile and form check
 pyct's process uses (`pyct.run.summary_form.compiled_formula`), builds the
 runner itself, which then has no process to refuse, and fills the table
-before its input runs. A text it does not compile leaves its loop out of
-the table: that input runs the loop as written, as it would with no formula,
-and is still a true input. pyct's process compiled the same text first, so
-this does not happen while both run the same pyct.
+before its input runs. A text it does not compile leaves its loop or site out of
+the table: that input runs the loop as written, or gets the site's real
+answer, as it would with no formula, and is still a true input. pyct's
+process compiled the same text first, so this does not happen while both run
+the same pyct.
 """
 
 from __future__ import annotations
@@ -33,7 +35,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from pyct.core.entry.calls_in_use import CallInUse
+from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
 from pyct.core.entry.in_use import IN_USE, LoopInUse
 from pyct.intercept.model_code import Refused
 from pyct.intercept.wrap import bound_builtins
@@ -99,18 +101,23 @@ def call_in_use(runner: FormulaRunner) -> CallInUse | None:
 
 
 def handed_formulas() -> tuple[FormulaText, ...]:
-    """The text of each formula in core's table of loops in use now, for a fresh interpreter."""
-    return tuple(
-        loop.formula.text for loop in IN_USE.values() if isinstance(loop.formula, FormulaRunner)
-    )
+    """The text of each formula in core's tables of loops and loss sites in use now, for a fresh
+    interpreter."""
+    every = (*IN_USE.values(), *CALLS_IN_USE.values())
+    return tuple(each.formula.text for each in every if isinstance(each.formula, FormulaRunner))
 
 
 def install(formulas: Iterable[FormulaText]) -> None:
     """In a fresh interpreter, before its input runs: put each formula it was handed in core's
-    table, compiled here, its runner built here; each text that does not compile is left out."""
+    table of loops or of loss sites in use, by whether it names a downgrade, compiled here, its
+    runner built here; each text that does not compile is left out."""
     for each in formulas:
         code = compiled_formula(each.text, each.parameters, each.changed, each.file)
         if isinstance(code, Refused):
             continue
         runner = FormulaRunner(code, each, home=None)
-        IN_USE[each.place] = LoopInUse(each.parameters, each.changed, runner)
+        call = call_in_use(runner)
+        if call is not None:
+            CALLS_IN_USE[each.place] = call
+        else:
+            IN_USE[each.place] = LoopInUse(each.parameters, each.changed, runner)

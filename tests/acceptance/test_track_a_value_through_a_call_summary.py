@@ -105,6 +105,15 @@ def test_an_input_after_the_check_forks_on_the_formula_s_term() -> None:
         assert expressions == [["==", QUARTER_TERM, 7]], record
 
 
+# llm-summary-for-a-call-pyct-cannot-follow-in-use-in-a-fresh-interpreter
+def test_an_input_in_a_fresh_interpreter_forks_on_the_formula_s_term() -> None:
+    done = summarized(SHIFTED, {"n": 3}, QUARTER, Isolation.FRESH)
+
+    for record in after_checked(done):
+        expressions = [each.expression for each in forks_at(record, 16)]
+        assert expressions == [["==", QUARTER_TERM, 7]], record
+
+
 # llm-summary-for-a-call-pyct-cannot-follow-in-use-records-no-downgrade
 def test_an_input_after_the_check_names_no_downgrade_at_the_site() -> None:
     done = summarized(SHIFTED, {"n": 3}, QUARTER)

@@ -13,10 +13,13 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.core.entry import in_use
+from pyct.core.entry.calls_in_use import CALLS_IN_USE, CallInUse
 from pyct.core.entry.in_use import LoopInUse
 from pyct.core.foundation.branch import Site
 from pyct.intercept.hook import Interception, intercepting
+from pyct.intercept.model_code import Refused
 from pyct.results.record import RunResult
+from pyct.run.call_turns import CallsInUse
 from pyct.run.formula_runner import (
     FormulaInPyctProcessError,
     FormulaRunner,
@@ -29,6 +32,7 @@ from pyct.run.isolation import Isolation
 from pyct.run.loops_in_use import LoopsInUse
 from pyct.run.run import run
 from pyct.run.setup import Setup
+from pyct.run.summary_form import compiled_formula
 from pyct.run.target import load_target
 from tests.unit.run.test_loops_in_use import COUNT, FEW_Z, G, compiled, formula_at
 from tests.unit.run.test_run_in_use import COUNTS, LOOP
@@ -175,3 +179,53 @@ def test_a_fresh_input_runs_the_loop_as_written_when_its_formula_does_not_compil
     # the seed's loop records its forks as it does with no formula, and the input drops nothing
     assert records_of(result)[0] == records_of(plain)[0]
     assert {fork.site.line for fork in result.records[0].forks} == {LOOP[0], LOOP[0] + 1}
+
+
+QUARTER = 'def summary(n):\n    return {"answer": n // 4}\n'
+
+
+def call_text(place: tuple[str, int, int], text: str = QUARTER) -> FormulaText:
+    return FormulaText(text, ("n",), ("answer",), place, FILE, "__rshift__", ("n", None))
+
+
+@pytest.fixture
+def calls() -> Iterator[dict[tuple[str, int, int], CallInUse]]:
+    """Core's table of loss sites in use, empty for the test and after it."""
+    CALLS_IN_USE.clear()
+    yield CALLS_IN_USE
+    CALLS_IN_USE.clear()
+
+
+def test_a_loss_site_in_use_is_handed_as_text_with_its_name_and_positions(
+    calls: dict[tuple[str, int, int], CallInUse],
+) -> None:
+    text = call_text(("calls.py", 11, 11))
+    code = compiled_formula(text.text, text.parameters, text.changed, text.file)
+    assert not isinstance(code, Refused)
+    CallsInUse().use(text, code)
+
+    target = load_target("targets.summaries.loops::few_z")
+    with (
+        _request(target.spec, target.file, {"s": "ab"}, None) as request,
+        os.fdopen(os.dup(request), "rb") as handed,
+    ):
+        pickle.load(handed)
+        pickle.load(handed)
+        formulas = pickle.load(handed)
+
+    assert formulas == (text,)
+
+
+def test_each_loss_site_handed_over_is_compiled_into_core_s_table_of_sites(
+    calls: dict[tuple[str, int, int], CallInUse],
+    table: dict[tuple[str, int, int], LoopInUse],
+) -> None:
+    install((call_text(("a.py", 3, 4), REFUSED), call_text(("calls.py", 11, 11))))
+
+    assert table == {}
+    assert list(calls) == [("calls.py", 11, 11)]
+    call = calls[("calls.py", 11, 11)]
+    assert (call.name, call.positions) == ("__rshift__", ("n", None))
+    assert isinstance(call.formula, FormulaRunner)
+    assert call.formula.home is None
+    assert call.formula({"n": 13}) == {"answer": 3}
