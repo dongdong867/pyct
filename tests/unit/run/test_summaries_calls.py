@@ -9,8 +9,8 @@ from typing import Any
 
 import pytest
 
-from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.branches.plan import Plan
+from pyct.core.entry.in_use import CALLS_IN_USE
 from pyct.core.foundation.branch import Branch, Changed, GoingIn, LossKind, LossRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope

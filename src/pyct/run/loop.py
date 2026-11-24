@@ -24,7 +24,7 @@ from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call
 from pyct.run.process import InputStartError
 from pyct.run.records import miss_why, record_of, source_of
-from pyct.run.stuck import Stuck
+from pyct.run.stuck import LongAsk, Stuck
 from pyct.run.tell import Ask, Told
 from pyct.run.waits import site_waits, solve_limit
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
@@ -57,7 +57,8 @@ class Attempt:
 
     ``unrun`` is the site of a fork the pass picked and then stopped before it
     ran an input for: the pick spends the fork, so only the pass knows it.
-    ``asked`` is the pass's ask, numbered by the loop.
+    ``asked`` is the pass's ask, numbered by the loop. ``ran_long`` is the pick whose ask ran
+    its whole limit, or slow to an ``unknown``, on a path that holds a formula's fork.
     """
 
     stop: Stop | None = None
@@ -65,6 +66,7 @@ class Attempt:
     miss: Miss | None = None
     unrun: ForkSite | None = None
     asked: Ask | None = None
+    ran_long: LongAsk | None = None
 
     @property
     def record(self) -> InputRecord | None:
@@ -181,6 +183,8 @@ class Loop:
             _let_go(self.inputs, self.tree.oldest)
             attempt = self._next(waiting)
             _hand_out(attempt, self.told, self._numbers, self.misses)
+            if attempt.ran_long is not None:
+                self._stuck.ran_long(attempt.ran_long)
             if attempt.stop is not None:
                 return Looped(
                     tuple(self.records), tuple(self.misses), attempt.stop, self._untried(attempt)
@@ -392,12 +396,16 @@ def _attempt(
     origin = inputs[wanted.path]
     limit = solve_limit(bounds, left, wanted)
     solved = ways.asker.solved(wanted, origin, limit)
+    long = None
     if site_waits(solved.answer, solved.seconds, limit):
         tree.ran_long()
+        long = LongAsk.of(wanted, solved.answer, solved.seconds, limit, bounds)
     answer = solved.answer
     if not isinstance(answer, Sat):
-        return _unanswered(wanted, answer, solved, unrun)
-    return _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
+        attempt = _unanswered(wanted, answer, solved, unrun)
+    else:
+        attempt = _input(ways, wanted, apply(origin, answer.model), solved, bounds.until)
+    return dataclasses.replace(attempt, ran_long=long)
 
 
 def _unanswered(

@@ -14,7 +14,9 @@ in core's table of loss sites in use (`pyct.core.entry.calls_in_use`), when
 the run's inputs run in a process of their own and every answer its runs
 recorded is an int, float, str or bool; else it is kept as checked, and why
 is said once. Once it is in use, the latest input whose run its check used
-runs again after the turn, labeled ``summary``. Once the run's inputs run in
+runs again after the turn, labeled ``summary``. A site in use also goes out of use,
+said, when a pick's solver ask ran long on a path that holds a fork that reads its answer
+(`CallTurns.took_out`), and is asked about at the next turn. Once the run's inputs run in
 pyct's own process, each site in use goes out of use and is kept as
 checked, said once for each site.
 """
@@ -49,9 +51,9 @@ from pyct.run.loops_in_use import (
 )
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import SummaryDropped, SummaryNotUsed, SummarySkipped
-from pyct.run.stuck import Outcome, Running, going
-from pyct.run.summary_asks import EarlierFormula, SummaryRequest
-from pyct.run.summary_outcomes import Asked, LoopState
+from pyct.run.stuck import LongAsk, Outcome, Running, going
+from pyct.run.summary_asks import SummaryRequest
+from pyct.run.summary_outcomes import Asked, LoopState, leave_use, take_out
 from pyct.run.summary_runs import AskedLoop
 from pyct.run.target import Target
 from pyct.run.tell import Told
@@ -188,15 +190,21 @@ class CallTurns:
         site = drop.site
         self.in_use.stop(site)
         state = self.tool.loops[site]
-        state.last = SummaryState.DROPPED
-        state.dropped = True
         reason = dropped_because(drop)
-        state.tries.append(
-            EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
-        )
-        state.failed_on = failed_call_run(drop, record, number, self.tool.files)
+        failed_on = failed_call_run(drop, record, number, self.tool.files)
+        leave_use(state, f"dropped at input {number}: {reason}", failed_on)
         self.tool.told.note(SummaryDropped(site, number, reason, call=state.name))
         # asked about again at the next turn
+        self.sites.turned.discard(site)
+
+    def took_out(self, site: Site, long: LongAsk) -> None:
+        """The site in use, taken out because the pick's ask ran long (``long``): out of use,
+        said, its formula kept among its earlier tries with why, for its ask at the next turn."""
+        if site not in self.in_use.sites:
+            return
+        self.in_use.stop(site)
+        state = self.tool.loops[site]
+        self.tool.told.note(take_out(state, site, long.number, long.reason))
         self.sites.turned.discard(site)
 
     def fell_back(self) -> None:

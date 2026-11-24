@@ -112,9 +112,27 @@ class SummaryDropped:
     call: str | None = None
 
 
+@dataclass(frozen=True)
+class SummaryTakenOut:
+    """The formula in use for the loop at ``site`` is taken out of use after the run's input
+    ``number``, from 1, whose path holds a fork that reads its value, and why: the loop is
+    followed as before from the next input on."""
+
+    site: Site
+    number: int
+    reason: str
+    call: str | None = None
+
+
 # each summaries note names a loss site by its downgrade's name in ``call``, and a loop by none
 type SummaryNote = (
-    SummaryRead | SummaryChecked | SummaryFailed | SummarySkipped | SummaryNotUsed | SummaryDropped
+    SummaryRead
+    | SummaryChecked
+    | SummaryFailed
+    | SummarySkipped
+    | SummaryNotUsed
+    | SummaryDropped
+    | SummaryTakenOut
 )
 
 # rewrites' own notes are declared in ``pyct.rewrite.notes``, which says them below this layer

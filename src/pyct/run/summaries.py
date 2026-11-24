@@ -41,7 +41,10 @@ again at each later moment while a line it was asked for is still missed
 and no formula of its is in use or checked since, whether or not an entry
 names it and whatever came of an ask since, its dropped formula among the
 earlier tries with why, and the run it failed on first among the runs
-shown. Once
+shown. A loop in use also goes out
+of use when a pick's solver ask ran long, on a path that holds a fork that reads its value
+and as the input whose path it is ran with the formula in use: said with that input's
+number and the fork, and the loop is asked about again as after a drop (`ran_long`). Once
 the run's inputs run in pyct's own process, each loop in use goes out of use
 and is kept as checked, said once for each loop.
 
@@ -95,7 +98,7 @@ from pyct.run.notes import (
     SummaryRead,
     SummarySkipped,
 )
-from pyct.run.stuck import Handled, Kind, Moment, Running, going
+from pyct.run.stuck import Handled, Kind, LongAsk, Moment, Running, going
 from pyct.run.summary_asks import (
     EarlierFormula,
     SummaryProvider,
@@ -103,7 +106,7 @@ from pyct.run.summary_asks import (
     SummaryRequest,
 )
 from pyct.run.summary_checks import Ended, check_formula, formula_code
-from pyct.run.summary_outcomes import Asked, outcome, sources_of
+from pyct.run.summary_outcomes import Asked, leave_use, outcome, sources_of, take_out
 from pyct.run.summary_outcomes import LoopState as LoopState
 from pyct.run.summary_runs import (
     AskedLoop,
@@ -296,11 +299,19 @@ class Summaries:
             return self._failed(state, site, failed)
         state.checked_on = len(loop.runs)
         self.told.note(SummaryChecked(site, len(loop.runs), hidden, call=state.name))
-        if state.name is not None:
-            state.last = self.calls.used(loop, state.name, reply.code, file, formula.code)
-            return Asked.CHECKED
-        state.last = self._used(loop, reply.code, file, formula.code)
+        state.last = self._put_in_use(loop, state, reply.code, file, formula.code)
+        if state.last is SummaryState.IN_USE:
+            state.in_use_from = len(run.records) + 1
         return Asked.CHECKED
+
+    def _put_in_use(
+        self, loop: AskedLoop, state: LoopState, text: str, file: str, code: types.CodeType
+    ) -> SummaryState:
+        """A formula that passed both checks, put in use as its loop's or its loss site's kind
+        says."""
+        if state.name is not None:
+            return self.calls.used(loop, state.name, text, file, code)
+        return self._used(loop, text, file, code)
 
     def _used(self, loop: AskedLoop, text: str, file: str, code: types.CodeType) -> SummaryState:
         """A formula that passed both checks, from its text, its code objects' file name and its
@@ -346,15 +357,29 @@ class Summaries:
         among its earlier tries with why, and the run it failed on, for its next ask."""
         site = drop.site
         self.in_use.stop(site)
-        state = self.loops[site]
-        state.last = SummaryState.DROPPED
-        state.dropped = True
         reason = dropped_because(drop)
-        state.tries.append(
-            EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
+        leave_use(
+            self.loops[site],
+            f"dropped at input {number}: {reason}",
+            failed_run(drop, record, number),
         )
-        state.failed_on = failed_run(drop, record, number)
         self.told.note(SummaryDropped(site, number, reason))
+
+    def ran_long(self, long: LongAsk) -> None:
+        """A pick's ask ran long on a path that holds forks that read formulas' values: each
+        formula in use whose value they read, in code order, and that was in use as the input
+        whose path it is ran, goes out of use from the next input on, said with why. A loop is
+        asked about again at the next moment, a loss site at the next turn."""
+        read = {site for fork in long.plan.prefix for site in fork.formulas}
+        for site in sorted(read, key=lambda site: (site.file, site.line, site.col)):
+            state = self.loops.get(site)
+            if state is None or state.in_use_from > long.number:
+                continue
+            if state.name is not None:
+                self.calls.took_out(site, long)
+            elif site in self.in_use.sites:
+                self.in_use.stop(site)
+                self.told.note(take_out(state, site, long.number, long.reason))
 
     def close(self) -> None:
         """The run ends: no loop or loss site of its is in use any more."""
