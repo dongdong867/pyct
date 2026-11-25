@@ -21,7 +21,7 @@ from pyct.results.record import Source, StopKind
 from pyct.rewrite.provider import Side
 from tests.acceptance.llm_guesses import (
     FakeGuesses,
-    Others,
+    Options,
     file_of,
     line_of,
     one_thread,  # noqa: F401
@@ -115,7 +115,7 @@ def test_a_line_whose_summary_gave_up_gets_guesses() -> None:
     lots = line_of("loops", 'return "lots"')
 
     ran = run_guesses(
-        "targets.guesses.loops::two", {"s": "ab"}, provider, SHORT, Others(summaries=summaries)
+        "targets.guesses.loops::two", {"s": "ab"}, provider, SHORT, Options(summaries=summaries)
     )
 
     asked = f"llm: guesses for {loops}:{lots} (summary gave up)"
@@ -139,7 +139,7 @@ def test_a_line_whose_rewrite_gave_up_gets_guesses() -> None:
         {"s": "0", "t": "0"},
         provider,
         limits,
-        Others(rewrites=rewrites),
+        Options(rewrites=rewrites),
     )
 
     asked = f"llm: guesses for {text}:{second} (rewrite gave up)"

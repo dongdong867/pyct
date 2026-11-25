@@ -6,14 +6,18 @@ Each runs ``run()`` with a fake ``GuessProvider`` that answers fixed guesses.
 
 import json
 
+import pytest
+
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.results.coverage import Coverage, Scope
 from pyct.results.jsonl import render
 from pyct.results.record import Source, StopKind
 from pyct.results.trace import render_trace
+from pyct.run.isolation import Isolation
 from tests.acceptance.llm_guesses import (
     FakeGuesses,
+    Options,
     file_of,
     line_of,
     one_thread,  # noqa: F401
@@ -55,11 +59,19 @@ def test_a_later_solver_input_starts_from_a_guess_s_path() -> None:
 
 
 # llm-guess-input-stops-on-the-budget
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_the_budget_ending_during_a_guess_stops_the_rest() -> None:
-    # the second spins until the budget ends
+    # the second spins until the budget ends, in a child forked for each input
     provider = FakeGuesses([[{"s": "x"}, {"s": "fffff"}, {"s": "y"}]])
+    limits = Limits(budget=Budget(3))
 
-    ran = run_guesses("targets.guesses.slow::slow", {"s": "a"}, provider, Limits(budget=Budget(3)))
+    ran = run_guesses(
+        "targets.guesses.slow::slow",
+        {"s": "a"},
+        provider,
+        limits,
+        Options(isolation=Isolation.AUTO),
+    )
 
     guessed = [record.args for record in ran.records if record.source is Source.GUESS]
     assert guessed == [{"s": "x"}, {"s": "fffff"}]

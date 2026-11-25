@@ -20,8 +20,8 @@ def two(s: str) -> str:
     if t > 25:
         return "many"
     u = 0
-    for c in s:
-        if c == "y":
+    for d in s:
+        if d == "y":
             u += 1
     if u > 25:
         return "lots"

@@ -51,9 +51,10 @@ def file_of(name: str) -> str:
 
 
 def line_of(name: str, text: str) -> int:
-    """The line of ``targets/guesses/<name>.py`` that holds ``text``, the first such."""
+    """The line of ``targets/guesses/<name>.py`` that starts with ``text``, its indent aside, the
+    first such."""
     lines = Path(file_of(name)).read_text(encoding="utf-8").splitlines()
-    return next(number for number, line in enumerate(lines, 1) if text in line)
+    return next(number for number, line in enumerate(lines, 1) if line.strip().startswith(text))
 
 
 @dataclass
@@ -115,11 +116,13 @@ class Ran:
 
 
 @dataclass(frozen=True)
-class Others:
-    """The other tools a run with guesses switches on, by their fakes."""
+class Options:
+    """What else a run with guesses has: the other tools it switches on, by their fakes, and
+    where its inputs run, when not where ``run_guesses`` runs them by default."""
 
     summaries: FakeSummaries | None = None
     rewrites: FakeRewrites | None = None
+    isolation: Isolation | None = None
 
 
 def run_guesses(
@@ -127,12 +130,12 @@ def run_guesses(
     seed: Mapping[str, object],
     provider: FakeGuesses,
     limits: Limits = _PLAIN,
-    others: Others | None = None,
+    options: Options | None = None,
 ) -> Ran:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package, with
-    ``provider`` as the guesses helper and the fakes of ``others`` as theirs. Every input runs in
-    this process, or, with summaries, in a child forked from it, the package intercepted with
-    the recording of each loop's runs, as summaries need."""
+    ``provider`` as the guesses helper and the fakes ``options`` names as theirs. Every input
+    runs in this process, or, with summaries, in a child forked from it, the package intercepted
+    with the recording of each loop's runs, as summaries need, unless ``options`` says where."""
     records: list[InputRecord] = []
     said: list[str] = []
 
@@ -145,10 +148,10 @@ def run_guesses(
         if line is not None:
             said.append(line)
 
-    others = Others() if others is None else others
-    helpers = Helpers(summaries=others.summaries, rewrites=others.rewrites, guesses=provider)
-    pieces = others.summaries is not None
-    where = Isolation.AUTO if pieces else Isolation.IN_PROCESS
+    options = Options() if options is None else options
+    helpers = Helpers(summaries=options.summaries, rewrites=options.rewrites, guesses=provider)
+    pieces = options.summaries is not None
+    where = options.isolation or (Isolation.AUTO if pieces else Isolation.IN_PROCESS)
     setup = Setup(isolation=where, helpers=helpers)
     tell = Tell(report=report, noted=noted)
     with interception(spec, pieces=pieces):
