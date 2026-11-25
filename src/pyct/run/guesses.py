@@ -208,7 +208,7 @@ class Guesses:
         if checked is None:
             return self._dropped(number, reason)
         seed = Seed.of(with_defaults(target, checked), argument_checks(target), target.home)
-        written = seed_json(seed.args)
+        written = _written(seed.args)
         repeated = None if written is None else inputs.get(written)
         if repeated is not None:
             return self._dropped(number, f"same input as input {repeated}")
@@ -225,9 +225,14 @@ def _all(entries: tuple[WhyEntry, ...], outcome: Outcome, *, asked: bool) -> Han
 def _known(inputs: dict[str, int], args: Mapping[str, object], number: int) -> None:
     """Keep the input ``number``'s JSON, unless an earlier input wrote the same or JSON cannot
     write it."""
-    written = seed_json(args)
+    written = _written(args)
     if written is not None:
         inputs.setdefault(written, number)
+
+
+def _written(args: Mapping[str, object]) -> str | None:
+    """The input's JSON with its parameters in name order, since a call binds them by name."""
+    return seed_json(dict(sorted(args.items())))
 
 
 def _ended(record: InputRecord) -> str:
