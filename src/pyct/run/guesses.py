@@ -29,6 +29,7 @@ import time
 from collections.abc import Mapping, Sequence
 
 from pyct.binding.bind import Seed
+from pyct.config.llm import GUESSES_TOOL
 from pyct.results.causes import Reason, WhyEntry
 from pyct.results.furthest import way_to
 from pyct.results.graphs import LONGEST_STRETCH
@@ -63,8 +64,6 @@ FURTHEST_SIZE = 2_000
 WAY_SECONDS = CAUSE_SECONDS
 # why a reply whose array is empty gives no guess
 NO_GUESS = "the reply held no guess"
-# the tool's name, as stderr writes it
-_NAME = Kind.GUESSES.value
 
 
 class Guesses:
@@ -110,10 +109,10 @@ class Guesses:
             if answer.why is Why.LIMIT:
                 self.limit.reach()
             else:
-                self.told.note(AskSkipped(_NAME, answer.reason))
+                self.told.note(AskSkipped(GUESSES_TOOL, answer.reason))
             return _all(entries, Outcome.SKIPPED, asked=True)
         if answer.ignored is not None or not answer.items:
-            self.told.note(ReplyIgnored(_NAME, answer.ignored or NO_GUESS))
+            self.told.note(ReplyIgnored(GUESSES_TOOL, answer.ignored or NO_GUESS))
             return _all(entries, Outcome.GAVE_UP, asked=True)
         reached = self._run_each(answer.items, entries, run)
         outcomes = tuple(

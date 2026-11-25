@@ -39,7 +39,8 @@ class Connection:
 
     def ask(self, tool: Tool, place: str, text: str) -> Reply | Unanswered:
         """Ask about ``place`` with ``text``, the exact request. ``place`` stays the same between
-        two runs of the same code: no absolute path, time or count.
+        two runs of the same code: no absolute path or time, and a count only as a guess ask's
+        place holds its count among the run's guess asks.
 
         Once the limit is reached the answer is ``LIMIT`` and no request leaves. A reply is
         recorded, then counted; the ask whose tokens reach the limit says so once, through
