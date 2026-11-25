@@ -140,6 +140,10 @@ class Guesses:
     def _check(self) -> SeedCheck:
         return SeedCheck.of(self.target)
 
+    @functools.cached_property
+    def _gate(self) -> ClassGate:
+        return ClassGate(self.target.home, self._listing.modules)
+
     def _cause(self, entry: WhyEntry) -> str:
         """The entry's cause in the request's words: the tool before guesses that gave up on
         it when that tool is on, else the cause's own word, a ``no fork`` with no source found
@@ -226,8 +230,7 @@ class Guesses:
         if number > MOST_GUESSES:
             return self._dropped(number, f"more than {MOST_GUESSES} guesses")
         target = self.target
-        gate = ClassGate(target.home, self._listing.modules)
-        reason, checked = checked_seed(self._check, gate, text)
+        reason, checked = checked_seed(self._check, self._gate, text)
         if checked is None:
             return self._dropped(number, reason)
         seed = Seed.of(with_defaults(target, checked), argument_checks(target), target.home)
