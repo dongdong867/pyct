@@ -1,5 +1,6 @@
-"""The summaries tool at a stuck moment: which loops it asks about, with which runs, and what it
-hands back for each entry, given records made by hand."""
+"""The summaries tool's ask about a loss site and what a stuck moment hands back: the runs an ask
+shows, how its reply is read and checked, what the summary line lists for the site, and the
+outcome of each entry, given records made by hand."""
 
 import time
 from collections.abc import Iterator, Sequence
@@ -10,15 +11,24 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
-from pyct.core.entry import in_use
-from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, PieceRun, Site
+from pyct.core.entry.in_use import CALLS_IN_USE
+from pyct.core.foundation.branch import (
+    Changed,
+    DropReason,
+    FormulaDrop,
+    GoingIn,
+    LossKind,
+    LossRun,
+    Site,
+)
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
-from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
-from pyct.results.record import InputRecord, Stop, StopKind
+from pyct.results.llm_asks import AskCost, SiteSummary, SummaryState, Unanswered, Why
+from pyct.results.record import InputRecord, Stop
 from pyct.results.record import Source as RecordSource
-from pyct.run import model_runs, summaries
+from pyct.run import call_summaries, model_runs, summaries
 from pyct.run.bounds import Bounds
+from pyct.run.call_summaries import AskedCall
 from pyct.run.notes import (
     AskSkipped,
     Note,
@@ -28,42 +38,65 @@ from pyct.run.notes import (
     SummarySkipped,
 )
 from pyct.run.stuck import Handled, Moment, Outcome
-from pyct.run.summaries import (
-    EarlierFormula,
-    LoopState,
-    Summaries,
-    SummaryReply,
-    SummaryRequest,
-)
-from pyct.run.summary_checks import CompleteRun
-from pyct.run.summary_runs import AskedLoop, ShownRun, asked_loop, piece_at, shown_runs
+from pyct.run.summaries import EarlierFormula, Summaries, SummaryReply, SummaryRequest
+from pyct.run.summary_checks import AskedRun, CompleteRun
+from pyct.run.summary_outcomes import SiteState
+from pyct.run.summary_runs import ShownRun, shown_runs
 from pyct.run.target import load_target
 from pyct.run.tell import Ask, Tell, Told
 from tests.acceptance.harness import REPO_ROOT
 
-FILE = str(REPO_ROOT / "targets" / "why" / "stuck.py")
-LOOP = Site(FILE, 10, 4)
-COMPREHENSION = Site(FILE, 19, 11)
-CALL = Site(FILE, 26, 7)
+FILE = str(REPO_ROOT / "targets" / "summaries" / "calls.py")
+SHIFTED = "targets.summaries.calls::shifted"
+# `pow(n, 1, 4)` in `_quarter`, which `shifted` calls
+SITE = Site(FILE, 11, 11)
+STUCK = str(REPO_ROOT / "targets" / "why" / "stuck.py")
+LOOP = Site(STUCK, 10, 4)
+CALL = Site(STUCK, 26, 7)
 COUNTS = "targets.why.stuck::counts"
+QUARTER = 'def summary(n):\n    return {"answer": n % 4}\n'
+WRONG = 'def summary(n):\n    return {"answer": n * n}\n'
 
 
-def counted(s: str, *, tracked: bool = True, changed: bool = True) -> PieceRun:
-    """A run of ``counts``'s loop on ``s``."""
-    going_in = (GoingIn("s", f'"{s}"', tracked), GoingIn("t", "0", False))
-    return PieceRun(LOOP, going_in, (Changed("t", str(s.count("z"))),) if changed else ())
+def shift(line: int, col: int, n: int, by: int, name: str = "__pow__") -> LossRun:
+    """A run of ``pow(n, 1, 2**by)`` at the line and column of ``calls.py``."""
+    going_in = (
+        GoingIn("arg1", str(n), tracked=True),
+        GoingIn("arg2", "1", tracked=False),
+        GoingIn("arg3", str(2**by), tracked=False),
+    )
+    return LossRun(
+        Site(FILE, line, col),
+        name,
+        LossKind.OPERATION,
+        going_in,
+        (Changed("answer", str(n % 2**by)),),
+    )
 
 
-def record(*runs: PieceRun) -> InputRecord:
-    return InputRecord(args={}, forks=(), covered_lines=frozenset(), pieces=runs)
+def quartered(n: int) -> LossRun:
+    """A run of the site `SITE` on ``n``."""
+    return shift(SITE.line, SITE.col, n, 2)
+
+
+def record(*runs: LossRun) -> InputRecord:
+    return InputRecord(args={"n": 3}, forks=(), covered_lines=frozenset(), losses=runs)
 
 
 def entry(*sources: Source, line: int = 14) -> WhyEntry:
-    condition = Condition(Site(FILE, line - 1, 7), True)
-    return WhyEntry(FILE, (line,), Reason.NO_FORK, condition=condition, sources=sources)
+    condition = Condition(Site(STUCK, line - 1, 7), True)
+    return WhyEntry(STUCK, (line,), Reason.NO_FORK, condition=condition, sources=sources)
 
 
 LOOPED = Source(SourceKind.LOOP, "t", LOOP)
+# an entry whose condition reads the answer of the site `SITE`
+LOST = WhyEntry(
+    FILE,
+    (16,),
+    Reason.NO_FORK,
+    condition=Condition(Site(FILE, 15, 7), True),
+    sources=(Source(SourceKind.LOST, "k", SITE, call="__pow__"),),
+)
 
 
 @dataclass
@@ -111,27 +144,43 @@ def one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
-def no_loop_in_use() -> Iterator[None]:
-    """Core's table of loops in use, empty after the test, since a formula that passes here
+def no_site_in_use() -> Iterator[None]:
+    """Core's table of loss sites in use, empty after the test, since a formula that passes here
     comes into use."""
     yield
-    in_use.IN_USE.clear()
+    CALLS_IN_USE.clear()
 
 
 def apart() -> bool:
     """Where a tool built here is told the run's inputs run: each in a process of its own, so
-    that summaries ask about a loop and a formula that passes comes into use."""
+    that summaries ask about a loss site and a formula that passes comes into use."""
     return True
 
 
-def taken(
-    fake: Fake, entries: Sequence[WhyEntry], records: Sequence[InputRecord]
-) -> tuple[Handled, list[Note], Run]:
-    notes: list[Note] = []
+def tool_of(fake: Fake, notes: list[Note], spec: str = SHIFTED) -> Summaries:
     told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake, load_target("targets.why.stuck::counts"), told, isolated=apart)
-    run = Run(records)
-    return tool.take(tuple(entries), Moment(1, tuple(entries), run)), notes, run
+    return Summaries(fake, load_target(spec), told, isolated=apart)
+
+
+def turned(fake: Fake, run: Run) -> tuple[Summaries, list[Note]]:
+    """A tool that heard each of the run's records, then gave its loss sites their turn."""
+    notes: list[Note] = []
+    tool = tool_of(fake, notes)
+    for number, each in enumerate(run.records, start=1):
+        tool.heard(each, number)
+    tool.between(run)
+    return tool, notes
+
+
+def taken(tool: Summaries, run: Run, *entries: WhyEntry) -> Handled:
+    return tool.take(entries, Moment(1, entries, run))
+
+
+def listed(
+    formula: str | None, state: SummaryState, tries: int, checked_on: int | None = None
+) -> tuple[SiteSummary, ...]:
+    """The site `SITE` as the summary line lists it."""
+    return (SiteSummary("__pow__", FILE, 11, 11, ("answer",), formula, state, tries, checked_on),)
 
 
 def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -147,27 +196,20 @@ def test_the_clock_pauses_for_the_model_s_wait_alone(monkeypatch: pytest.MonkeyP
             now[0] += 3.0
             return super().summarize(request)
 
-    monkeypatch.setattr(summaries, "code_with_piece", building)
+    monkeypatch.setattr(call_summaries, "code_with_piece", building)
+    run = Run([record(quartered(3))])
 
-    _, _, run = taken(Waits(), [entry(LOOPED)], [record(counted("a"))])
+    turned(Waits(), run)
 
     assert run.paused == [3.0]
 
 
-def test_a_loop_two_entries_name_is_asked_about_once() -> None:
-    fake = Fake()
-
-    handled, _, run = taken(fake, [entry(LOOPED), entry(LOOPED, line=15)], [record(counted("a"))])
-
-    assert len(fake.requests) == 1
-    assert handled == Handled((Outcome.GAVE_UP, Outcome.GAVE_UP), asked=True)
-    assert len(run.paused) == 1
-
-
 def test_an_entry_that_names_a_call_no_input_recorded_is_given_up_with_no_ask() -> None:
     lost = Source(SourceKind.LOST, "x", CALL, call="bin")
+    notes: list[Note] = []
+    tool = tool_of(fake := Fake(), notes, COUNTS)
 
-    handled, notes, _ = taken(fake := Fake(), [entry(lost)], [record(counted("a"))])
+    handled = taken(tool, Run([record()]), entry(lost))
 
     assert fake.requests == []
     assert handled == Handled((Outcome.GAVE_UP,), asked=False)
@@ -176,7 +218,7 @@ def test_an_entry_that_names_a_call_no_input_recorded_is_given_up_with_no_ask() 
 
 def test_an_entry_that_names_only_a_loop_is_given_up_with_no_ask() -> None:
     notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    told = Told(scope=Scope.of_module(STUCK), tell=Tell(noted=notes.append))
     tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=apart)
     lost = LossRun(
         CALL, "bin", LossKind.CALL, (GoingIn("arg1", "3", True),), (Changed("answer", '"0b11"'),)
@@ -193,300 +235,187 @@ def test_an_entry_that_names_only_a_loop_is_given_up_with_no_ask() -> None:
     assert notes == []
 
 
-def test_a_loop_with_no_complete_run_is_skipped_and_said() -> None:
-    records = [record(counted("a", changed=False)), record()]
-
-    handled, notes, _ = taken(fake := Fake(), [entry(LOOPED)], records)
-
-    assert fake.requests == []
-    assert handled == Handled((Outcome.SKIPPED,), asked=False)
-    assert notes == [SummarySkipped(LOOP, "no recorded run")]
-
-
-def test_a_loop_skipped_at_each_moment_is_said_once() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=apart)
-    run = Run([record(counted("a", changed=False))])
-
-    handled = [tool.take((entry(LOOPED),), Moment(at, (), run)) for at in (1, 2, 3)]
-
-    assert fake.requests == []
-    assert handled == [Handled((Outcome.SKIPPED,), asked=False)] * 3
-    assert notes == [SummarySkipped(LOOP, "no recorded run")]
-
-
-def test_a_loop_skipped_for_another_reason_says_each_reason_once(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=apart)
-    unfinished, finished = Run([record(counted("a", changed=False))]), Run([record(counted("a"))])
-    monkeypatch.setattr(model_runs, "running", lambda: 2)
-
-    for at, run in enumerate((unfinished, finished, unfinished, finished), start=1):
-        assert tool.take((entry(LOOPED),), Moment(at, (), run)).outcomes == (Outcome.SKIPPED,)
-
-    assert fake.requests == []
-    assert notes == [SummarySkipped(LOOP, "no recorded run"), SummarySkipped(LOOP, "cannot fork")]
-
-
-def test_a_failed_ask_is_said_and_skips_the_entry() -> None:
+def test_a_failed_ask_is_said_and_gives_the_entry_up() -> None:
     failed = Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(1))
+    run = Run([record(quartered(3))])
 
-    handled, notes, _ = taken(Fake(failed), [entry(LOOPED)], [record(counted("a"))])
+    tool, notes = turned(Fake(failed), run)
 
-    assert handled == Handled((Outcome.SKIPPED,), asked=True)
     assert notes == [AskSkipped("summaries", "timed out after 30 s")]
+    assert taken(tool, run, LOST) == Handled((Outcome.GAVE_UP,), asked=False)
 
 
-def test_a_loop_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+def test_a_site_whose_ask_got_no_answer_is_listed_with_no_formula() -> None:
     failed = Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(2))
-    tool = Summaries(Fake(failed), load_target(COUNTS), told, isolated=apart)
 
-    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
+    tool, _ = turned(Fake(failed), Run([record(quartered(3))]))
 
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, SummaryState.UNANSWERED, 2),)
-
-
-def test_a_loop_whose_reply_held_no_code_block_is_listed_as_failed() -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(), load_target(COUNTS), told, isolated=apart)
-
-    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
-
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), None, SummaryState.FAILED, 1),)
+    assert tool.states() == listed(None, SummaryState.UNANSWERED, 2)
 
 
-WRONG = 'def summary(s, t):\n    return {"t": len(s)}\n'
+def test_a_site_whose_reply_held_no_code_block_is_listed_as_failed() -> None:
+    tool, _ = turned(Fake(), Run([record(quartered(3))]))
+
+    assert tool.states() == listed(None, SummaryState.FAILED, 1)
 
 
-def test_a_loop_whose_try_failed_and_whose_next_ask_got_no_answer_is_listed_unanswered() -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(
-        Fake(SummaryReply(WRONG, AskCost(1))),
-        load_target(COUNTS),
-        told,
-        isolated=apart,
+def dropped(tool: Summaries, first: InputRecord) -> Run:
+    """The run once its second input, which ran the site, dropped the site's formula in use."""
+    drop = FormulaDrop(SITE, "answer", "1", "2", DropReason.MISMATCH, run=0)
+    second = InputRecord(
+        args={"n": 5},
+        forks=(),
+        covered_lines=frozenset(),
+        losses=(quartered(5),),
+        drops=(drop,),
     )
-    run = Run([record(counted("ab"))])
+    tool.heard(second, 2)
+    return Run([first, second])
 
-    tool.take((entry(LOOPED),), Moment(1, (), run))
+
+def test_a_dropped_site_whose_next_ask_got_no_answer_is_listed_unanswered() -> None:
+    first = record(quartered(3))
+    tool, _ = turned(Fake(SummaryReply(QUARTER, AskCost(1))), Run([first]))
+    run = dropped(tool, first)
+
     tool.provider = Fake(Unanswered(Why.TIMED_OUT, "timed out after 30 s", AskCost(2)))
-    tool.take((entry(LOOPED),), Moment(2, (), run))
+    tool.between(run)
 
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), WRONG, SummaryState.UNANSWERED, 2),)
+    assert tool.states() == listed(QUARTER, SummaryState.UNANSWERED, 2)
 
 
-@pytest.mark.parametrize(
-    ("first", "formula", "state"),
-    [
-        (SummaryReply(WRONG, AskCost(1)), WRONG, "failed"),
-        (Unanswered(Why.PROVIDER, "provider error 500", AskCost(1)), None, "unanswered"),
-    ],
-    ids=["failed", "unanswered"],
-)
-def test_a_listed_loop_s_ask_the_token_limit_refused_leaves_its_state(
-    first: SummaryReply | Unanswered, formula: str | None, state: str
-) -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(first), load_target(COUNTS), told, isolated=apart)
-    run = Run([record(counted("ab"))])
+def test_a_listed_site_s_ask_the_token_limit_refused_leaves_its_state() -> None:
+    first = record(quartered(3))
+    tool, _ = turned(Fake(SummaryReply(QUARTER, AskCost(1))), Run([first]))
+    run = dropped(tool, first)
 
-    tool.take((entry(LOOPED),), Moment(1, (), run))
     tool.provider = Fake(Unanswered(Why.LIMIT, "token limit reached", AskCost(2)))
-    tool.take((entry(LOOPED),), Moment(2, (), run))
+    tool.between(run)
 
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), formula, SummaryState(state), 1),)
+    assert tool.states() == listed(QUARTER, SummaryState.DROPPED, 1, 1)
 
 
 def test_the_token_limit_ends_the_asks_unsaid() -> None:
     limit = Unanswered(Why.LIMIT, "token limit reached", AskCost(1))
-    second = Source(SourceKind.LOOP, "t", COMPREHENSION)
-    comprehended = PieceRun(COMPREHENSION, (GoingIn("s", '"a"', True),), (Changed("t", "0"),))
 
-    handled, notes, _ = taken(
-        fake := Fake(limit), [entry(LOOPED), entry(second)], [record(counted("a"), comprehended)]
-    )
+    tool, notes = turned(fake := Fake(limit), Run([record(quartered(3), shift(36, 8, 3, 1))]))
 
     assert len(fake.requests) == 1
-    assert handled == Handled((Outcome.SKIPPED, Outcome.SKIPPED), asked=True)
     assert notes == []
+    assert not tool.can_ask
 
 
-def test_a_loop_whose_only_ask_met_the_token_limit_is_not_listed() -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
+def test_a_site_whose_only_ask_met_the_token_limit_is_not_listed() -> None:
     limit = Unanswered(Why.LIMIT, "token limit reached", AskCost(1))
-    tool = Summaries(Fake(limit), load_target(COUNTS), told, isolated=apart)
 
-    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("a"))])))
+    tool, _ = turned(Fake(limit), Run([record(quartered(3))]))
 
     assert tool.states() == ()
 
 
-def test_no_ask_is_made_once_the_run_has_stopped() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(
-        fake := Fake(),
-        load_target("targets.why.stuck::counts"),
-        told,
-        isolated=apart,
+def asked_call(runs: Sequence[AskedRun], parameters: tuple[str, ...]) -> AskedCall:
+    """The site `SITE` as an ask sees it, with these complete runs, each of input 1."""
+    complete = tuple(CompleteRun(1, each) for each in runs)
+    return AskedCall(
+        SITE,
+        complete,
+        parameters,
+        (11, 11),
+        "__pow__",
+        LossKind.OPERATION,
+        "pow(n, 1, 4)",
+        None,
+        1,
+        ("n", None, None),
     )
-    run = Run([record(counted("a"))], stopped=Stop(StopKind.BUDGET))
-
-    handled = tool.take((entry(LOOPED),), Moment(1, (), run))
-
-    assert (fake.requests, handled.outcomes) == ([], (Outcome.SKIPPED,))
 
 
-def test_a_loop_s_complete_runs_and_parameters_come_from_every_record() -> None:
-    plain = PieceRun(LOOP, (GoingIn("s", '"q"', True),), (Changed("t", "0"),))
-    records = [record(counted("a"), counted("z")), record(), record(plain)]
-
-    loop = asked_loop(LOOP, records)
-
-    assert loop is not None
-    assert [each.number for each in loop.runs] == [1, 1, 3]
-    # t was unbound going into the last run, so it is no parameter
-    assert loop.parameters == ("s",)
+def going(n: str, answer: str = "0") -> AskedRun:
+    return AskedRun((GoingIn("n", n, True),), (Changed("answer", answer),))
 
 
 def test_the_runs_shown_put_distinct_values_going_in_first_then_distinct_changed_values() -> None:
-    piece = piece_at(LOOP)
-    assert piece is not None
+    # the last run's values going in are held back: its answer is its own
+    runs = [going("1"), going("1"), going("1", "1"), going("2"), going("3", "7")]
 
-    def going(s: str, t: str = "0") -> PieceRun:
-        return PieceRun(LOOP, (GoingIn("s", s, True),), (Changed("t", t),))
-
-    # the last run's values going in are held back: its changed values are its own
-    runs = [going('"a"'), going('"a"'), going('"a"', "1"), going('"b"'), going('"c"', "7")]
-    loop = AskedLoop(LOOP, piece, tuple(CompleteRun(1, each) for each in runs), ("s",))
-
-    assert shown_runs(loop) == (
-        ShownRun((("s", '"a"'),), (("t", "0"),)),
-        ShownRun((("s", '"b"'),), (("t", "0"),)),
-        ShownRun((("s", '"a"'),), (("t", "1"),)),
-        ShownRun((("s", '"a"'),), (("t", "0"),)),
+    assert shown_runs(asked_call(runs, ("n",))) == (
+        ShownRun((("n", "1"),), (("answer", "0"),)),
+        ShownRun((("n", "2"),), (("answer", "0"),)),
+        ShownRun((("n", "1"),), (("answer", "1"),)),
+        ShownRun((("n", "1"),), (("answer", "0"),)),
     )
 
 
 def test_the_runs_shown_are_ten_at_most() -> None:
-    piece = piece_at(LOOP)
-    assert piece is not None
-    runs = tuple(CompleteRun(at, counted(str(at))) for at in range(1, 13))
+    runs = [going(str(at)) for at in range(1, 13)]
 
-    shown = shown_runs(AskedLoop(LOOP, piece, runs, ("s", "t")))
+    shown = shown_runs(asked_call(runs, ("n",)))
 
-    assert [each.going_in[0][1] for each in shown] == [f'"{at}"' for at in range(1, 11)]
+    assert [each.going_in[0][1] for each in shown] == [str(at) for at in range(1, 11)]
 
 
-def test_the_piece_at_a_site_is_read_off_its_file() -> None:
-    piece = piece_at(COMPREHENSION)
+def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_site() -> None:
+    run = Run([record(quartered(3)), record(quartered(13))])
 
-    assert piece is not None
-    assert (piece.going_in, piece.changed, piece.lines) == (("s",), ("t",), (19, 19))
-    assert piece_at(Site(FILE, 13, 4)) is None
-    assert piece_at(Site("/nowhere/gone.py", 1, 0)) is None
+    tool, notes = turned(Fake(SummaryReply(QUARTER, AskCost(1))), run)
 
-
-FORMULA = 'def summary(s, t):\n    return {"t": t + s.count("z")}\n'
-
-
-def test_a_checked_formula_takes_the_entry_and_is_kept_for_its_loop() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    fake = Fake(SummaryReply(FORMULA, AskCost(1)))
-    tool = Summaries(fake, load_target("targets.why.stuck::counts"), told, isolated=apart)
-    run = Run([record(counted("ab")), record(counted("zz"))])
-
-    handled = tool.take((entry(LOOPED),), Moment(1, (), run))
-
-    assert handled == Handled((Outcome.TOOK,), asked=True)
-    assert notes == [SummaryRead(LOOP, 't = t + s.count("z")'), SummaryChecked(LOOP, 2, 1)]
-    checked = SummaryState.IN_USE
-    assert tool.loops[LOOP] == LoopState(
-        ("t",), attempts=1, formula=FORMULA, checked_on=2, last=checked
+    assert notes == [
+        SummaryRead(SITE, "answer = n % 4", call="__pow__"),
+        SummaryChecked(SITE, 2, 1, call="__pow__"),
+    ]
+    in_use = SummaryState.IN_USE
+    assert tool.sites[SITE] == SiteState(
+        ("answer",), "__pow__", attempts=1, formula=QUARTER, checked_on=2, last=in_use
     )
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, checked, 1, 2),)
+    assert tool.states() == listed(QUARTER, in_use, 1, 2)
+    assert taken(tool, run, LOST) == Handled((Outcome.TOOK,), asked=False)
 
 
 def test_a_failed_try_gives_the_entry_up_and_is_kept_with_its_reason() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    wrong = 'def summary(s, t):\n    return {"t": len(s)}\n'
-    tool = Summaries(
-        Fake(SummaryReply(wrong, AskCost(3))),
-        load_target(COUNTS),
-        told,
-        isolated=apart,
-    )
+    run = Run([record(quartered(3))])
 
-    handled = tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+    tool, notes = turned(Fake(SummaryReply(WRONG, AskCost(3))), run)
 
-    reason = "at input 1, t was 0, the formula gave 2"
-    assert handled == Handled((Outcome.GAVE_UP,), asked=True)
-    assert notes[-1] == SummaryFailed(LOOP, 3, reason)
-    assert tool.loops[LOOP].tries == [EarlierFormula(wrong, reason)]
-    assert tool.loops[LOOP].checked_on is None
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), wrong, SummaryState.FAILED, 3),)
+    reason = "at input 1, answer was 3, the formula gave 9"
+    assert notes[-1] == SummaryFailed(SITE, 3, reason, call="__pow__")
+    assert tool.sites[SITE].tries == [EarlierFormula(WRONG, reason)]
+    assert tool.sites[SITE].checked_on is None
+    assert tool.states() == listed(WRONG, SummaryState.FAILED, 3)
+    assert taken(tool, run, LOST) == Handled((Outcome.GAVE_UP,), asked=False)
 
 
-def test_a_check_that_cannot_run_skips_the_loop_at_this_moment(
+def test_a_check_that_cannot_run_skips_the_site_at_its_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    tool = Summaries(
-        Fake(SummaryReply(FORMULA, AskCost(1))),
-        load_target(COUNTS),
-        told,
-        isolated=apart,
-    )
-
     class Thread(Fake):
         def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered:
             monkeypatch.setattr(model_runs, "running", lambda: 2)
             return super().summarize(request)
 
-    tool.provider = Thread(SummaryReply(FORMULA, AskCost(1)))
-    handled = tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+    tool, notes = turned(Thread(SummaryReply(QUARTER, AskCost(1))), Run([record(quartered(3))]))
 
-    assert handled == Handled((Outcome.SKIPPED,), asked=True)
-    assert notes[-1] == SummarySkipped(LOOP, "cannot fork")
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), FORMULA, SummaryState.UNCHECKED, 1),)
+    assert notes[-1] == SummarySkipped(SITE, "cannot fork", call="__pow__")
+    assert tool.states() == listed(QUARTER, SummaryState.UNCHECKED, 1)
 
 
-def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try() -> None:
-    notes: list[Note] = []
-    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
-    slow = 'def summary(s, t):\n    return {"t": math.factorial(10 ** 7)}\n'
-    tool = Summaries(
-        Fake(SummaryReply(slow, AskCost(1))),
-        load_target(COUNTS),
-        told,
-        isolated=apart,
-    )
-    run = Run([record(counted("ab"))], bounds=Bounds(until=time.monotonic() + 0.3))
+def test_a_check_the_run_s_deadline_ends_skips_the_site_and_keeps_no_failed_try() -> None:
+    slow = 'def summary(n):\n    return {"answer": math.factorial(10 ** 7)}\n'
+    run = Run([record(quartered(3))], bounds=Bounds(until=time.monotonic() + 0.3))
 
-    handled = tool.take((entry(LOOPED),), Moment(1, (), run))
+    tool, notes = turned(Fake(SummaryReply(slow, AskCost(1))), run)
 
-    assert handled == Handled((Outcome.SKIPPED,), asked=True)
-    assert notes[-1] == SummarySkipped(LOOP, "the run's budget ran out")
-    assert tool.loops[LOOP].tries == []
-    assert tool.states() == (LoopSummary(FILE, 10, 4, ("t",), slow, SummaryState.UNCHECKED, 1),)
+    assert notes[-1] == SummarySkipped(SITE, "the run's budget ran out", call="__pow__")
+    assert tool.sites[SITE].tries == []
+    assert tool.states() == listed(slow, SummaryState.UNCHECKED, 1)
 
 
 # llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
 @pytest.mark.parametrize(
     ("answer", "can_ask"),
     [
-        (SummaryReply(FORMULA, AskCost(1, tokens_left=5)), True),
-        (SummaryReply(FORMULA, AskCost(1, tokens_left=0)), False),
-        (SummaryReply(FORMULA, AskCost(1)), True),
+        (SummaryReply(QUARTER, AskCost(1, tokens_left=5)), True),
+        (SummaryReply(QUARTER, AskCost(1, tokens_left=0)), False),
+        (SummaryReply(QUARTER, AskCost(1)), True),
         (Unanswered(Why.PROVIDER, "provider error 500", AskCost(1, tokens_left=5)), True),
         (Unanswered(Why.LIMIT, "token limit reached", AskCost(1)), False),
     ],
@@ -495,10 +424,12 @@ def test_a_check_the_run_s_deadline_ends_skips_the_loop_and_keeps_no_failed_try(
 def test_summaries_can_ask_until_an_answer_leaves_no_token(
     answer: SummaryReply | Unanswered, can_ask: bool
 ) -> None:
-    told = Told(scope=Scope.of_module(FILE), tell=Tell())
-    tool = Summaries(Fake(answer), load_target(COUNTS), told, isolated=apart)
+    notes: list[Note] = []
+    tool = tool_of(Fake(answer), notes)
     assert tool.can_ask is True
+    run = Run([record(quartered(3))])
+    tool.heard(run.records[0], 1)
 
-    tool.take((entry(LOOPED),), Moment(1, (), Run([record(counted("ab"))])))
+    tool.between(run)
 
     assert tool.can_ask is can_ask

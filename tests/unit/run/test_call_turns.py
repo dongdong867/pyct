@@ -16,19 +16,18 @@ from pyct.core.foundation.branch import (
     FormulaDrop,
     GoingIn,
     LossRun,
-    PieceRun,
     Site,
 )
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import SummaryState
 from pyct.results.record import InputRecord
 from pyct.results.record import Source as RecordSource
+from pyct.run.call_turns import dropped_because, kinds_unused_because
 from pyct.run.formula_runner import FormulaRunner
-from pyct.run.loops_in_use import kinds_unused_because
 from pyct.run.notes import Note, SummaryDropped, SummaryNotUsed, SummarySkipped
 from pyct.run.stuck import Outcome
 from pyct.run.summaries import EarlierFormula, ShownRun, Summaries
-from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_checks import AskedRun, CompleteRun
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
 from tests.unit.run.test_summaries import Run
@@ -79,7 +78,7 @@ def test_a_checked_formula_comes_into_use_under_its_name_and_positions() -> None
     summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
 
     [state] = summaries.states()
-    assert (state.kind, state.state, state.checked_on) == ("call", SummaryState.IN_USE, 1)
+    assert (state.name, state.state, state.checked_on) == ("__pow__", SummaryState.IN_USE, 1)
     call = CALLS_IN_USE[(FILE, 37, 8)]
     assert (call.name, call.positions) == ("__pow__", ("n", None, None))
     assert isinstance(call.formula, FormulaRunner)
@@ -161,16 +160,29 @@ def test_the_run_s_end_takes_each_site_out_of_core_s_table() -> None:
     assert CALLS_IN_USE == {}
 
 
-def answered(text: str) -> CompleteRun:
-    return CompleteRun(1, PieceRun(SITE, (), (Changed("answer", text),)))
+def answered(*texts: str) -> tuple[CompleteRun, ...]:
+    """A complete run of the site for each answer written as JSON text."""
+    return tuple(CompleteRun(1, AskedRun((), (Changed("answer", each),))) for each in texts)
 
 
-def test_a_formula_whose_runs_recorded_an_answer_of_another_kind_is_not_used() -> None:
-    runs = [answered("3"), answered(json.dumps([1])), answered("null")]
+@pytest.mark.parametrize("value", ["0", "1.5", '"z"', "true", "NaN"])
+def test_a_formula_whose_site_answers_an_int_float_str_or_bool_is_used(value: str) -> None:
+    assert kinds_unused_because(answered("0", value), ("answer",)) is None
 
-    assert kinds_unused_because(runs[:1], ("answer",)) is None
-    assert kinds_unused_because(runs[:2], ("answer",)) == "answer is a list"
-    assert kinds_unused_because(runs[2:], ("answer",)) == "answer is None"
+
+@pytest.mark.parametrize(
+    ("value", "reason"),
+    [
+        (json.dumps([1]), "answer is a list"),
+        ('{"a": 1}', "answer is a dict"),
+        ("null", "answer is None"),
+        ("{", "answer is unreadable"),
+    ],
+)
+def test_a_formula_whose_site_answers_a_value_of_another_kind_is_not_used(
+    value: str, reason: str
+) -> None:
+    assert kinds_unused_because(answered("0", value), ("answer",)) == reason
 
 
 def dropped_by(drop: FormulaDrop, *runs: LossRun) -> InputRecord:
@@ -212,12 +224,12 @@ def test_an_input_s_drop_takes_the_site_out_of_use_and_says_why(
     assert notes.count(notes[-1]) == 1
     [state] = summaries.states()
     assert state.state is SummaryState.DROPPED
-    kept = summaries.loops[SITE]
+    kept = summaries.sites[SITE]
     assert kept.tries == [EarlierFormula(QUARTER, f"dropped at input 2: {reason}")]
     assert kept.failed_on == CompleteRun(
-        2,
-        PieceRun(SITE, (GoingIn("n", "21", tracked=True),), (Changed("answer", "1"),)),
+        2, AskedRun((GoingIn("n", "21", tracked=True),), (Changed("answer", "1"),))
     )
+    assert dropped_because(drop) == reason
 
 
 def test_a_drop_whose_run_was_not_recorded_keeps_no_failing_run() -> None:
@@ -228,8 +240,8 @@ def test_a_drop_whose_run_was_not_recorded_keeps_no_failing_run() -> None:
 
     summaries.heard(dropped_by(drop, shift(37, 8, 9, 2)), 2)
 
-    assert summaries.loops[SITE].failed_on is None
-    assert summaries.loops[SITE].last is SummaryState.DROPPED
+    assert summaries.sites[SITE].failed_on is None
+    assert summaries.sites[SITE].last is SummaryState.DROPPED
 
 
 def test_a_drop_at_a_site_not_in_use_changes_nothing() -> None:
@@ -259,4 +271,4 @@ def test_a_dropped_site_is_asked_about_again_with_its_try_and_failing_run_first(
     reason = "dropped at input 2: answer was 1, the formula gave 6"
     assert again.tries == (EarlierFormula(QUARTER, reason),)
     assert again.runs[0] == ShownRun((("n", "21"),), (("answer", "1"),))
-    assert summaries.loops[SITE].last is SummaryState.IN_USE
+    assert summaries.sites[SITE].last is SummaryState.IN_USE

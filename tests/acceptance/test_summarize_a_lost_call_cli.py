@@ -1,6 +1,7 @@
-"""Acceptance tests for the summarize-a-lost-call story through ``pyct run``: the token limit ends
-the asks about loss sites, the summary line lists a loss site with its state, and a recorded run
-replays its asks about loss sites.
+"""Acceptance tests for the summarize-a-lost-call story through ``pyct run``: ``--llm summaries``
+switches the tool on, alone or in ``all``, the token limit ends the asks about loss sites, the
+summary line lists a loss site with its state, and a recorded run replays its asks about loss
+sites.
 
 Each run's base URLs point at a stub on localhost or at a local port nothing listens on, and
 neither real key reaches pyct, so no request leaves the machine.
@@ -27,6 +28,27 @@ from tests.acceptance.lost_calls import (
 )
 
 SEED = '{"n": 3}'
+
+
+# llm-switch-per-tool-summaries-alone
+def test_llm_summaries_switches_on_summaries_alone(stub: Stub, tmp_path: Path) -> None:
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "summaries", target=SHIFTED)
+
+    assert result.returncode == 0, result.stderr
+    assert llm_lines(result.stderr)[0].endswith("tools: summaries")
+    assert not any("Suggest seeds" in str(each.body) for each in stub.received)
+
+
+# llm-switch-per-tool-all-holds-summaries
+def test_llm_all_holds_summaries_after_seeds_and_before_rewrites(
+    stub: Stub, tmp_path: Path
+) -> None:
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "all", target=SHIFTED)
+
+    assert result.returncode == 0, result.stderr
+    assert (
+        llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, summaries, rewrites"
+    )
 
 
 def asked_places(stub: Stub) -> list[str]:

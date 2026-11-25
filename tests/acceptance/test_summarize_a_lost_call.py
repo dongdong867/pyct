@@ -19,12 +19,20 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.core.foundation.branch import Site
 from pyct.results.causes import WhyEntry
-from pyct.results.record import InputRecord
+from pyct.results.llm_asks import AskCost, Unanswered, Why
+from pyct.results.record import InputRecord, RunResult
+from pyct.run import loop, stuck
 from pyct.run import run as run_module
+from pyct.run.isolation import Isolation
+from pyct.run.run import run
+from pyct.run.setup import Setup
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, Stuck
 from pyct.run.summaries import Summaries
 from pyct.run.summary_asks import SummaryReply, SummaryRequest
+from pyct.run.target import interception, load_target
 from tests.acceptance.llm_summaries import (
+    ONE_MOMENT,
+    TOKENS,
     FakeSummaries,
     Summarized,
     one_thread,  # noqa: F401
@@ -44,6 +52,44 @@ from tests.acceptance.lost_calls import (
     place,
     places,
 )
+
+LATE_SEED: dict[str, object] = {"s": "a", "n": 3}
+
+
+@pytest.fixture
+def moments(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """The inputs the run had at each moment it held, counted as ``Stuck.hold`` is called."""
+    held: list[int] = []
+    hold = stuck.Stuck.hold
+
+    def counted(self: stuck.Stuck, run: stuck.Running) -> None:
+        held.append(len(run.records))
+        hold(self, run)
+
+    monkeypatch.setattr(stuck.Stuck, "hold", counted)
+    return held
+
+
+@pytest.fixture
+def causes(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """The inputs the run had each time it worked out the causes of its missed lines, counted as
+    ``Loop.causes``, the run's one call of the cause analysis, is called."""
+    worked_out: list[int] = []
+    causes_of = loop.Loop.causes
+
+    def counted(self: loop.Loop, stop_at: float | None) -> object:
+        worked_out.append(len(self.records))
+        return causes_of(self, stop_at)
+
+    monkeypatch.setattr(loop.Loop, "causes", counted)
+    return worked_out
+
+
+def plain(spec: str, seed: dict[str, object], limits: Limits) -> RunResult:
+    """``spec`` from ``seed`` with no LLM tool."""
+    setup = Setup(isolation=Isolation.IN_PROCESS)
+    with interception(spec):
+        return run(load_target(spec), seed, limits=limits, setup=setup)
 
 
 def said_about(done: Summarized, site: str) -> list[str]:
@@ -227,3 +273,32 @@ def test_summaries_give_up_an_entry_with_no_source_and_guesses_take_it_then(
     assert entry.condition is not None
     assert (entry.condition.site, entry.sources) == (condition, ())
     assert guesses.handed == [(1, (entry,))]
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-token-limit
+def test_no_moment_comes_once_a_loss_site_s_ask_reached_the_token_limit(
+    causes: list[int],
+) -> None:
+    # a formula that fails its check, so that none comes into use
+    provider = FakeSummaries([HALF], limit=sum(TOKENS))
+
+    done = run_summaries(LATE, LATE_SEED, provider)
+
+    assert places(provider) == [place(53, 11)]
+    assert causes == []
+    alone = plain(LATE, LATE_SEED, ONE_MOMENT)
+    assert done.result.stopped == alone.stopped
+    assert [record.args for record in done.records] == [record.args for record in alone.records]
+
+
+# llm-stuck-moment-needs-a-tool-that-can-ask-after-a-failed-ask
+def test_a_moment_comes_after_a_loss_site_s_ask_that_failed(moments: list[int]) -> None:
+    failed = Unanswered(Why.PROVIDER, "provider error 500", AskCost(1))
+    provider = FakeSummaries([failed, HALF])
+
+    done = run_summaries(LATE, LATE_SEED, provider)
+
+    assert places(provider) == [place(53, 11)]
+    assert "llm: summaries ask skipped: provider error 500" in done.said
+    assert moments
+    assert provider.inputs_then[0] <= moments[0]

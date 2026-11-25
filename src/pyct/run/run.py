@@ -120,8 +120,8 @@ def run(
 
 
 def _went(loop: Loop, starts: Sequence[Start], summaries: Summaries | None) -> Looped:
-    """The run's loop gone through from its starts; as it ends, however it ends, no loop of the
-    run is in use any more."""
+    """The run's loop gone through from its starts; as it ends, however it ends, no loss site of
+    the run is in use any more."""
     try:
         return loop.go(starts)
     finally:

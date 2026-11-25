@@ -1,6 +1,6 @@
 """Summaries' form check of the reply's code, which reads the parsed code before anything runs.
 
-A formula is one function, ``summary``, on the loop's parameters, of at most
+A formula is one function, ``summary``, on the loss site's parameters, of at most
 ``MOST_STATEMENTS`` statements, each an assignment to names or an ``if``
 holding the same, and a last ``return`` of a dict display keyed by the
 changed names; a leading docstring and a ``pass`` do nothing, and the check

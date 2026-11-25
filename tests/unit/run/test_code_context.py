@@ -9,8 +9,11 @@ from typing import ClassVar
 
 import pytest
 
-from pyct.run.code_context import MARK_END, MARK_START, code_around, code_context, code_with_piece
+from pyct.run.code_context import code_around, code_context, code_with_piece, marks
 from pyct.run.target import Target, load_target
+
+# the comments that mark a loss site's first and last line
+MARK_START, MARK_END = marks("call")
 
 
 def headers(code: str) -> list[str]:
@@ -222,7 +225,7 @@ def test_the_code_around_a_piece_marks_it_and_brings_the_function_s_callees(
     monkeypatch.syspath_prepend(str(tmp_path))
     target = load_target("piece_context.m::helper")
 
-    code = code_with_piece(target, str(package / "m.py"), (8, 9))
+    code = code_with_piece(target, str(package / "m.py"), (8, 9), "call")
 
     assert code == (
         "# piece_context.m.Box.f\n"
@@ -287,7 +290,7 @@ def test_reading_the_loaded_module_for_a_piece_runs_none_of_its_code(
     target = load_target("lazy_context.m::helper")
     module = sys.modules["lazy_context.m"]
 
-    code = code_with_piece(target, str(package / "m.py"), (8, 9))
+    code = code_with_piece(target, str(package / "m.py"), (8, 9), "call")
 
     assert code.startswith(f"# lazy_context.m.Box.f\ndef f(self, s):\n    t = 0\n    {MARK_START}")
     assert code.endswith("# lazy_context.m.helper\ndef helper(n):\n    return n + 1")
@@ -352,7 +355,7 @@ def test_reading_a_class_method_s_wrapper_of_a_subclass_runs_none_of_its_code(
     target = load_target("wrapped_calls.m::builds")
 
     code = code_context(target)
-    piece = code_with_piece(target, str(package / "m.py"), (8, 9))
+    piece = code_with_piece(target, str(package / "m.py"), (8, 9), "call")
 
     assert headers(code) == [
         "# wrapped_calls.m.builds",
@@ -420,7 +423,7 @@ def test_unwrapping_a_class_or_static_method_of_a_hooked_subclass_runs_none_of_i
     loop = text.splitlines().index("        for d in s:") + 1
 
     code = code_context(target)
-    piece = code_with_piece(target, str(package / "m.py"), (loop, loop + 1))
+    piece = code_with_piece(target, str(package / "m.py"), (loop, loop + 1), "call")
 
     assert headers(code) == [
         "# hooked_calls.m.builds",
@@ -437,7 +440,7 @@ def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
 ) -> None:
     file = write(tmp_path, "def f(s):\n    t = [c for c in s]\n    return t\n")
 
-    code = code_with_piece(load_target("targets.llm.seeds::f"), file, (2, 2))
+    code = code_with_piece(load_target("targets.llm.seeds::f"), file, (2, 2), "call")
 
     assert (
         code == f"def f(s):\n    {MARK_START}\n    t = [c for c in s]\n    {MARK_END}\n    return t"
@@ -447,4 +450,4 @@ def test_the_code_around_a_piece_of_a_module_not_loaded_is_its_function_marked(
 def test_a_piece_in_a_file_that_does_not_read_gives_no_code(tmp_path: Path) -> None:
     target = load_target("targets.llm.seeds::f")
 
-    assert code_with_piece(target, str(tmp_path / "gone.py"), (1, 2)) == ""
+    assert code_with_piece(target, str(tmp_path / "gone.py"), (1, 2), "call") == ""

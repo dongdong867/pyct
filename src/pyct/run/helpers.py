@@ -15,8 +15,8 @@ class Helpers:
     reads engine state.
 
     ``seeds`` is asked once, before the first input, for seeds that run after the user's own.
-    ``summaries`` is asked at a stuck moment for a formula of what a loop changes
-    (``pyct.run.summaries``). ``rewrites`` is asked at a stuck moment for an easier condition
+    ``summaries`` is asked between passes for a formula of the answer of a call pyct cannot
+    follow (``pyct.run.summaries``). ``rewrites`` is asked at a stuck moment for an easier condition
     in place of one whose asks ran out (``pyct.run.rewrites``).
     """
 

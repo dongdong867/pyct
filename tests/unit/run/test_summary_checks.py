@@ -9,11 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import Changed, GoingIn
 from pyct.execution.blame import one_line
 from pyct.intercept.model_code import Refused
 from pyct.run import model_runs
 from pyct.run.summary_checks import (
+    AskedRun,
     CompleteRun,
     Ended,
     Formula,
@@ -22,7 +23,6 @@ from pyct.run.summary_checks import (
 )
 from pyct.run.summary_form import FormCheck
 
-SITE = Site("/t/m.py", 10, 4)
 PARAMETERS = ("s", "t")
 
 
@@ -43,7 +43,7 @@ def refusal(code: str) -> str:
 
 def run_of(number: int, s: str, t: int = 0, *, tracked: bool = True) -> CompleteRun:
     going_in = (GoingIn("s", f'"{s}"', tracked), GoingIn("t", str(t), False))
-    return CompleteRun(number, PieceRun(SITE, going_in, (Changed("t", str(t + s.count("z"))),)))
+    return CompleteRun(number, AskedRun(going_in, (Changed("t", str(t + s.count("z"))),)))
 
 
 RUNS = (run_of(1, "ab"), run_of(2, "zz"), run_of(4, "az", 1))
@@ -384,7 +384,7 @@ def test_a_correct_formula_passes_on_runs_whose_values_pass_the_answer_s_capacit
     def long_run(number: int) -> CompleteRun:
         s = f"{number:04}" + "z" * 2_000
         going_in = (GoingIn("s", json.dumps(s), True), GoingIn("t", '""', False))
-        return CompleteRun(number, PieceRun(SITE, going_in, (Changed("t", json.dumps(s)),)))
+        return CompleteRun(number, AskedRun(going_in, (Changed("t", json.dumps(s)),)))
 
     runs = tuple(long_run(number) for number in range(1, 601))
     assert sum(len(each.run.changed[0].value) for each in runs) > model_runs.ANSWER_CAPACITY

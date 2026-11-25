@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pyct.core.foundation.branch import Branch, Expression, as_the_code_read_it
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.llm_asks import LlmUse, LoopSummary
+from pyct.results.llm_asks import LlmUse, SiteSummary
 from pyct.results.printed import CUT, PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
@@ -51,7 +51,7 @@ def render_summary(result: RunResult, llm: LlmUse | None = None) -> str:
     carries. The coverage is written the way an input line writes its own,
     and ``uncovered`` is keyed like ``total``: a file with nothing left over
     carries an empty list rather than dropping out. ``llm`` is what the
-    run's LLM tools did, with each loop summaries asked about, null for a
+    run's LLM tools did, with each loss site summaries asked about, null for a
     run with no ``--llm``.
     """
     payload = {
@@ -71,9 +71,9 @@ def render_summary(result: RunResult, llm: LlmUse | None = None) -> str:
     return json.dumps(payload)
 
 
-def _llm(use: LlmUse, summaries: tuple[LoopSummary, ...]) -> dict[str, object]:
+def _llm(use: LlmUse, summaries: tuple[SiteSummary, ...]) -> dict[str, object]:
     """The LLM's model, tools and counts, its tokens in and out, its wait to the millisecond, and
-    each loop summaries asked about, an empty list when none."""
+    each loss site summaries asked about, an empty list when none."""
     return {
         "model": use.model,
         "tools": list(use.tools),
@@ -86,22 +86,21 @@ def _llm(use: LlmUse, summaries: tuple[LoopSummary, ...]) -> dict[str, object]:
     }
 
 
-def _summary(loop: LoopSummary) -> dict[str, object]:
-    """One loop or loss site summaries asked about. A loop and a comprehension are each written
-    ``loop``, and a loss site ``call`` with its ``name``, each with no condition."""
-    named = {} if loop.name is None else {"name": loop.name}
+def _summary(site: SiteSummary) -> dict[str, object]:
+    """One loss site summaries asked about, written ``call`` with its ``name`` and no
+    condition."""
     return {
-        "kind": loop.kind,
-        **named,
-        "file": loop.file,
-        "line": loop.line,
-        "col": loop.col,
-        "changes": list(loop.changes),
-        "formula": loop.formula,
+        "kind": "call",
+        "name": site.name,
+        "file": site.file,
+        "line": site.line,
+        "col": site.col,
+        "changes": list(site.changes),
+        "formula": site.formula,
         "condition": None,
-        "state": loop.state.value,
-        "tries": loop.tries,
-        "checked_on": loop.checked_on,
+        "state": site.state.value,
+        "tries": site.tries,
+        "checked_on": site.checked_on,
     }
 
 

@@ -196,14 +196,11 @@ def note_line(note: Note) -> str | None:
 
 
 def summary_line(note: SummaryNote) -> str:
-    """The stderr line a summaries note gives, the loop's site written ``file:line``, a loss
-    site's ``the call <name> at file:line:col``, each character a terminal reads escaped as
-    Python escapes it. A formula's statements written below go each on a line of its own,
-    indented."""
+    """The stderr line a summaries note gives, its loss site written ``the call <name> at
+    file:line:col``, each character a terminal reads escaped as Python escapes it. A formula's
+    statements written below go each on a line of its own, indented."""
     site = note.site
-    at = f"llm: summary for the loop at {site.file}:{site.line}"
-    if note.call is not None:
-        at = f"llm: summary for the call {note.call} at {site.file}:{site.line}:{site.col}"
+    at = f"llm: summary for the call {note.call} at {site.file}:{site.line}:{site.col}"
     match note:
         case SummaryRead(_, formula, below=True):
             return f"{at}:" + "".join(f"\n    {_escaped(each)}" for each in formula.splitlines())
