@@ -61,7 +61,7 @@ CALL = "call"
 # the one name a loss site's formula gives a value
 CHANGED = (ANSWER,)
 # the answers a formula can stand for
-_ANSWERS = (int, float, str, bool)
+ANSWERS = (int, float, str, bool)
 
 
 @dataclass
@@ -177,7 +177,7 @@ def skipped_because(call: AskedCall) -> str | None:
     if not call.runs:
         return "no recorded run"
     answer = call.answer
-    if isinstance(answer, _ANSWERS):
+    if isinstance(answer, ANSWERS):
         return None
     return "the answer is None" if answer is None else f"the answer is a {type(answer).__name__}"
 

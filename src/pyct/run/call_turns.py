@@ -34,6 +34,7 @@ from pyct.results.llm_asks import SummaryState
 from pyct.results.record import InputRecord
 from pyct.results.source_files import SourceFiles
 from pyct.run.call_summaries import (
+    ANSWERS,
     CHANGED,
     AskedCall,
     LossSites,
@@ -59,8 +60,6 @@ NO_RECORDED_RUN = "no recorded run"
 IN_PYCT_S_PROCESS = "inputs run in pyct's own process"
 # the states of a loss site whose formula is kept
 _KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
-# the kinds of the answers a loss site in use can give
-_KINDS = (int, float, str, bool)
 # each other kind a value's JSON text reads as, in plain words
 _OTHER_KINDS: dict[type, str] = {list: "a list", dict: "a dict", type(None): "None"}
 
@@ -251,7 +250,7 @@ def _kind(text: str) -> str | None:
         value = json.loads(text)
     except ValueError:
         return "unreadable"
-    if isinstance(value, _KINDS):
+    if isinstance(value, ANSWERS):
         return None
     return _OTHER_KINDS[type(value)]
 
