@@ -69,7 +69,7 @@ def test_llm_all_holds_summaries_after_seeds_and_before_rewrites(
 
     assert result.returncode == 0, result.stderr
     assert (
-        llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, summaries, rewrites"
+        llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, summaries, rewrites, guesses"
     )
 
 
