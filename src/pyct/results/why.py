@@ -129,6 +129,38 @@ def _work_out(
 
 
 @dataclass(frozen=True)
+class Along:
+    """How far a run got along one line's way: the way's steps, in the order a run meets them,
+    and the number from 1 of the first input that passed the deepest of its nodes any input
+    passed, None when no input passed one or the stop came before it was found."""
+
+    steps: tuple[Step, ...] = ()
+    furthest: int | None = None
+
+
+def along(file: str, line: int, run: Run) -> Along:
+    """How far the run's inputs got along the way to ``line`` of ``file``, until the run's stop.
+
+    Empty for a line no function holds, for one of a function too large to read before the
+    stop, and when the stop comes before the way is read.
+    """
+    if run.late():
+        return Along()
+    try:
+        seen = _Seen.of(file, frozenset[int]().union(*(each.lines for each in run.walked)), run)
+        code = seen.owners.get(line)
+        if code is None:
+            return Along()
+        walk = _Walk.of(seen, code)
+        steps = walk.flow.way(line)
+    except (OutOfTimeError, UnaffordableError):
+        return Along()
+    with contextlib.suppress(OutOfTimeError):
+        return Along(steps, walk.furthest(line))
+    return Along(steps)
+
+
+@dataclass(frozen=True)
 class _Input:
     """One input as a file's flow reads it: its lines, its forks there, and how it ended."""
 
@@ -144,6 +176,8 @@ class _Seen:
     file: str
     covered: frozenset[int]
     inputs: tuple[_Input, ...]
+    # the number from 1 of the first walked input each of ``inputs`` stands for
+    numbers: tuple[int, ...]
     run: Run
     owners: dict[int, types.CodeType | None]
     # the operator of each fork recorded at each site, raising forks aside (`senses.heads_of`)
@@ -161,27 +195,22 @@ class _Seen:
         # inputs that took one path are one input to every question asked of them; one step
         # for each input and each of its forks, since one input may hold many
         pace = Pace(run.late)
-        inputs = tuple(
-            dict.fromkeys(
-                _Input(
-                    each.lines,
-                    tuple(
-                        _fork(branch)
-                        for branch in pace.each(each.tested)
-                        if branch.site.file == file
-                    ),
-                    each.failed,
-                )
-                for each in pace.each(run.walked)
+        firsts: dict[_Input, int] = {}
+        for number, each in enumerate(pace.each(run.walked), start=1):
+            forks = tuple(
+                _fork(branch) for branch in pace.each(each.tested) if branch.site.file == file
             )
-        )
+            firsts.setdefault(_Input(each.lines, forks, each.failed), number)
         heads = heads_of(
             ((branch.site.line, branch.site.col), branch.expression)
             for each in pace.each(run.walked)
             for branch in pace.each(each.tested)
             if branch.site.file == file and not branch.raising
         )
-        return cls(file, covered, inputs, run, _owners(file), heads, _own(file, run, pace))
+        own = _own(file, run, pace)
+        return cls(
+            file, covered, tuple(firsts), tuple(firsts.values()), run, _owners(file), heads, own
+        )
 
     @functools.cached_property
     def origins(self) -> Origins:
@@ -358,6 +387,13 @@ class _Walk:
         """The deepest node on the line's way some input is shown to have passed."""
         chain = [node for node in self.flow.chain(line) if node in self.passed]
         return chain[-1] if chain else None
+
+    def furthest(self, line: int) -> int | None:
+        """The number from 1 of the first input that passed the deepest node on the line's way
+        any input passed, None when no input passed one."""
+        frontier = self._frontier(line)
+        marks = zip(self.seen.numbers, self._marks, strict=True)
+        return next((number for number, marked in marks if frontier in marked), None)
 
     def _reached(self, place: Place) -> bool:
         """Whether an input reached a condition: its block ran, or a fork was recorded there.
