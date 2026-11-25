@@ -50,21 +50,23 @@ def test_llm_all_and_guesses_ask_for_guesses_and_summaries_rewrites_do_not(
     assert "it takes seeds, summaries, rewrites, guesses" in refused.stderr
 
 
+def recorded_guess(folder: Path) -> Path:
+    """A recording whose first guess ask answered `{"s": "x"}`, under a request text that differs
+    from this run's."""
+    reply = {
+        "tool": "guesses",
+        "place": f"{HANDLER}#1",
+        "reply": '[{"s": "x"}]',
+        "request": "lines this run does not ask about",
+    }
+    return write_recording(folder / "recorded.jsonl", [reply])
+
+
 # llm-guess-for-a-stuck-line-replayed
 def test_a_recorded_guesses_run_replays_its_first_guess_ask_with_no_model(
     stub: Stub, tmp_path: Path
 ) -> None:
-    recorded = write_recording(
-        tmp_path / "recorded.jsonl",
-        [
-            {
-                "tool": "guesses",
-                "place": f"{HANDLER}#1",
-                "reply": '[{"s": "x"}]',
-                "request": "lines this run does not ask about",
-            }
-        ],
-    )
+    recorded = recorded_guess(tmp_path)
 
     replayed = llm_run(
         closed_port(),
