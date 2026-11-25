@@ -11,7 +11,7 @@ import pytest
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
 from pyct.core.entry import in_use
-from pyct.core.foundation.branch import Changed, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, PieceRun, Site
 from pyct.results.causes import Condition, Reason, Source, SourceKind, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, LoopSummary, SummaryState, Unanswered, Why
@@ -171,6 +171,25 @@ def test_an_entry_that_names_a_call_no_input_recorded_is_given_up_with_no_ask() 
 
     assert fake.requests == []
     assert handled == Handled((Outcome.GAVE_UP,), asked=False)
+    assert notes == []
+
+
+def test_an_entry_that_names_only_a_loop_is_given_up_with_no_ask() -> None:
+    notes: list[Note] = []
+    told = Told(scope=Scope.of_module(FILE), tell=Tell(noted=notes.append))
+    tool = Summaries(fake := Fake(), load_target(COUNTS), told, isolated=apart)
+    lost = LossRun(
+        CALL, "bin", LossKind.CALL, (GoingIn("arg1", "3", True),), (Changed("answer", '"0b11"'),)
+    )
+    waiting = InputRecord(args={}, forks=(), covered_lines=frozenset(), losses=(lost,))
+
+    alone = tool.take((entry(LOOPED),), Moment(1, (), Run([])))
+    tool.heard(waiting, 1)
+    beside = tool.take((entry(LOOPED),), Moment(2, (), Run([waiting])))
+
+    assert fake.requests == []
+    assert alone == Handled((Outcome.GAVE_UP,), asked=False)
+    assert beside == Handled((Outcome.SKIPPED,), asked=False)
     assert notes == []
 
 
