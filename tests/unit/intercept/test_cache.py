@@ -113,7 +113,7 @@ def test_a_touched_file_with_the_same_source_is_kept_and_then_trusted(tmp_path: 
     assert (module.reads, module.builds) == (2, ["x = 1"])
 
 
-def test_an_entry_kept_with_no_variant_is_where_it_always_was(tmp_path: Path) -> None:
+def test_an_entry_is_where_it_always_was(tmp_path: Path) -> None:
     module = Module(tmp_path, "x = 1")
 
     module.code(tmp_path / "cache")
@@ -130,19 +130,6 @@ def test_an_entry_kept_with_no_variant_is_where_it_always_was(tmp_path: Path) ->
     name = hashlib.sha256(key).hexdigest()[:32]
     version = cache._digest(cache._version_files())
     assert entries(tmp_path / "cache") == [tmp_path / "cache" / "substituted" / version / name]
-
-
-@pytest.mark.usefixtures("settled")
-def test_code_built_for_a_variant_is_kept_apart_from_the_plain_entry(tmp_path: Path) -> None:
-    module = Module(tmp_path, "x = 1")
-
-    plain = module.code(tmp_path / "cache")
-    varied = cached(tmp_path / "cache", str(module.path), module.read, module.build, "pieces")
-    again = cached(tmp_path / "cache", str(module.path), module.read, module.build, "pieces")
-
-    assert module.builds == ["x = 1", "x = 1"]
-    assert len(entries(tmp_path / "cache")) == 2
-    assert plain.co_consts == varied.co_consts == again.co_consts
 
 
 def test_another_module_path_has_its_own_entry(tmp_path: Path) -> None:

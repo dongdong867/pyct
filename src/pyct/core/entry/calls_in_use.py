@@ -26,8 +26,8 @@ the input, and the caller is handed a `FormulaDrop`. A raise that is not an
 ``Exception``, the deadline's, passes through.
 
 A site does not apply, and the target gets the real answer as before, while
-any formula runs, a loop's or a site's, so that a formula that reaches a site
-in use does not call it; when the values going in are not as many as the
+any site's formula runs, so that a formula that reaches a site in use does
+not call it; when the values going in are not as many as the
 formula's positions; and when the real answer's type is not exactly int,
 float, str or bool, so that the target never loses a subclass's own
 attributes.
@@ -45,7 +45,7 @@ from typing import Any, cast, override
 from pyct.core.entry import in_use
 from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE, CallInUse
 from pyct.core.entry.plain_copy import SCALARS
-from pyct.core.entry.waiting import json_text
+from pyct.core.entry.plain_json import json_text
 from pyct.core.foundation.branch import Downgrade, DropReason, FormulaDrop, Site, placed_at
 from pyct.core.lists.list_state import plain
 from pyct.core.numbers.ints import ConcolicInt

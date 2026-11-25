@@ -3,7 +3,7 @@ lines and branches, and the way each branch went."""
 
 from collections.abc import Callable, Mapping
 
-from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, LossRun, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, LossRun, Site
 from pyct.execution.execute import ExecutionContext, execute
 
 SOURCE = """\
@@ -63,9 +63,6 @@ class Heard:
 
     def went(self, line: int, to: int) -> None:
         self.reached.append(("went", line, to))
-
-    def piece(self, run: PieceRun) -> None:
-        self.rest.append(run)
 
     def loss(self, run: LossRun) -> None:
         self.rest.append(run)

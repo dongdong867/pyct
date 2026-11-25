@@ -7,8 +7,8 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyct.core.entry import losses, pieces, watch
-from pyct.core.entry.pieces import MOST_RUNS
+from pyct.core.entry import losses, watch
+from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.entry.watch import answer, called, given
 from pyct.core.foundation.branch import (
     Callee,
@@ -31,14 +31,12 @@ def no_call_open() -> None:
 def live(*, recording: bool = True) -> Iterator[list[SinkItem]]:
     """A live input whose sink is the list yielded, its loss runs recorded with ``recording``."""
     sink: list[SinkItem] = []
-    pieces.start(sink)
     if recording:
         losses.start(sink)
     try:
         yield sink
     finally:
         losses.forget()
-        pieces.forget()
 
 
 def runs(sink: list[SinkItem]) -> list[LossRun]:

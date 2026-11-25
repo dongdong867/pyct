@@ -35,7 +35,7 @@ kind) and its payload, padded to 8 bytes:
 - fork: JSON ``[expression, taken, file, line, col, raising]``, the
   expression a leaf or ``[n]``, and a seventh item, a bool, for a fork an
   `is` noted with whether it held (``Branch.is_held``). A formula's fork
-  (``Branch.summary``), one a loop's formula recorded or one that reads a
+  (``Branch.summary``), one a loss site's formula recorded or one that reads a
   value a formula gave, has a seventh item, that bool or null, and an
   eighth, ``true``.
 - fact: a fact the path holds beside its forks (``Fact``), written as a fork
@@ -50,12 +50,11 @@ kind) and its payload, padded to 8 bytes:
   it to the entry before when that one has its name.
 - end: JSON ``null`` for a call that returned, else ``[kind, detail,
   traceback]``.
-- piece and loss: a recorded run of a piece of the target's code
-  (``PieceRun``) or of a loss site (``LossRun``), as ``journal_pieces``
-  writes them.
-- drop: a loop's formula dropped in the call (``FormulaDrop``), as JSON
+- drop: a loss site's formula dropped in the call (``FormulaDrop``), as JSON
   ``[file, line, col, name, value, got, reason, run]``, ``run`` null for a
   run not recorded.
+- loss: a recorded run of a loss site (``LossRun``), as ``journal_losses``
+  writes it.
 
 A record's bytes go first and the committed mark moves past them after, so
 the journal holds a readable prefix at every instant. Every word the
@@ -89,15 +88,15 @@ reader cannot read stops the reading at its byte; either way the input's
 line says pyct failed, since its facts are known to be incomplete. In every
 case the facts before the stop stay.
 
-The recorded runs of an input's pieces and loss sites have bytes of their
-own past the journal's, ``PIECE_ROOM`` in the journal pyct maps, so that whether the
-pieces switch is on never moves where an input's journal fills: the other
-records end where they would with no run written, and the note names the
-journal's own bytes. A run that does not fit in what is left of that room
-is dropped, and the writer goes on. The room holds every run one input
+The recorded runs of an input's loss sites have bytes of their own past
+the journal's, ``RUN_ROOM`` in the journal pyct maps, so that whether
+summaries are switched on never moves where an input's journal fills: the
+other records end where they would with no run written, and the note names
+the journal's own bytes. A run that does not fit in what is left of that
+room is dropped, and the writer goes on. The room holds every run one input
 records: a run's record takes at most 4 bytes for each it counts against
-``MOST_TEXT`` (``pyct.core.entry.pieces.size``, ``pyct.core.entry.losses.size``),
-its UTF-8 at most 4 a character and its head and NULs within what the count
+``MOST_TEXT`` (``pyct.core.entry.losses.size``), its UTF-8 at most 4 a
+character and its head and NULs within what the count
 adds, so the runs a journal holds are the runs the input recorded, however
 it ran.
 """
@@ -117,16 +116,15 @@ from pyct.core.foundation.branch import (
     Fact,
     FormulaDrop,
     LossRun,
-    PieceRun,
     Site,
 )
 from pyct.results.failure import Failure
-from pyct.run.journal_pieces import loss_payload, piece_payload
+from pyct.run.journal_losses import loss_payload
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes
 CAPACITY = 256 * 1024 * 1024
-# the bytes past those that hold the recorded runs of the input's pieces, theirs alone
-PIECE_ROOM = 4 * MOST_TEXT
+# the bytes past those that hold the recorded runs of the input's loss sites, theirs alone
+RUN_ROOM = 4 * MOST_TEXT
 
 type Journal = mmap.mmap | bytearray
 
@@ -144,10 +142,7 @@ NUMBER = struct.Struct("<q")
 WAY = struct.Struct("<qq")
 # a downgrade's count, then its site's line and column
 COUNTED = struct.Struct("=Qqq")
-LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT, PIECE, DROP = range(1, 13)
-LOSS = 13
-# the kinds whose records take the room the recorded runs have of their own
-RUNS = (PIECE, LOSS)
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT, DROP, LOSS = range(1, 13)
 OPEN, FULL, UNENCODABLE, BOUNDED = 0, 1, 2, 3
 
 # the bytes at a journal's end that only the call's ending may take, a long traceback's included;
@@ -163,22 +158,22 @@ class JournalWriter:
     """Writes one input's facts into its journal as they happen. It is the call's ``Watch``.
 
     It never raises into the target: a fact it cannot keep stops it, with a
-    note the reader turns into the input's failure. ``pieces`` is how many of
+    note the reader turns into the input's failure. ``runs`` is how many of
     the buffer's last bytes are the room of the recorded runs of the input's
-    pieces, ``PIECE_ROOM`` in the journal pyct maps.
+    loss sites, ``RUN_ROOM`` in the journal pyct maps.
     """
 
-    def __init__(self, buffer: Journal, pieces: int = 0) -> None:
+    def __init__(self, buffer: Journal, runs: int = 0) -> None:
         self._buffer = buffer
         # the bytes the runs have of their own, and those their records took
-        self._piece_room = pieces
-        self._pieces = 0
+        self._run_room = runs
+        self._runs_taken = 0
         self._words = memoryview(buffer)[: len(buffer) // WORD.size * WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
         self._detached = False
         self._full = False
-        self._room = min(END_ROOM, (len(buffer) - pieces - RECORDS) // 4)
+        self._room = min(END_ROOM, (len(buffer) - runs - RECORDS) // 4)
         # where the last downgrade entry's count sits, and the name and site it counts
         self._count_at: int | None = None
         self._counting: tuple[str, Site] | None = None
@@ -245,18 +240,13 @@ class JournalWriter:
             self._count_at = at + HEAD.size
             self._counting = (name, site)
 
-    def piece(self, run: PieceRun) -> None:
-        """Write a recorded run of a piece into the room the runs have of their own, or drop it
-        when it does not fit there."""
-        self._record(PIECE, piece_payload(run))
-
     def loss(self, run: LossRun) -> None:
         """Write a recorded run of a loss site into the room the runs have of their own, or drop
         it when it does not fit there."""
         self._record(LOSS, loss_payload(run))
 
     def drop(self, drop: FormulaDrop) -> None:
-        """Write a loop's formula dropped in the call, among the input's own facts."""
+        """Write a loss site's formula dropped in the call, among the input's own facts."""
         site = drop.site
         fields = [site.file, site.line, site.col, drop.name, drop.value, drop.got, drop.reason]
         self._json(DROP, [*fields, drop.run])
@@ -340,11 +330,11 @@ class JournalWriter:
             return False
         at = self._at
         taken = HEAD.size + padded(len(payload))
-        if kind in RUNS and self._pieces + taken > self._piece_room:
+        if kind == LOSS and self._runs_taken + taken > self._run_room:
             return False
         if at + taken > self._end_of(kind):
-            if kind not in RUNS:
-                own = len(self._buffer) - self._piece_room
+            if kind != LOSS:
+                own = len(self._buffer) - self._run_room
                 self._stop(FULL, f"the journal is full at {own} bytes")
             return False
         HEAD.pack_into(self._buffer, at, len(payload), kind)
@@ -352,8 +342,8 @@ class JournalWriter:
         self._at = at + taken
         self._words[COMMITTED] = at + taken
         # counted once committed, so the alarm landing before then moves the others' end no later
-        if kind in RUNS:
-            self._pieces += taken
+        if kind == LOSS:
+            self._runs_taken += taken
         return True
 
     def _end_of(self, kind: int) -> int:
@@ -362,9 +352,9 @@ class JournalWriter:
         left."""
         if kind == END:
             return len(self._buffer)
-        if kind in RUNS:
+        if kind == LOSS:
             return len(self._buffer) - self._room
-        return len(self._buffer) - self._room - self._piece_room + self._pieces
+        return len(self._buffer) - self._room - self._run_room + self._runs_taken
 
     def _stop(self, state: int, note: str) -> None:
         """Note why nothing more is written, and write nothing more. A bound noted before stays

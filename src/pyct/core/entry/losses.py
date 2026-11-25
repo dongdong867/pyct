@@ -15,8 +15,8 @@ operation; a watched call's are the arguments the watch was given, each
 written as JSON text when it was given, while its call has started fewer
 than `MOST_RUNS` times in the input. A run is kept only when each value is
 plain JSON data shorter than `MOST_VALUE`, a tuple not being such data, and
-while it fits in what the input's recorded runs count together with the
-pieces' runs (`pyct.core.entry.pieces.counted`). When two downgrade names
+while it fits in what the input's recorded runs may count together,
+`MOST_TEXT` by `size`. When two downgrade names
 share a site, the first one recorded there is the site's. Nothing here
 raises into the target.
 
@@ -25,8 +25,7 @@ which hand back what the target gets: the real answer, or at a site in use
 the real answer tracked, which records no downgrade. The run a site's
 formula is dropped on is recorded also past the first `MOST_RUNS`, and the
 drop follows it in the sink, with the run's position among the input's
-recorded runs of the site. While a formula runs, a loop's or a site's, no
-run is recorded.
+recorded runs of the site. While a formula runs, no run is recorded.
 """
 
 from __future__ import annotations
@@ -39,8 +38,8 @@ from collections.abc import Callable, Sequence
 from pyct.core.entry import in_use
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.in_use import ANSWER, CALLS_IN_USE
-from pyct.core.entry.recorded import MOST_RUNS, MOST_VALUE, RUN_COUNT, VALUE_COUNT
-from pyct.core.entry.waiting import json_text
+from pyct.core.entry.plain_json import json_text
+from pyct.core.entry.recorded import MOST_RUNS, MOST_TEXT, MOST_VALUE, RUN_COUNT, VALUE_COUNT
 from pyct.core.foundation.branch import (
     BranchSink,
     Callee,
@@ -64,11 +63,11 @@ _type = type
 
 class _Losses:
     """The live input's recording: where its runs go, the first name at each site, the runs
-    tried and the runs kept at each site, how often each watched call started, by its
-    frame's code and instruction, and the files that hold a loss site in use, none unless its
-    call runs alone."""
+    tried and the runs kept at each site, what the kept runs count together, how often each
+    watched call started, by its frame's code and instruction, and the files that hold a loss
+    site in use, none unless its call runs alone."""
 
-    __slots__ = ("calls", "codes", "files", "kept", "names", "sink", "tried")
+    __slots__ = ("calls", "codes", "files", "kept", "names", "sink", "text", "tried")
 
     def __init__(self) -> None:
         self.sink: BranchSink | None = None
@@ -79,6 +78,7 @@ class _Losses:
         self.names: dict[Site, str] = {}
         self.tried: dict[Site, int] = {}
         self.kept: dict[Site, int] = {}
+        self.text = 0
         self.calls: dict[tuple[int, int], int] = {}
         # each code a watched call's start is counted by, held so its id stays its own
         self.codes: list[types.CodeType] = []
@@ -259,11 +259,12 @@ def _record(lost: Downgrade, run: Callable[[], LossRun | None], *, past: bool) -
             return None
         _LOSSES.tried[site] = tried + 1
         made = run()
-        # imported here, once a run is kept, so that a plain import loads no hook of a piece
-        from pyct.core.entry import pieces
-
-        if made is None or not pieces.counted(size(made)):
+        if made is None:
             return None
+        counted = size(made)
+        if _LOSSES.text + counted > MOST_TEXT:
+            return None
+        _LOSSES.text += counted
         sink.append(made)
         at = _LOSSES.kept.get(site, 0)
         _LOSSES.kept[site] = at + 1
@@ -329,7 +330,7 @@ _TYPE_QUALNAME = type.__dict__["__qualname__"].__get__
 
 
 def size(run: LossRun) -> int:
-    """What a run counts against `pyct.core.entry.recorded.MOST_TEXT`: the characters of its file,
+    """What a run counts against `MOST_TEXT`: the characters of its file,
     its name, its kind, its names and values and its callee's names, `RUN_COUNT` for the run
     and `VALUE_COUNT` for each value."""
     values = [(each.name, each.value) for each in run.going_in]

@@ -52,7 +52,6 @@ def record_of(
         mismatch_at=None if wanted is None else compare(wanted.prefix, executed.branches),
         reach=executed.reach,
         solver_seconds=seconds,
-        pieces=executed.pieces,
         drops=executed.drops,
         losses=executed.losses,
     )
@@ -60,7 +59,7 @@ def record_of(
 
 def source_of(wanted: Plan, source: Source) -> Source:
     """Where the input a pass's answer gave came from: ``summary`` for the solver's own answer
-    when the fork aimed at is a formula's, one a loop's formula recorded or one that reads a
+    when the fork aimed at is a formula's, one a loss site's formula recorded or one that reads a
     value a formula gave (``Branch.summary``), else ``source``, a kept rewrite's included."""
     if source is Source.SOLVER and wanted.prefix[-1].summary:
         return Source.SUMMARY

@@ -87,13 +87,6 @@ def parse_llm(
     return LlmSettings(tools, model, replay, limit)
 
 
-def asks_summaries(tools_text: str | None) -> bool:
-    """Whether ``--llm`` as written names summaries, itself or through ``all``: the run then
-    records each loop's runs, which the interception must know before the target loads. It
-    reads the names alone; ``parse_llm`` refuses a wrong flag."""
-    return tools_text is not None and SUMMARIES_TOOL in _named(tools_text)
-
-
 def _limit(text: str) -> int:
     """A whole number of tokens above zero, as ``int()`` reads one."""
     refusal = f"--llm-limit takes a positive number of tokens, got {text!r}"

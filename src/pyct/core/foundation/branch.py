@@ -97,7 +97,7 @@ class Branch:
     `is` held on that pass; None on any other fork. see-why reads an `is` test's sides from it
     (``results.senses``). Like ``lost_as``, it is not part of the fork, and it is not printed.
 
-    ``summary`` is set on a fork a loop's formula recorded, or whose condition reads a value a
+    ``summary`` is set on a fork a loss site's formula recorded, or whose condition reads a value a
     formula gave (``pyct.core.entry.in_use.summed``): an input aimed at it is labeled
     ``summary``. Like ``lost_as``, it is not part of the fork, and it is not printed.
     """
@@ -184,8 +184,8 @@ class Downgrade:
 
 @dataclass(frozen=True)
 class GoingIn:
-    """A name going into a run of a piece of the target's code, bound when the run started: its
-    value then, as JSON text, and whether it was a tracked value."""
+    """A value going into a run of a loss site, by its position's name: its value then, as JSON
+    text, and whether it was a tracked value."""
 
     name: str
     value: str
@@ -194,26 +194,10 @@ class GoingIn:
 
 @dataclass(frozen=True)
 class Changed:
-    """A changed name of a run of a piece of the target's code, bound when the run ended, and
-    its value then, as JSON text."""
+    """The value a run of a loss site gave, by its name, ``answer``, as JSON text."""
 
     name: str
     value: str
-
-
-@dataclass(frozen=True)
-class PieceRun:
-    """One recorded run of a piece of the target's code: a loop, or an assignment of a
-    comprehension (`pyct.core.entry.pieces`).
-
-    ``site`` is the piece's file, line and column. ``going_in`` and
-    ``changed`` follow the order of the piece's names, each sorted, and leave
-    out a name that was not bound.
-    """
-
-    site: Site
-    going_in: tuple[GoingIn, ...]
-    changed: tuple[Changed, ...]
 
 
 class LossKind(StrEnum):
@@ -252,8 +236,8 @@ class LossRun:
 
 
 class DropReason(StrEnum):
-    """Why a loop's formula was dropped in an input: a changed value it gave is not the loop's,
-    it raised, or it gave no value for a changed name."""
+    """Why a loss site's formula was dropped in an input: the answer it gave is not the target's,
+    it raised, or it gave no answer."""
 
     MISMATCH = "mismatch"
     RAISED = "raised"
@@ -262,16 +246,16 @@ class DropReason(StrEnum):
 
 @dataclass(frozen=True)
 class FormulaDrop:
-    """A loop's formula dropped in an input, at the end of a run of the loop
-    (`pyct.core.entry.in_use`).
+    """A loss site's formula dropped in an input, at a run of the site
+    (`pyct.core.entry.calls_in_use`).
 
-    ``site`` is the loop's file, line and column, and ``name`` the changed
-    name the formula failed on, the first that failed or, for a raise, the
-    first bound. ``value`` is the loop's own value of it as JSON text, and
-    ``got`` the formula's value of it as JSON text, the raise's type name,
-    or empty when it gave none. ``run`` is the position of the run it was
-    dropped on among the input's recorded runs of the loop, from 0, or None
-    when that run is not recorded.
+    ``site`` is the site's file, line and column, and ``name`` the name the
+    formula failed on, ``answer``. ``value`` is the target's real answer as
+    JSON text, and ``got`` the formula's answer as JSON text, or as Python
+    writes it when it has none, the raise's type name, or empty when it gave
+    none. ``run`` is the position of the run it was dropped on among the
+    input's recorded runs of the site, from 0, or None when that run is not
+    recorded.
     """
 
     site: Site
@@ -282,13 +266,13 @@ class FormulaDrop:
     run: int | None = None
 
 
-# what a sink holds: the forks, the facts, the downgrades, the recorded runs of pieces and of loss
-# sites, and the formulas dropped, in the order they happened
-type SinkItem = Branch | Fact | Downgrade | PieceRun | LossRun | FormulaDrop
+# what a sink holds: the forks, the facts, the downgrades, the recorded runs of loss sites, and the
+# formulas dropped, in the order they happened
+type SinkItem = Branch | Fact | Downgrade | LossRun | FormulaDrop
 
 
 class BranchSink(Protocol):
-    """Where forks, facts, downgrades and recorded runs of pieces go, in the order they happened.
+    """Where forks, facts, downgrades and loss sites' recorded runs go, in the order they happened.
 
     core defines the one method and pushes, never reads. A plain list
     serves in tests; a real tree serves in a run. The parameter is
@@ -308,14 +292,14 @@ _SITES: dict[tuple[int, int], tuple[weakref.ref[types.CodeType], Site]] = {}
 # tuple, set in one store, so the alarm landing mid-update never pairs one with another's site
 _LAST: list[tuple[types.CodeType | None, int, Site]] = [(None, -1, Site(file="", line=0, col=0))]
 
-# set while a loop's formula runs, to the loop's site, where each fork, fact and downgrade it
-# records is placed
+# set while a loss site's formula runs, to the site, where each fork, fact and downgrade it records
+# is placed
 _PLACED_AT: list[Site | None] = [None]
 
 
 def placed_at[T](site: Site, call: Callable[[], T]) -> T:
-    """``call()``, each site it asks `site_of` for being ``site``: a loop's site for the formula
-    that stands for the loop, so each fork, fact and downgrade the formula records sits there."""
+    """``call()``, each site it asks `site_of` for being ``site``: a loss site's for the formula
+    that stands for its answer, so each fork, fact and downgrade the formula records sits there."""
     before = _PLACED_AT[0]
     try:
         _PLACED_AT[0] = site

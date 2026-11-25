@@ -1,5 +1,5 @@
 """A value as plain JSON data: what a call on model-written code answers (`pyct.run.model_runs`),
-and what a name holds as a piece of the target's code starts or ends (`pyct.core.entry.pieces`).
+and what goes into and comes out of a loss site's run (`pyct.core.entry.losses`), as JSON text.
 
 Each part is read through its base type, chosen by the part's own type, so
 nothing is recorded and no method of the value runs.
@@ -7,9 +7,12 @@ nothing is recorded and no method of the value runs.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from pyct.core.lists.list_state import plain
+
+_dumps = json.dumps
 
 
 def plain_json(value: object, *, tuples: bool = True, most: int | None = None) -> object:
@@ -73,3 +76,13 @@ def _key(key: object) -> str:
     if not issubclass(type(held), str):
         raise TypeError(f"a key of type {type(held).__name__} is not one a JSON object holds")
     return str.__str__(held)
+
+
+def json_text(value: object, most: int | None = None) -> str | None:
+    """The value's JSON text, or None when it is not plain JSON data (`plain_json`), a tuple not
+    being such data, or, with ``most``, when its text is not shorter than ``most`` characters."""
+    try:
+        text = _dumps(plain_json(value, tuples=False, most=most))
+    except (TypeError, ValueError, RecursionError):
+        return None
+    return text if most is None or len(text) < most else None

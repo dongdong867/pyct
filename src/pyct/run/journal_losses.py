@@ -1,17 +1,13 @@
-"""The recorded runs of an input's pieces and loss sites as their journal records hold them, written
-by ``journal`` and read back by ``journal_reader``.
+"""The recorded runs of an input's loss sites as their journal records hold them, written by
+``journal`` and read back by ``journal_reader``.
 
-- piece: a recorded run of a piece of the target's code (``PieceRun``):
-  its site's line and column as two i64, how many names went in and how
-  many changed as two u32, then its file and, for each name going in, its
-  name, ``1`` or ``0`` for whether it was tracked, and its value's JSON
-  text, then each changed name and its value's text, a NUL between each.
-- loss: a recorded run of a loss site (``LossRun``): its site's line and
-  column as two i64, how many values went in and whether it names a callee
-  as two u32, then its file, its name and its kind, each value going in as
-  a piece's are, the answer's JSON text, and, for a callee, its module, its
-  qualified name, its code's file and its first line, each empty when it has
-  none, a NUL between each.
+A loss record holds a recorded run of a loss site (``LossRun``): its site's
+line and column as two i64, how many values went in and whether it names a
+callee as two u32, then its file, its name and its kind, for each value
+going in its name, ``1`` or ``0`` for whether it was tracked, and its JSON
+text, then the answer's JSON text, and, for a callee, its module, its
+qualified name, its code's file and its first line, each empty when it has
+none, a NUL between each.
 
 Each field is written as UTF-8 that keeps a lone surrogate, as a file's name can hold one.
 """
@@ -28,25 +24,14 @@ from pyct.core.foundation.branch import (
     GoingIn,
     LossKind,
     LossRun,
-    PieceRun,
     Site,
 )
 
-# a recorded run's site's line and column, and how many names went in and how many changed; a
-# loss run's, how many values went in and whether it names a callee
-PIECE_HEAD = struct.Struct("<qqII")
+# a recorded run's site's line and column, how many values went in and whether it names a callee
+RUN_HEAD = struct.Struct("<qqII")
 
 # how a reader makes the one ``Site`` of a place from its file, line and column
 type Sites = Callable[[str, int, int], Site]
-
-
-def piece_payload(run: PieceRun) -> bytes:
-    """A recorded run of a piece, as its record's payload."""
-    site = run.site
-    fields = [site.file, *_written(run.going_in)]
-    fields += [text for changed in run.changed for text in (changed.name, changed.value)]
-    head = PIECE_HEAD.pack(site.line, site.col, len(run.going_in), len(run.changed))
-    return head + _joined(fields)
 
 
 def loss_payload(run: LossRun) -> bytes:
@@ -57,25 +42,13 @@ def loss_payload(run: LossRun) -> bytes:
     if callee is not None:
         line = "" if callee.line is None else str(callee.line)
         fields += [callee.module, callee.qualname, callee.file or "", line]
-    head = PIECE_HEAD.pack(site.line, site.col, len(run.going_in), callee is not None)
+    head = RUN_HEAD.pack(site.line, site.col, len(run.going_in), callee is not None)
     return head + _joined(fields)
-
-
-def piece_run(payload: bytes, sites: Sites) -> PieceRun:
-    """A recorded run of a piece, read from its record's payload."""
-    line, col, going_in, changed = PIECE_HEAD.unpack_from(payload)
-    file, *fields = _fields(payload)
-    if len(fields) != 3 * going_in + 2 * changed:
-        raise ValueError("a recorded run holds three fields a name going in, two a changed")
-    ins = _going_in(fields[: 3 * going_in])
-    rest = fields[3 * going_in :]
-    outs = tuple(Changed(*rest[at : at + 2]) for at in range(0, len(rest), 2))
-    return PieceRun(sites(file, line, col), ins, outs)
 
 
 def loss_run(payload: bytes, sites: Sites) -> LossRun:
     """A recorded run of a loss site, read from its record's payload."""
-    line, col, going_in, named = PIECE_HEAD.unpack_from(payload)
+    line, col, going_in, named = RUN_HEAD.unpack_from(payload)
     file, name, kind, *fields = _fields(payload)
     if named not in (0, 1) or len(fields) != 3 * going_in + 1 + 4 * named:
         raise ValueError("a loss run holds three fields a value going in, its answer, its callee")
@@ -98,7 +71,7 @@ def _joined(fields: Sequence[str]) -> bytes:
 
 
 def _fields(payload: bytes) -> list[str]:
-    return payload[PIECE_HEAD.size :].decode(errors="surrogatepass").split("\0")
+    return payload[RUN_HEAD.size :].decode(errors="surrogatepass").split("\0")
 
 
 def _going_in(fields: Sequence[str]) -> tuple[GoingIn, ...]:

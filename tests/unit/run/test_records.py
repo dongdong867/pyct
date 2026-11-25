@@ -1,28 +1,30 @@
-"""An input's record holds what its call did, the recorded runs of its pieces among it, and a
+"""An input's record holds what its call did, the recorded runs of its loss sites among it, and a
 pass's input takes the source of the fork it was aimed at."""
 
 import pytest
 
 from pyct.branches.plan import plan
-from pyct.core.foundation.branch import Branch, Changed, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import Branch, Changed, GoingIn, LossKind, LossRun, Site
 from pyct.execution.execute import ExecutionResult
 from pyct.results.record import InputRecord, Source
 from pyct.run.records import record_of, source_of
 
-RUN = PieceRun(
-    site=Site(file="m.py", line=3, col=4),
-    going_in=(GoingIn("n", "2", tracked=True),),
-    changed=(Changed("i", "2"),),
+RUN = LossRun(
+    Site(file="m.py", line=3, col=4),
+    "__pow__",
+    LossKind.OPERATION,
+    (GoingIn("arg1", "2", tracked=True),),
+    (Changed("answer", "2"),),
 )
 
 
-def test_a_record_holds_the_recorded_runs_of_its_call_s_pieces() -> None:
-    executed = ExecutionResult(lines=frozenset({3}), branches=(), pieces=(RUN,))
+def test_a_record_holds_the_recorded_runs_of_its_call_s_loss_sites() -> None:
+    executed = ExecutionResult(lines=frozenset({3}), branches=(), losses=(RUN,))
 
     record = record_of({"n": 2}, executed)
 
-    assert record.pieces == (RUN,)
-    assert InputRecord(args={}, forks=(), covered_lines=frozenset()).pieces == ()
+    assert record.losses == (RUN,)
+    assert InputRecord(args={}, forks=(), covered_lines=frozenset()).losses == ()
 
 
 def aimed(*, summary: bool) -> object:

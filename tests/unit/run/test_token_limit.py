@@ -56,10 +56,9 @@ def ran(
     helpers: Helpers,
     isolation: Isolation = Isolation.IN_PROCESS,
 ) -> RunResult:
-    """``run()`` on ``spec`` with ``helpers``, its package recording each loop's runs, each input
-    where ``isolation`` says."""
+    """``run()`` on ``spec`` with ``helpers``, each input where ``isolation`` says."""
     setup = Setup(isolation=isolation, helpers=helpers)
-    with interception(spec, pieces=True):
+    with interception(spec):
         return run(load_target(spec), seed, limits=LONG, setup=setup)
 
 

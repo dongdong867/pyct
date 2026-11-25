@@ -12,17 +12,16 @@ from pyct.core.foundation.branch import (
     Fact,
     FormulaDrop,
     GoingIn,
+    LossKind,
     LossRun,
-    PieceRun,
     Site,
 )
 from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.ints import ConcolicInt
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
 from tests.unit.core.dicts.test_dict_walk_keys import in_the_target
 from tests.unit.core.dicts.test_dicts import decided, tracked
-from tests.unit.core.entry.test_pieces import hooked
-from tests.unit.intercept.loop_shapes import LOOPS
 from tests.unit.interrupted import Interrupt, at_every_line
 
 # the file the tally's own code comes from, as its frames name it
@@ -57,9 +56,6 @@ class Heard:
 
     def went(self, line: int, to: int) -> None:
         self.told.append(("went", line, to))
-
-    def piece(self, run: PieceRun) -> None:
-        self.told.append(("piece", run))
 
     def loss(self, run: LossRun) -> None:
         self.told.append(("loss", run))
@@ -357,19 +353,25 @@ def test_a_tally_with_no_watch_keeps_what_the_call_reached() -> None:
     assert tally.reach().went == {(1, 2)}
 
 
-RUN = PieceRun(site=SITE, going_in=(GoingIn("n", "1", tracked=True),), changed=(Changed("t", "2"),))
+RUN = LossRun(
+    SITE,
+    "__pow__",
+    LossKind.OPERATION,
+    (GoingIn("arg1", "1", tracked=True),),
+    (Changed("answer", "2"),),
+)
 
 
-def test_a_tally_keeps_each_recorded_run_of_a_piece_and_tells_the_watch() -> None:
+def test_a_tally_keeps_each_recorded_run_of_a_loss_site_and_tells_the_watch() -> None:
     heard = Heard()
     tally = Tally(heard)
 
     tally.append(FORK)
     tally.append(RUN)
 
-    assert tally.pieces == [RUN]
+    assert tally.losses == [RUN]
     assert tally.branches == [FORK]
-    assert heard.told == [("fork", FORK), ("piece", RUN)]
+    assert heard.told == [("fork", FORK), ("loss", RUN)]
 
 
 def test_a_sealed_tally_keeps_no_run_and_names_no_loss_for_one() -> None:
@@ -379,21 +381,23 @@ def test_a_sealed_tally_keeps_no_run_and_names_no_loss_for_one() -> None:
 
     over.append(RUN)
 
-    assert (over.pieces, live.pieces, live.counted()) == ([], [], ())
+    assert (over.losses, live.losses, live.counted()) == ([], [], ())
     live.seal()
 
 
-def test_the_hooks_record_into_the_tally_from_its_going_live_until_its_seal() -> None:
-    f = hooked(LOOPS["while"])
+def test_the_loss_runs_record_into_the_tally_from_its_going_live_until_its_seal() -> None:
     tally = Tally()
-    f(1)
 
-    tally.go_live()
-    f(2)
+    def quarter(n: int) -> object:
+        return pow(ConcolicInt.made(n, expression="n", sink=tally), 1, 4)
+
+    quarter(1)
+    tally.go_live(losses_on=True)
+    quarter(2)
     tally.seal()
-    f(3)
+    quarter(3)
 
-    assert [run.changed for run in tally.pieces] == [(Changed("i", "2"),)]
+    assert [run.going_in[0].value for run in tally.losses] == ["2"]
 
 
 DROP = FormulaDrop(SITE, "t", "2", "3", DropReason.MISMATCH)
@@ -407,7 +411,7 @@ def test_a_tally_keeps_each_dropped_formula_and_tells_the_watch() -> None:
     tally.append(DROP)
 
     assert tally.drops == [DROP]
-    assert heard.told == [("piece", RUN), ("drop", DROP)]
+    assert heard.told == [("loss", RUN), ("drop", DROP)]
 
 
 def test_a_sealed_tally_keeps_no_drop_and_names_no_loss_for_one() -> None:

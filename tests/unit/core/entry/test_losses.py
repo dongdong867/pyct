@@ -7,7 +7,7 @@ import math
 import sys
 from collections.abc import Iterator
 
-from pyct.core.entry import losses, pieces, substitutes
+from pyct.core.entry import losses, substitutes
 from pyct.core.entry.recorded import MOST_RUNS, MOST_TEXT, MOST_VALUE
 from pyct.core.foundation.branch import Changed, GoingIn, LossKind, LossRun, SinkItem, Site
 from pyct.core.lists.lists import ConcolicList
@@ -19,14 +19,12 @@ from pyct.core.strs.strs import ConcolicStr
 def live(*, recording: bool = True) -> Iterator[list[SinkItem]]:
     """A live input whose sink is the list yielded, its loss runs recorded with ``recording``."""
     sink: list[SinkItem] = []
-    pieces.start(sink)
     if recording:
         losses.start(sink)
     try:
         yield sink
     finally:
         losses.forget()
-        pieces.forget()
 
 
 def runs(sink: list[SinkItem]) -> list[LossRun]:
@@ -144,7 +142,8 @@ def test_with_the_recording_off_nothing_is_recorded() -> None:
 def test_the_runs_share_what_the_input_s_recorded_runs_may_count() -> None:
     with live() as sink:
         n = ConcolicInt.made(13, expression="n", sink=sink)
-        assert pieces.counted(MOST_TEXT - 10)
+        # the input's runs so far count all but 10 of what they may
+        losses._LOSSES.text = MOST_TEXT - 10
         _ = 13 >> n
 
     assert runs(sink) == []
