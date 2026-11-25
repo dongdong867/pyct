@@ -89,3 +89,17 @@ def test_a_recorded_guesses_run_replays_its_first_guess_ask_with_no_model(
     assert isinstance(llm, dict)
     assert (llm["asks"], llm["replayed"], llm["skipped"]) == (0, 1, 0)
     assert stub.received == []
+
+
+# llm-guess-for-a-stuck-line-wait-not-counted, as the summary's `llm` entry counts it
+def test_the_llm_entry_counts_the_wait_for_a_guess_reply(stub: Stub, tmp_path: Path) -> None:
+    stub.reply = '[{"s": "x"}]'
+    stub.delay = 2.0
+
+    result = llm_run(stub.port, tmp_path, SEED, "--llm", "guesses", target=HANDLER)
+
+    assert result.returncode == 0, result.stderr
+    llm = summary_line(result.stdout)["llm"]
+    assert isinstance(llm, dict)
+    assert llm["asks"] == 1
+    assert 2.0 <= llm["seconds"] < 30.0  # pyrefly: ignore[unsupported-operation]
