@@ -10,7 +10,9 @@ A run through ``pyct run`` has its base URLs pointed at a stub on localhost or a
 and no test calls a model.
 """
 
+import inspect
 import json
+import textwrap
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,6 +21,7 @@ import pytest
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.llm.summaries import request_text
+from pyct.run.summary_asks import SummaryRequest
 from tests.acceptance.harness import REPO_ROOT, input_lines, summary_line, without_seconds
 from tests.acceptance.llm_stub import Stub, closed_port, llm_lines, llm_run, recordings
 from tests.acceptance.llm_summaries import (
@@ -32,6 +35,7 @@ from tests.acceptance.lost_calls import BOUNDED, DEDENTED, QUARTER, SHIFTED, WRO
 
 FIXTURE = Path(__file__).with_name("call_summaries_at_21e4b3cc.json")
 PLATEAU = 20
+DEDENT_SOURCE = "<the source of textwrap.dedent>"
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,13 @@ def relative(text: str) -> str:
     return text.replace(f"{REPO_ROOT}/", "")
 
 
+def asked_text(request: SummaryRequest) -> str:
+    """The text of an ask with paths relative, and with the source of ``textwrap.dedent``, which
+    each Python release words its own way, named by a placeholder."""
+    source = inspect.getsource(textwrap.dedent).rstrip()
+    return relative(request_text(request)).replace(source, DEDENT_SOURCE)
+
+
 def expected(case: Case) -> dict[str, list[object]]:
     return json.loads(FIXTURE.read_text())[case.name]
 
@@ -73,7 +84,7 @@ def asked(case: Case) -> list[str]:
     """The request text of each ask a run of the case makes."""
     provider = FakeSummaries([case.reply], limit=case.limit)
     run_summaries(case.spec, case.seed, provider, Limits(plateau=Plateau(PLATEAU)))
-    return [relative(request_text(request)) for request in provider.requests]
+    return [asked_text(request) for request in provider.requests]
 
 
 def replayed(case: Case, stub: Stub, tmp_path: Path) -> dict[str, list[object]]:
