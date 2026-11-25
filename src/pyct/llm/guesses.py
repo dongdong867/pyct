@@ -80,7 +80,8 @@ def _asked(line: AskedLine) -> str:
     """One group of missed lines: its lines and cause, then the conditions on the way to its
     first line, then the input that got furthest."""
     numbers = ", ".join(str(each) for each in line.lines)
-    shown = [f"Lines {numbers} of {line.module}: {line.cause}"]
+    word = "Line" if len(line.lines) == 1 else "Lines"
+    shown = [f"{word} {numbers} of {line.module}: {line.cause}"]
     if line.conditions:
         way = "\n".join(f"- {_condition(each)}" for each in line.conditions)
         shown.append(
