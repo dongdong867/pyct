@@ -45,6 +45,16 @@ def test_a_guess_that_repeats_an_input_is_dropped() -> None:
     assert ran.said.index(f"input {number}") < ran.said.index(ran.guess_lines()[2])
 
 
+# llm-guess-dropped-repeats-an-input, its parameters written in another order
+def test_a_guess_that_repeats_an_input_in_another_key_order_is_dropped() -> None:
+    provider = FakeGuesses([[{"s": "a", "n": 0}]])
+
+    ran = run_guesses("targets.guesses.way::deep", {"n": 0, "s": "a"}, provider)
+
+    assert ran.guess_lines()[1:] == ["llm: dropped guess 1: same input as input 1"]
+    assert Source.GUESS not in [record.source for record in ran.records]
+
+
 # llm-guess-dropped-past-the-fifth
 def test_guesses_past_the_fifth_are_dropped() -> None:
     # the first five are hex digits, which return; the last two would raise into the handler
