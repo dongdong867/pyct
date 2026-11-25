@@ -4,7 +4,7 @@ At a moment, guesses take every entry the moment hands them (``pyct.run.stuck``)
 ask about all of them, said before it goes out. Each entry is asked about with its cause, the
 conditions on the way to its first line with the side the line needs, and the input that got
 furthest along that way with how it ended (``pyct.results.furthest``), worked out within
-``WAY_SECONDS`` and the run's deadline. The request also holds the target's code, its signature
+``CAUSE_SECONDS`` and the run's deadline. The request also holds the target's code, its signature
 and the classes of its folder, as the seeds ask does. The wait for the model pauses the run's
 clock. An ask that got no answer is said; once any tool's reply leaves no token under the limit,
 or an ask meets it, no guess is asked for again this run (``pyct.run.token_limit``), and the
@@ -32,7 +32,6 @@ from pyct.binding.bind import Seed
 from pyct.config.llm import GUESSES_TOOL
 from pyct.results.causes import Reason, WhyEntry
 from pyct.results.furthest import way_to
-from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, Stop
 from pyct.rewrite.provider import Side
@@ -51,7 +50,7 @@ from pyct.run.notes import (
     ReplyIgnored,
 )
 from pyct.run.seed_checks import SeedCheck
-from pyct.run.stuck import CAUSE_SECONDS, Handled, Kind, Moment, Outcome, Running, going
+from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, cause_stop, going
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
@@ -60,8 +59,6 @@ from pyct.run.token_limit import TokenLimit
 MOST_GUESSES = 5
 # the characters of JSON the furthest input may take in a request
 FURTHEST_SIZE = 2_000
-# how long one ask works out the ways to its lines, at most, as a moment works out causes
-WAY_SECONDS = CAUSE_SECONDS
 # why a reply whose array is empty gives no guess
 NO_GUESS = "the reply held no guess"
 
@@ -163,7 +160,7 @@ class Guesses:
     ) -> GuessRequest:
         """The request for this ask, each entry's way worked out by one stop for them all."""
         self.asks += 1
-        stop_at = _way_stop(run.bounds.until)
+        stop_at = cause_stop(run.bounds.until)
         target = self.target
         lines = tuple(
             self._asked(entry, cause.cause, run.records, stop_at)
@@ -259,12 +256,3 @@ def _ended(record: InputRecord) -> str:
     """How an input ended: ``returned``, or its failure's kind and detail."""
     failure = record.failure
     return "returned" if failure is None else f"{failure.kind.value}: {failure.detail}"
-
-
-def _way_stop(until: float | None) -> float:
-    """When an ask starting now stops working out ways: ``WAY_SECONDS`` from now, or the run's
-    deadline when it comes first, less the stretch the analysis may see its stop late."""
-    stop = time.monotonic() + WAY_SECONDS
-    if until is not None:
-        stop = min(stop, until)
-    return stop - LONGEST_STRETCH

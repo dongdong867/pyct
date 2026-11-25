@@ -259,7 +259,7 @@ class Stuck:
         did (``_double``)."""
         self._held += 1
         started = len(run.records)
-        moment = Moment(self._held, run.causes(_cause_stop(run.bounds.until)), run)
+        moment = Moment(self._held, run.causes(cause_stop(run.bounds.until)), run)
         outcomes: dict[_Key, Outcome] = {}
         asked = False
         for kind in Kind:
@@ -396,7 +396,7 @@ def _left(until: float | None, now: float) -> float | None:
     return None if until is None else until - now
 
 
-def _cause_stop(until: float | None) -> float:
+def cause_stop(until: float | None) -> float:
     """When a moment starting now stops working out causes: ``CAUSE_SECONDS`` from now, or the
     run's deadline when it comes first, less the stretch the analysis may see its stop late."""
     stop = time.monotonic() + CAUSE_SECONDS
