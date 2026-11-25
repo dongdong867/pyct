@@ -40,6 +40,8 @@ class Source(StrEnum):
     # an input run again once a loop's formula came into use, or one the solver gave for a
     # formula's fork: one a loop's formula recorded, or one that reads a value a formula gave
     SUMMARY = "summary"
+    # an input the LLM guessed at a stuck moment for lines no other tool reached
+    GUESS = "guess"
 
 
 @dataclass(frozen=True)

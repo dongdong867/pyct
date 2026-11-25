@@ -153,7 +153,7 @@ def seed_request(
     """The request for ``target``, quoting at most ``QUOTED_SEEDS`` of the user's seeds and none
     whose JSON is longer than ``QUOTED_SEED_SIZE`` or that JSON cannot write, with the classes
     ``class_listing`` wrote."""
-    written = [_json(seed) for seed in own]
+    written = [seed_json(seed) for seed in own]
     quoted = tuple(text for text in written if text is not None and len(text) <= QUOTED_SEED_SIZE)[
         :QUOTED_SEEDS
     ]
@@ -183,7 +183,7 @@ def _kept(
     """
     inputs: dict[str, int] = {}
     for number, seed in enumerate(own, start=1):
-        written = _json(seed)
+        written = seed_json(seed)
         if written is not None:
             inputs.setdefault(written, number)
     kept: list[tuple[int, Mapping[str, object]]] = []
@@ -200,11 +200,24 @@ def _kept(
 def _judged(
     check: SeedCheck, gate: ClassGate, inputs: Mapping[str, int], number: int, text: str
 ) -> tuple[str, Mapping[str, object] | None]:
-    """The seed an item writes, or why it is dropped: past the fifth, its shape as JSON, the
-    classes it names (``ClassGate``), then the seed checks, each one's reasons joined by ``; ``,
+    """The seed an item writes, or why it is dropped: past the fifth, ``checked_seed``'s reason,
     or the input it repeats."""
     if number > MOST_SEEDS:
         return f"more than {MOST_SEEDS} seeds", None
+    reason, seed = checked_seed(check, gate, text)
+    if seed is None:
+        return reason, None
+    repeated = inputs.get(json.dumps(seed))
+    if repeated is not None:
+        return f"same seed as input {repeated}", None
+    return "", seed
+
+
+def checked_seed(
+    check: SeedCheck, gate: ClassGate, text: str
+) -> tuple[str, Mapping[str, object] | None]:
+    """The seed an LLM's item writes, or why it is dropped: its shape as JSON, the classes it
+    names (``ClassGate``), then the seed checks, each one's reasons joined by ``; ``."""
     try:
         seed = parse_seed(text)
     except UsageError as error:
@@ -212,9 +225,6 @@ def _judged(
     reasons = gate.refusals(seed) or check.refusals(seed)
     if reasons:
         return "; ".join(reasons), None
-    repeated = inputs.get(json.dumps(seed))
-    if repeated is not None:
-        return f"same seed as input {repeated}", None
     return "", seed
 
 
@@ -325,7 +335,7 @@ def _class_names(seed: Mapping[str, object]) -> list[tuple[str, str]]:
     return found
 
 
-def _json(seed: Mapping[str, object]) -> str | None:
+def seed_json(seed: Mapping[str, object]) -> str | None:
     """The seed as JSON, or None when it holds a value JSON cannot write, such as an object."""
     try:
         return json.dumps(seed)

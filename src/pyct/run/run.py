@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import platform
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from pyct.binding.bind import Seed
 from pyct.config.limits import Limits
@@ -13,13 +14,14 @@ from pyct.results.record import Environment, RunResult, Source
 from pyct.run.as_found import modules_as_found
 from pyct.run.bounds import Bounds
 from pyct.run.defaults import with_defaults
+from pyct.run.guesses import Guesses
 from pyct.run.helpers import Helpers
 from pyct.run.isolation import Inputs
 from pyct.run.llm_seeds import SeedProvider, ask_seeds
 from pyct.run.loop import Loop, Looped, Start
 from pyct.run.rewrites import Rewrites
 from pyct.run.setup import Setup
-from pyct.run.stuck import Stuck, StuckTool
+from pyct.run.stuck import Kind, Stuck, StuckTool
 from pyct.run.summaries import Summaries
 from pyct.run.target import Target, argument_checks
 from pyct.run.tell import Tell, Told
@@ -99,9 +101,9 @@ def run(
     told = Told(scope=scope, tell=tell, imported=target.import_lines)
     limit = TokenLimit()
     starts, bounds = _starts(target, seeds, heard_seeds(setup.helpers.seeds, limit), bounds, told)
-    summaries, rewrites = _tools(setup.helpers, target, told, limit, inputs)
-    loop = _loop(inputs, bounds, told, summaries, rewrites)
-    looped = _went(loop, starts, summaries)
+    tools = _tools(setup.helpers, target, told, limit, inputs)
+    loop = _loop(inputs, bounds, told, tools)
+    looped = _went(loop, starts, tools.summaries)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -115,7 +117,7 @@ def run(
         # the loop's own, which each wait for the LLM moved later
         deadline=loop.bounds.until,
         goal=limits.goal,
-        summaries=() if summaries is None else summaries.states(),
+        summaries=() if tools.summaries is None else tools.summaries.states(),
     )
 
 
@@ -129,34 +131,42 @@ def _went(loop: Loop, starts: Sequence[Start], summaries: Summaries | None) -> L
             summaries.close()
 
 
+@dataclass(frozen=True)
+class _Tools:
+    """The LLM tools that take missed lines, each None when it is switched off."""
+
+    summaries: Summaries | None
+    rewrites: Rewrites | None
+    guesses: Guesses | None
+
+
 def _tools(
     helpers: Helpers, target: Target, told: Told, limit: TokenLimit, inputs: Inputs
-) -> tuple[Summaries | None, Rewrites | None]:
+) -> _Tools:
     """The LLM tools that take missed lines, each that is switched on, sharing the run's token
-    limit; summaries learn from ``inputs`` whether each input runs in a process of its own."""
-    summaries = helpers.summaries
-    rewrites = helpers.rewrites
-    return (
+    limit; summaries learn from ``inputs`` whether each input runs in a process of its own, and
+    guesses which of the tools before them are on."""
+    summaries = (
         None
-        if summaries is None
-        else Summaries(summaries, target, told, limit, isolated=lambda: inputs.isolated),
-        None if rewrites is None else Rewrites(rewrites, target, told, limit),
+        if helpers.summaries is None
+        else Summaries(helpers.summaries, target, told, limit, isolated=lambda: inputs.isolated)
     )
+    rewrites = None if helpers.rewrites is None else Rewrites(helpers.rewrites, target, told, limit)
+    before = {Kind.SUMMARIES: summaries, Kind.REWRITES: rewrites}
+    on = frozenset(kind for kind, tool in before.items() if tool is not None)
+    guesses = None if helpers.guesses is None else Guesses(helpers.guesses, target, told, limit, on)
+    return _Tools(summaries, rewrites, guesses)
 
 
-def _loop(
-    inputs: Inputs,
-    bounds: Bounds,
-    told: Told,
-    summaries: Summaries | None,
-    rewrites: Rewrites | None,
-) -> Loop:
+def _loop(inputs: Inputs, bounds: Bounds, told: Told, tools: _Tools) -> Loop:
     """The run's loop, with each LLM tool that takes missed lines switched on in its moments:
     none, and the run is never stuck."""
-    tools: list[StuckTool] = [tool for tool in (summaries, rewrites) if tool is not None]
-    if not tools:
+    switched_on = (tools.summaries, tools.rewrites, tools.guesses)
+    moment_tools: list[StuckTool] = [tool for tool in switched_on if tool is not None]
+    if not moment_tools:
         return Loop(inputs, bounds, told)
-    return Loop(inputs, bounds, told, Stuck(tools, between=summaries), rewrites)
+    stuck = Stuck(moment_tools, between=tools.summaries)
+    return Loop(inputs, bounds, told, stuck, tools.rewrites)
 
 
 def _starts(

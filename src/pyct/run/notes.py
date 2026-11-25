@@ -112,12 +112,56 @@ class SummaryDropped:
     call: str | None = None
 
 
+@dataclass(frozen=True)
+class AskedFor:
+    """One cause a guess ask is about: its file, its lines, and its cause in the request's
+    words."""
+
+    file: str
+    lines: tuple[int, ...]
+    cause: str
+
+
+@dataclass(frozen=True)
+class GuessesAsked:
+    """A guess ask is sent about each of ``causes``, in the moment's order. Said before it goes
+    out."""
+
+    causes: tuple[AskedFor, ...]
+
+
+@dataclass(frozen=True)
+class GuessReached:
+    """The guess at ``number`` in its reply, from 1, ran and covered ``lines``, each by its file
+    and line, of the lines its ask was about."""
+
+    number: int
+    lines: tuple[tuple[str, int], ...]
+
+
+@dataclass(frozen=True)
+class GuessDropped:
+    """The guess at ``number`` in its reply, from 1, does not run, and why."""
+
+    number: int
+    reason: str
+
+
 # each summaries note names a loss site by its downgrade's name in ``call``, and a loop by none
 type SummaryNote = (
     SummaryRead | SummaryChecked | SummaryFailed | SummarySkipped | SummaryNotUsed | SummaryDropped
 )
 
+type GuessNote = GuessesAsked | GuessReached | GuessDropped
+
 # rewrites' own notes are declared in ``pyct.rewrite.notes``, which says them below this layer
 type Note = (
-    AskSkipped | ReplyIgnored | SeedDropped | SeedsKept | LimitReached | SummaryNote | RewriteNote
+    AskSkipped
+    | ReplyIgnored
+    | SeedDropped
+    | SeedsKept
+    | LimitReached
+    | SummaryNote
+    | RewriteNote
+    | GuessNote
 )
