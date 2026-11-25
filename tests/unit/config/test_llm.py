@@ -18,8 +18,13 @@ def test_llm_seeds_takes_the_seeds_tool_with_the_default_model() -> None:
 
 
 def test_llm_all_takes_every_tool_pyct_has() -> None:
-    expected = LlmSettings(tools=("seeds", "summaries", "rewrites"), model=DEFAULT_MODEL)
+    expected = LlmSettings(tools=("seeds", "summaries", "rewrites", "guesses"), model=DEFAULT_MODEL)
     assert parse_llm("all", None) == expected
+
+
+# llm-switch-per-tool-guesses
+def test_llm_guesses_takes_the_guesses_tool_alone() -> None:
+    assert parse_llm("guesses", None) == LlmSettings(tools=("guesses",), model=DEFAULT_MODEL)
 
 
 # llm-switch-per-tool-summaries-alone
@@ -68,7 +73,7 @@ def test_a_tool_pyct_does_not_have_is_refused_naming_it_and_the_tools(text: str)
 
     wrong = [part.strip() for part in text.split(",") if part.strip() != "seeds"][0]
     assert repr(wrong) in str(refused.value)
-    assert "seeds" in str(refused.value)
+    assert "it takes seeds, summaries, rewrites, guesses," in str(refused.value)
     assert "all" in str(refused.value)
 
 
