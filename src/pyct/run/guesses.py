@@ -1,26 +1,4 @@
-"""The guesses tool in a run: the stuck moment's last slot, after summaries and rewrites.
-
-At a moment, guesses take every entry the moment hands them (``pyct.run.stuck``) and make one
-ask about all of them, said before it goes out. Each entry is asked about with its cause, the
-conditions on the way to its first line with the side the line needs, and the input that got
-furthest along that way with how it ended (``pyct.results.furthest``), worked out within
-``CAUSE_SECONDS`` and the run's deadline. The request also holds the target's code, its signature
-and the classes of its folder, as the seeds ask does. The wait for the model pauses the run's
-clock. An ask that got no answer is said; once any tool's reply leaves no token under the limit,
-or an ask meets it, no guess is asked for again this run (``pyct.run.token_limit``), and the
-connection has said so.
-
-The reply's guesses are judged and run in reply order, at most ``MOST_GUESSES``. Each is read
-and checked as an LLM seed is (``checked_seed``), filled with the simple defaults it leaves out
-(``with_defaults``), then dropped when it writes the same JSON as an input that ran, an earlier
-guess's included. Each drop is said with its reason. A guess that passes runs between two passes
-as ``"source": "guess"``, its path joining the tree, and a guess that covered lines the ask was
-about says which. Once the budget is spent or an input met the run's stop, no later guess is
-judged, run or said.
-
-An entry is ``took`` when a guess covered one of its lines, ``gave up`` when the ask was
-answered and no guess did, and ``skipped`` when the ask got no answer or none was made.
-"""
+"""The guesses tool in a run: the stuck moment's last slot, after summaries and rewrites."""
 
 from __future__ import annotations
 
