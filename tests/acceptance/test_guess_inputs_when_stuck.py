@@ -212,6 +212,17 @@ def test_the_request_holds_each_line_its_way_and_the_furthest_input() -> None:
     assert (asked.furthest, asked.ended) == ('{"s": "a", "n": 11}', "returned")
 
 
+# llm-guess-for-a-stuck-line-sends-what-pyct-saw, for the target's same-package callees
+def test_the_request_holds_the_target_s_same_package_callee() -> None:
+    provider = FakeGuesses([[]])
+
+    run_guesses("targets.guesses.boxed::boxed", {"x": 3}, provider)
+
+    code = provider.requests[0].code
+    assert "def boxed(x: int) -> str:\n    box = Box(x)" in code
+    assert "def __init__(self, x: int) -> None:\n    self.size = bin(x)" in code
+
+
 # llm-guess-for-a-stuck-line-ask-failed
 def test_an_unanswered_guess_ask_is_said_and_the_run_goes_on() -> None:
     failed = Unanswered(Why.TIMED_OUT, "no reply in 30 s", AskCost(1))
