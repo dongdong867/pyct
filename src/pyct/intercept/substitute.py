@@ -108,7 +108,6 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.NotIn: ast.In,
 }
 
-# the module the bound names come from
 _SUBSTITUTES = "pyct.core.entry.substitutes"
 
 # the fields that hold an annotation, by the node that holds them
