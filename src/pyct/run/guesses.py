@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from pyct.binding.bind import Seed
 from pyct.config.llm import GUESSES_TOOL
 from pyct.results.causes import Reason, WhyEntry
-from pyct.results.furthest import way_to
+from pyct.results.furthest import Way, ways_to
 from pyct.results.llm_asks import Unanswered, Why
 from pyct.results.record import InputRecord, Source, Stop
 from pyct.rewrite.provider import Side
@@ -138,11 +138,13 @@ class Guesses:
     ) -> GuessRequest:
         """The request for this ask, each entry's way worked out by one stop for them all."""
         self.asks += 1
-        stop_at = cause_stop(run.bounds.until)
+        records = run.records
+        starts = tuple((each.file, each.lines[0]) for each in entries)
+        ways = ways_to(starts, records, cause_stop(run.bounds.until))
         target = self.target
         lines = tuple(
-            self._asked(entry, cause.cause, run.records, stop_at)
-            for entry, cause in zip(entries, causes, strict=True)
+            self._asked(entry, cause.cause, way, records)
+            for entry, cause, way in zip(entries, causes, ways, strict=True)
         )
         return GuessRequest(
             place=f"{target.spec}#{self.asks}",
@@ -153,10 +155,9 @@ class Guesses:
         )
 
     def _asked(
-        self, entry: WhyEntry, cause: str, records: Sequence[InputRecord], stop_at: float
+        self, entry: WhyEntry, cause: str, way: Way, records: Sequence[InputRecord]
     ) -> AskedLine:
         """One entry as the request names it, its file by its module."""
-        way = way_to(entry.file, entry.lines[0], records, stop_at)
         module_of = self.target.module_of
         conditions = tuple(
             Side(condition_text(each.site, module_of(each.site.file)), each.side)

@@ -138,26 +138,20 @@ class Along:
     furthest: int | None = None
 
 
-def along(file: str, line: int, run: Run) -> Along:
-    """How far the run's inputs got along the way to ``line`` of ``file``, until the run's stop.
+def along(file: str, lines: Sequence[int], run: Run) -> tuple[Along, ...]:
+    """How far the run's inputs got along the way to each of ``lines`` of ``file``, until the
+    run's stop, the file's inputs read once for them all.
 
     Empty for a line no function holds, for one of a function too large to read before the
     stop, and when the stop comes before the way is read.
     """
-    if run.late():
-        return Along()
     try:
+        if run.late():
+            raise OutOfTimeError
         seen = _Seen.of(file, frozenset[int]().union(*(each.lines for each in run.walked)), run)
-        code = seen.owners.get(line)
-        if code is None:
-            return Along()
-        walk = _Walk.of(seen, code)
-        steps = walk.flow.way(line)
-    except (OutOfTimeError, UnaffordableError):
-        return Along()
-    with contextlib.suppress(OutOfTimeError):
-        return Along(steps, walk.furthest(line))
-    return Along(steps)
+    except OutOfTimeError:
+        return (Along(),) * len(lines)
+    return tuple(seen.along(line) for line in lines)
 
 
 @dataclass(frozen=True)
@@ -238,15 +232,32 @@ class _Seen:
             return WhyEntry(file=self.file, lines=(), reason=Reason.IMPORT)
         if id(code) not in self._called:
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
-        if id(code) in self.left:
-            return None
-        if id(code) not in self.flows:
+        walk = self._walk(code)
+        return None if walk is None else walk.cause_of(line)
+
+    def along(self, line: int) -> Along:
+        """How far the inputs got along the way to ``line``, each function's flow read once."""
+        code = self.owners.get(line)
+        try:
+            walk = None if code is None else self._walk(code)
+            if walk is None:
+                return Along()
+            steps = walk.flow.way(line)
+        except (OutOfTimeError, UnaffordableError):
+            return Along()
+        with contextlib.suppress(OutOfTimeError):
+            return Along(steps, walk.furthest(line))
+        return Along(steps)
+
+    def _walk(self, code: types.CodeType) -> _Walk | None:
+        """The flow walk of ``code``, read once, or None for a function too large to read before
+        the stop."""
+        if id(code) not in self.flows and id(code) not in self.left:
             try:
                 self.flows[id(code)] = _Walk.of(self, code)
             except UnaffordableError:
                 self.left.add(id(code))
-                return None
-        return self.flows[id(code)].cause_of(line)
+        return self.flows.get(id(code))
 
 
 def _own(file: str, run: Run, pace: Pace) -> dict[At, frozenset[bool]]:

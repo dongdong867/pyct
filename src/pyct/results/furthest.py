@@ -9,7 +9,7 @@ from pyct.core.foundation.branch import Site
 from pyct.results.blocks import StepKind
 from pyct.results.causes import Condition
 from pyct.results.record import InputRecord
-from pyct.results.why import Run, Walked, along
+from pyct.results.why import Along, Run, Walked, along
 
 # the most conditions a way holds; the ones nearest the line are kept
 MOST_CONDITIONS = 30
@@ -33,11 +33,32 @@ def way_to(file: str, line: int, records: Sequence[InputRecord], stop_at: float 
     ``stop_at`` is the monotonic instant past which no more of it is worked
     out, or None to work it all out, as for ``why_uncovered``.
     """
+    [way] = ways_to(((file, line),), records, stop_at)
+    return way
+
+
+def ways_to(
+    places: Sequence[tuple[str, int]], records: Sequence[InputRecord], stop_at: float | None
+) -> tuple[Way, ...]:
+    """The way to each line of ``places``, a file and a line each, as ``way_to`` gives it, the
+    inputs and each file read once for them all."""
     walked = [
         Walked(record.forks, record.failure is not None, record.covered_lines, record.facts)
         for record in records
     ]
-    found = along(file, line, Run(walked, {}, stop_at=stop_at))
+    run = Run(walked, {}, stop_at=stop_at)
+    by_file: dict[str, list[int]] = {}
+    for file, line in places:
+        by_file.setdefault(file, []).append(line)
+    found = {
+        (file, line): each
+        for file, lines in by_file.items()
+        for line, each in zip(lines, along(file, lines, run), strict=True)
+    }
+    return tuple(_way(file, found[file, line]) for file, line in places)
+
+
+def _way(file: str, found: Along) -> Way:
     conditions = [
         Condition(Site(file=file, line=step.line, col=step.col), step.side)
         for step in found.steps
