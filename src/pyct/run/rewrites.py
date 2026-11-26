@@ -50,7 +50,7 @@ from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.llm_asks import Why
-from pyct.results.record import Aim, InputRecord, MissWhy, Source, Stop
+from pyct.results.record import Aim, InputRecord, Source, Stop
 from pyct.rewrite.ask import GivenUp, Unread, holds_its_own_check
 from pyct.rewrite.condition import FUNCTION, READER
 from pyct.rewrite.kept import Kept
@@ -70,6 +70,7 @@ from pyct.run.model_runs import (
 )
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
+from pyct.run.records import miss_why
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
 from pyct.run.target import Target, argument_checks, execution_context
 from pyct.run.tell import Ask, Told
@@ -79,12 +80,6 @@ from pyct.solver.given import Given
 
 # why a no-fork entry is given up when no input ran its condition's line
 NO_INPUT_RAN = "no input ran the condition"
-# the solver's answers a rewrite is asked for in place of, by the words a request gives each
-_GAVE_UP: Mapping[type[Answer], MissWhy] = {
-    Timeout: MissWhy.TIMEOUT,
-    Unknown: MissWhy.UNKNOWN,
-    Unsat: MissWhy.UNSAT,
-}
 
 
 class Rewrites(Asker):
@@ -203,12 +198,12 @@ class Rewrites(Asker):
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
         """Keep the plan when it is the first at its condition whose ask ran out or was
         unsat."""
-        why = _GAVE_UP.get(type(solved.answer))
+        answer = solved.answer
         aimed = wanted.prefix[-1]
-        if aimed.raising or why is None:
+        if aimed.raising or not isinstance(answer, Timeout | Unknown | Unsat):
             return
         condition = Condition(aimed.site, aimed.taken)
-        self.given_up.setdefault(condition, GivenUp(condition, wanted, origin, why))
+        self.given_up.setdefault(condition, GivenUp(condition, wanted, origin, miss_why(answer)))
 
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
