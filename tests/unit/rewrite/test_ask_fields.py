@@ -1,6 +1,6 @@
 """What a rewrite that reads an object's fields puts in an ask: only what its own code recorded,
 never what the child recorded while it built the object; why the reader read no field; and on
-which inputs a kept rewrite or a later visit runs it."""
+which inputs a kept rewrite runs."""
 
 import types
 from collections.abc import Mapping
