@@ -258,7 +258,7 @@ class _Around:
         limit = self._limit()
         if limit <= 0:
             return None
-        wanted = _own(asked, given.path) if given.plan is None else given.plan
+        wanted = _own_fork_plan(asked, given.path) if given.plan is None else given.plan
         solved = solver_answer(wanted, given.origin, limit, asked)
         self.run.tell_ask(solved.asked)
         return solved.answer
@@ -311,7 +311,7 @@ class _Child:
         return ran.result if ran.ended is None else Unread(ran.ended)
 
 
-def _own(asked: tuple[Branch | Fact, ...], path: int) -> Plan:
+def _own_fork_plan(asked: tuple[Branch | Fact, ...], path: int) -> Plan:
     """The plan that names a rewrite's ask, its own fork last, on the input ``path`` names."""
     forks = tuple(item for item in asked if isinstance(item, Branch))
     return Plan(forks, Aim(forks[-1].site, len(forks) - 1), path)
