@@ -149,3 +149,20 @@ def test_an_ask_with_no_answer_comes_back_as_it_is() -> None:
 
     assert isinstance(reply, Unanswered)
     assert reply.why is Why.PROVIDER
+
+
+# what a no-fork request says in place of the solver's answer
+NOT_FOLLOWED = "pyct does not follow the value the condition below reads"
+
+
+# llm-rewrite-no-fork-request
+def test_a_no_fork_request_says_pyct_does_not_follow_the_value_and_asks_for_another_path() -> None:
+    text = request_text(dataclasses.replace(REQUEST, answer="no fork"))
+
+    assert NOT_FOLLOWED in text
+    assert "could not answer" not in text
+    assert "The solver's answer" not in text
+    assert 'The conditions that input\'s path took, nearest last:\ns.startswith("-"): true' in text
+    assert "An input that ran the condition, each value as JSON" in text
+    assert OTHER_PATH in text
+    assert NOT_FOLLOWED not in request_text(REQUEST)

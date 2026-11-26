@@ -245,8 +245,8 @@ class FakeGuesses:
         return False
 
 
-# llm-summary-for-a-call-pyct-cannot-follow-no-source-goes-to-guesses-after-summaries
-def test_summaries_give_up_an_entry_with_no_source_and_guesses_take_it_then(
+# llm-rewrite-no-fork-no-source-goes-to-guesses-with-rewrites-off
+def test_with_rewrites_off_guesses_take_an_entry_with_no_source_at_the_first_moment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     guesses = FakeGuesses()
@@ -259,20 +259,18 @@ def test_summaries_give_up_an_entry_with_no_source_and_guesses_take_it_then(
     take = Summaries.take
 
     def kept(self: Summaries, entries: tuple[WhyEntry, ...], moment: Moment) -> Handled:
-        handled = take(self, entries, moment)
         handed.append(entries)
-        assert all(each is Outcome.GAVE_UP for each in handled.outcomes)
-        return handled
+        return take(self, entries, moment)
 
     monkeypatch.setattr(Summaries, "take", kept)
 
     run_summaries(LATE, {"s": "a", "n": 3}, FakeSummaries([HALF]))
 
-    condition = Site(C, 51, 7)
-    [[entry]] = handed
+    assert handed == []
+    [(number, (entry,))] = guesses.handed
+    assert number == 1
     assert entry.condition is not None
-    assert (entry.condition.site, entry.sources) == (condition, ())
-    assert guesses.handed == [(1, (entry,))]
+    assert (entry.condition.site, entry.sources) == (Site(C, 51, 7), ())
 
 
 # llm-stuck-moment-needs-a-tool-that-can-ask-token-limit

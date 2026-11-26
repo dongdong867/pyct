@@ -21,15 +21,17 @@ from pyct.llm.rewrites import request_text
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
 from pyct.results.llm_asks import AskCost, Unanswered, Why
-from pyct.results.record import MissWhy
+from pyct.results.record import InputRecord, MissWhy
 from pyct.rewrite.ask import GivenUp
 from pyct.rewrite.condition import Rewrite, rewrite_code
+from pyct.rewrite.notes import RewriteGivenUp
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.run import loop as loop_module
 from pyct.run import model_runs
 from pyct.run import rewrites as rewrites_module
 from pyct.run.loop import Solved
 from pyct.run.model_runs import Building
+from pyct.run.notes import Note
 from pyct.run.process import InputStartError
 from pyct.run.rewrites import Rewrites, _Around, _Child
 from pyct.run.stuck import Handled, Moment, Outcome
@@ -308,3 +310,24 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
     given = GivenUp(Condition(site, True), wanted, Seed.of({"n": 0}), MissWhy.TIMEOUT)
 
     assert around.ask(wanted.asked, given) is None
+
+
+# llm-rewrite-no-fork-no-input-ran-the-condition
+def test_a_no_fork_line_no_input_ran_is_given_up_said() -> None:
+    target = loaded(COUNTED)
+    notes: list[Note] = []
+    provider = FakeRewrites(['s == "1e-30"'])
+    tool = Rewrites(provider, target, Told(Scope.of_module(target.file), Tell(noted=notes.append)))
+    site = Site(target.file, 2, 7)
+    entry = WhyEntry(site.file, (3,), Reason.NO_FORK, condition=Condition(site, True), sources=())
+    # the run's one input ran line 1 alone, not the condition's line
+    ran = InputRecord({"s": "0", "n": 0}, (), frozenset({1}))
+    going = types.SimpleNamespace(
+        stopped=None, bounds=types.SimpleNamespace(until=None), records=[ran]
+    )
+
+    handled = tool.take((entry,), Moment(1, (entry,), run=going))  # pyrefly: ignore[bad-argument-type]
+
+    assert handled == Handled((Outcome.GAVE_UP,), asked=False)
+    assert notes == [RewriteGivenUp(site, "no input ran the condition")]
+    assert provider.requests == []

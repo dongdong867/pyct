@@ -44,7 +44,18 @@ UNSAT = WhyEntry(
 )
 NOT_CALLED = WhyEntry(FILE, (16,), Reason.NOT_CALLED, function="g")
 CUT_SHORT = WhyEntry(FILE, (18,), Reason.NOT_WORKED_OUT)
-EVERY = (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED, UNSAT, NOT_CALLED, CUT_SHORT)
+LOST = WhyEntry(
+    FILE,
+    (20,),
+    Reason.NO_FORK,
+    condition=Condition(site(19), True),
+    sources=(Source(SourceKind.LOST, "k", site(18), call="__pow__"),),
+)
+# a lost source beside a loop source
+LOST_AND_LOOPED = dataclasses.replace(
+    LOST, sources=(*(LOST.sources or ()), Source(SourceKind.LOOP, "t", site(17)))
+)
+EVERY = (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED, UNSAT, NOT_CALLED, CUT_SHORT, LOST)
 
 
 @dataclass
@@ -131,8 +142,8 @@ def test_each_tool_takes_the_entries_of_its_causes() -> None:
 
     held([guesses, rewrites, summaries])
 
-    assert summaries.handed == [(1, (LOOPED, NO_SOURCE))]
-    assert rewrites.handed == [(1, (TIMED_OUT, UNSAT))]
+    assert summaries.handed == [(1, (LOST,))]
+    assert rewrites.handed == [(1, (LOOPED, TIMED_OUT, NO_SOURCE, UNSAT))]
     assert guesses.handed == [(1, (HANDLER, ENDED))]
 
 
@@ -150,53 +161,53 @@ def test_guesses_take_a_switched_off_tool_s_entries_in_line_order() -> None:
 
     held([guesses])
 
-    assert guesses.handed == [(1, (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED, UNSAT))]
+    assert guesses.handed == [(1, (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED, UNSAT, LOST))]
 
 
 def test_guesses_take_what_a_tool_gave_up_on_and_not_what_it_took() -> None:
-    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP, NO_SOURCE: Outcome.GAVE_UP})
-    rewrites = FakeTool(Kind.REWRITES, {TIMED_OUT: Outcome.TOOK})
+    summaries = FakeTool(Kind.SUMMARIES, {LOST: Outcome.GAVE_UP})
+    rewrites = FakeTool(Kind.REWRITES, {LOOPED: Outcome.GAVE_UP, TIMED_OUT: Outcome.TOOK})
     guesses = FakeTool(Kind.GUESSES)
 
     held([summaries, rewrites, guesses])
 
-    assert guesses.handed == [(1, (LOOPED, NO_SOURCE, HANDLER, ENDED))]
+    assert guesses.handed == [(1, (LOOPED, HANDLER, ENDED, LOST))]
 
 
-# llm-summary-for-a-call-pyct-cannot-follow-no-source-goes-to-guesses-after-summaries
-def test_guesses_take_an_entry_with_no_source_at_the_moment_summaries_give_it_up() -> None:
-    summaries = FakeTool(Kind.SUMMARIES, {NO_SOURCE: Outcome.GAVE_UP})
+# llm-rewrite-no-fork-no-source-goes-to-guesses-after-rewrites
+def test_guesses_take_an_entry_with_no_source_at_the_moment_rewrites_give_it_up() -> None:
+    rewrites = FakeTool(Kind.REWRITES, {NO_SOURCE: Outcome.GAVE_UP})
     guesses = FakeTool(Kind.GUESSES)
 
-    held([summaries, guesses], FakeRun(causes_given=(NO_SOURCE,)))
+    held([rewrites, guesses], FakeRun(causes_given=(NO_SOURCE,)))
 
-    assert summaries.handed == [(1, (NO_SOURCE,))]
+    assert rewrites.handed == [(1, (NO_SOURCE,))]
     assert guesses.handed == [(1, (NO_SOURCE,))]
 
 
 def test_guesses_take_what_a_tool_gave_up_on_at_an_earlier_moment() -> None:
-    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP})
+    summaries = FakeTool(Kind.SUMMARIES, {LOST: Outcome.GAVE_UP})
     guesses = FakeTool(Kind.GUESSES)
     stuck = Stuck([summaries, guesses])
-    stuck.hold(FakeRun(causes_given=(LOOPED,)))
+    stuck.hold(FakeRun(causes_given=(LOST,)))
     # at the second moment the summary's ask is skipped
     summaries.outcomes = {}
 
-    stuck.hold(FakeRun(causes_given=(LOOPED,)))
+    stuck.hold(FakeRun(causes_given=(LOST,)))
 
-    assert guesses.handed == [(1, (LOOPED,)), (2, (LOOPED,))]
+    assert guesses.handed == [(1, (LOST,)), (2, (LOST,))]
 
 
 def test_guesses_leave_an_entry_given_up_earlier_that_its_tool_takes_now() -> None:
-    summaries = FakeTool(Kind.SUMMARIES, {LOOPED: Outcome.GAVE_UP})
+    summaries = FakeTool(Kind.SUMMARIES, {LOST: Outcome.GAVE_UP})
     guesses = FakeTool(Kind.GUESSES)
     stuck = Stuck([summaries, guesses])
-    stuck.hold(FakeRun(causes_given=(LOOPED,)))
-    summaries.outcomes = {LOOPED: Outcome.TOOK}
+    stuck.hold(FakeRun(causes_given=(LOST,)))
+    summaries.outcomes = {LOST: Outcome.TOOK}
 
-    stuck.hold(FakeRun(causes_given=(LOOPED,)))
+    stuck.hold(FakeRun(causes_given=(LOST,)))
 
-    assert guesses.handed == [(1, (LOOPED,))]
+    assert guesses.handed == [(1, (LOST,))]
 
 
 def test_a_tool_with_no_entry_is_not_handed_any() -> None:
@@ -254,9 +265,11 @@ def test_a_stop_a_tool_meets_ends_the_moment() -> None:
 @pytest.mark.parametrize(
     ("entry", "expected"),
     [
-        (LOOPED, Kind.SUMMARIES),
+        (LOOPED, Kind.REWRITES),
         (TIMED_OUT, Kind.REWRITES),
-        (NO_SOURCE, Kind.SUMMARIES),
+        (NO_SOURCE, Kind.REWRITES),
+        (LOST, Kind.SUMMARIES),
+        (LOST_AND_LOOPED, Kind.SUMMARIES),
         (HANDLER, Kind.GUESSES),
         (ENDED, Kind.GUESSES),
         (UNSAT, Kind.REWRITES),

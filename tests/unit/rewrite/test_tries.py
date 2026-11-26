@@ -338,3 +338,14 @@ def test_the_try_s_ask_holds_the_rewrite_s_own_forks_and_facts_alone() -> None:
 
     [asked] = fake.asks
     assert asked == (held_fact(FILE), own(True))
+
+
+# llm-rewrite-no-fork-counts-a-guarded-line
+def test_a_no_fork_try_counts_an_input_that_runs_a_guarded_line() -> None:
+    given = GivenUp(CONDITION, None, Seed.of({"s": "0"}), None, forks=(FORK,), lines=(3,))
+    ran = Fake(record=InputRecord({"s": "1e-30"}, (), frozenset({2, 3})))
+    missed = Fake(record=InputRecord({"s": "1e-29"}, (), frozenset({2})))
+
+    assert Asking(ran, given, ABOUT, ("s",), Kept()).tries(ran) == Tried(True, True)
+    Asking(missed, given, ABOUT, ("s",), Kept()).tries(missed)
+    assert failed(missed)[0] == 'the input {"s": "1e-29"} ran none of the lines that side guards'

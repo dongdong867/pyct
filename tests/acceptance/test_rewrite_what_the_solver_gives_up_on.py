@@ -87,7 +87,7 @@ def test_a_condition_whose_flip_is_unsat_is_asked_about_and_each_failed_try_says
     assert 4 in ran.result.coverage.uncovered[file_of("never")]
 
 
-# llm-rewrite-when-the-solver-gives-up-skips-a-line-with-no-fork
+# llm-rewrite-no-fork-lost-value-with-summaries-off
 def test_a_line_under_a_condition_with_no_fork_is_not_asked_about() -> None:
     provider = FakeRewrites(["n % 2 == 1"])
 

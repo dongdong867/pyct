@@ -30,6 +30,7 @@ from pyct.run.isolation import Isolation
 from pyct.run.notes import Note
 from pyct.run.run import run
 from pyct.run.setup import Setup
+from pyct.run.summaries import SummaryProvider
 from pyct.run.target import interception, load_target
 from pyct.run.tell import Tell
 from tests.acceptance.harness import REPO_ROOT
@@ -91,11 +92,13 @@ def run_rewrites(
     seed: Mapping[str, object] | Callable[[], Mapping[str, object]],
     provider: FakeRewrites | None,
     limits: Limits = SHORT,
+    summaries: SummaryProvider | None = None,
 ) -> Rewritten:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package, every
     input in this process and each rewrite in a child of it, with ``provider`` as the rewrites
-    helper (none for a plain run). A ``seed`` given as a function is made once the target has
-    loaded, so an instance it hands in is of the target's own classes."""
+    helper (none for a plain run) and ``summaries`` as the summaries helper. A ``seed`` given as
+    a function is made once the target has loaded, so an instance it hands in is of the target's
+    own classes."""
     records: list[InputRecord] = []
     said: list[str] = []
 
@@ -108,7 +111,8 @@ def run_rewrites(
         if line is not None:
             said.append(line)
 
-    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=Helpers(rewrites=provider))
+    helpers = Helpers(summaries=summaries, rewrites=provider)
+    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=helpers)
     tell = Tell(report=report, noted=noted)
     with interception(spec):
         target = load_target(spec)

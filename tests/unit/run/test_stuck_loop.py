@@ -145,23 +145,23 @@ def test_a_tool_s_input_joins_the_run() -> None:
 
 
 def test_five_inputs_in_a_row_with_no_new_line_make_a_run_stuck() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
     limits = Limits(plateau=Plateau(inputs=10))
 
-    go(loop_of(COUNTS, [summaries], limits), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], limits), {"s": ""})
 
     # inputs 4 to 8 gain nothing, then the count starts again after the moment, and the plateau
     # stops the run after the second
-    assert [(number, inputs) for number, inputs, _ in summaries.moments] == [(1, 8), (2, 13)]
-    assert {entry.lines for _, _, entries in summaries.moments for entry in entries} == {(14,)}
+    assert [(number, inputs) for number, inputs, _ in rewrites.moments] == [(1, 8), (2, 13)]
+    assert {entry.lines for _, _, entries in rewrites.moments for entry in entries} == {(14,)}
 
 
 def test_a_run_holds_at_most_three_moments_that_ask() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
 
-    go(loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=40))), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], Limits(plateau=Plateau(inputs=40))), {"s": ""})
 
-    assert [(number, inputs) for number, inputs, _ in summaries.moments] == [
+    assert [(number, inputs) for number, inputs, _ in rewrites.moments] == [
         (1, 8),
         (2, 13),
         (3, 18),
@@ -170,12 +170,12 @@ def test_a_run_holds_at_most_three_moments_that_ask() -> None:
 
 # space-out-stuck-moments-that-ask-nothing-the-wait-doubles
 def test_moments_that_ask_nothing_come_after_5_10_20_then_40_inputs() -> None:
-    summaries = Tool(Kind.SUMMARIES, asks=False)
+    rewrites = Tool(Kind.REWRITES, asks=False)
 
-    go(loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=100))), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], Limits(plateau=Plateau(inputs=100))), {"s": ""})
 
     # inputs 4 to 103 gain nothing, and the plateau stops the run after input 103
-    assert [(number, inputs) for number, inputs, _ in summaries.moments] == [
+    assert [(number, inputs) for number, inputs, _ in rewrites.moments] == [
         (1, 8),
         (2, 18),
         (3, 38),
@@ -223,15 +223,15 @@ def test_a_run_with_no_tool_is_never_stuck() -> None:
 
 
 def test_the_inputs_in_a_row_count_from_after_the_last_seed() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
     # the seeds cover every line the solver reaches, so no input after them gains one, and the
     # last three seeds gain nothing either: the five in a row count only from after the sixth
     seeds = [{"s": ""}, {"s": "a"}, {"s": "z"}, {"s": ""}, {"s": ""}, {"s": ""}]
-    loop = loop_of(COUNTS, [summaries], Limits(plateau=Plateau(inputs=10)), seeds=len(seeds))
+    loop = loop_of(COUNTS, [rewrites], Limits(plateau=Plateau(inputs=10)), seeds=len(seeds))
 
     go(loop, *seeds)
 
-    assert [moment[:2] for moment in summaries.moments] == [(1, 11), (2, 16)]
+    assert [moment[:2] for moment in rewrites.moments] == [(1, 11), (2, 16)]
 
 
 def test_the_causes_part_way_count_an_open_fork_as_not_tried() -> None:
@@ -263,17 +263,17 @@ def test_an_input_run_between_passes_that_left_its_plan_turns_no_path(
 
 
 def test_each_tool_hears_each_kept_input_with_its_number() -> None:
-    summaries = Tool(Kind.SUMMARIES, runs={"s": "zz"})
+    rewrites = Tool(Kind.REWRITES, runs={"s": "zz"})
     guesses = Tool(Kind.GUESSES)
 
     looped = go(
-        loop_of(COUNTS, [summaries, guesses], Limits(plateau=Plateau(inputs=10)), seeds=2),
+        loop_of(COUNTS, [rewrites, guesses], Limits(plateau=Plateau(inputs=10)), seeds=2),
         {"s": ""},
         {"s": "a"},
     )
 
     numbered = list(enumerate(looped.records, start=1))
-    assert summaries.told_of == numbered
+    assert rewrites.told_of == numbered
     assert guesses.told_of == numbered
     # the seeds, the passes' inputs and the moments' inputs alike
     sources = {record.source for record in looped.records}
@@ -281,45 +281,45 @@ def test_each_tool_hears_each_kept_input_with_its_number() -> None:
 
 
 def test_a_quarter_of_the_budget_with_no_new_line_makes_a_run_stuck_before_five_inputs() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
 
-    go(loop_of(COUNTS, [summaries], LONG, Ticking(COUNTS, [4000.0])), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], LONG, Ticking(COUNTS, [4000.0])), {"s": ""})
 
     # inputs 2 and 3 cover a new line; inputs 4 to 7 take 16000 s, and the 5-input rule would
     # wait for input 8; after the moment, inputs 8 to 11 do the same
-    assert [moment[:2] for moment in summaries.moments] == [(1, 7), (2, 11)]
+    assert [moment[:2] for moment in rewrites.moments] == [(1, 7), (2, 11)]
 
 
 def test_an_input_in_flight_as_the_stretch_ends_that_covers_a_new_line_starts_it_again() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
     # input 3, which covers line 12, takes 20000 s: the stretch ends while it runs
     ticking = Ticking(COUNTS, [4000.0, 4000.0, 20000.0, 1000.0])
 
-    go(loop_of(COUNTS, [summaries], LONG, ticking), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], LONG, ticking), {"s": ""})
 
     # no moment as the next pass starts: the 5 inputs in a row after input 3 come first
-    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 8)]
+    assert [moment[:2] for moment in rewrites.moments][:1] == [(1, 8)]
 
 
 def test_an_input_in_flight_as_the_stretch_ends_with_no_new_line_brings_the_moment() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
     # input 4, which covers no new line, takes 20000 s
     ticking = Ticking(COUNTS, [4000.0, 4000.0, 4000.0, 20000.0, 1000.0])
 
-    go(loop_of(COUNTS, [summaries], LONG, ticking), {"s": ""})
+    go(loop_of(COUNTS, [rewrites], LONG, ticking), {"s": ""})
 
     # the moment comes before the next pick, once input 4 has run
-    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 4)]
+    assert [moment[:2] for moment in rewrites.moments][:1] == [(1, 4)]
 
 
 def test_the_stretch_counts_from_after_the_last_seed() -> None:
-    summaries = Tool(Kind.SUMMARIES)
+    rewrites = Tool(Kind.REWRITES)
     # the two seeds take 20000 s each, and the second covers no new line
     ticking = Ticking(COUNTS, [20000.0, 20000.0, 1000.0])
-    loop = loop_of(COUNTS, [summaries], LONG, ticking, seeds=2)
+    loop = loop_of(COUNTS, [rewrites], LONG, ticking, seeds=2)
 
     go(loop, {"s": ""}, {"s": ""})
 
     # the first moment is the 5-input rule's, 5 inputs after the last of inputs 3 and 4, which
     # cover lines 11 and 12
-    assert [moment[:2] for moment in summaries.moments][:1] == [(1, 9)]
+    assert [moment[:2] for moment in rewrites.moments][:1] == [(1, 9)]
