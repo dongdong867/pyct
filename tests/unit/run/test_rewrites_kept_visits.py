@@ -1,6 +1,7 @@
 """A visit to a condition in a loop whose path already holds the same check on the other side: a
 run with rewrites answers it unsat without the solver and keeps no plan for it, a run without
-rewrites asks as before, and any other visit the solver gives up on is kept and asked about."""
+rewrites asks as before, and the first other visit the solver gives up on is kept and asked
+about."""
 
 import types
 
@@ -11,6 +12,8 @@ from pyct.branches.plan import Plan, plan
 from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.coverage import Scope
+from pyct.results.record import MissWhy
+from pyct.rewrite.ask import GivenUp
 from pyct.rewrite.condition import Rewrite, rewrite_code
 from pyct.run import loop as loop_module
 from pyct.run import model_runs
@@ -187,8 +190,7 @@ def test_a_visit_pyct_cannot_compare_within_the_limit_is_asked_and_kept(asks: li
     assert tool.given_up[Condition(site, True)].plan is wanted
 
 
-# llm-rewrite-visit-an-input-can-meet-keeps-three-visits-at-most
-def test_a_condition_keeps_the_first_three_visits_that_gave_up_and_asks_about_the_first() -> None:
+def test_a_condition_keeps_the_first_plan_that_gave_up() -> None:
     provider = FakeRewrites(["I cannot rewrite it."])
     tool, file = tool_for(CHANGING, provider)
     site = Site(file, 10, 11)
@@ -205,6 +207,9 @@ def test_a_condition_keeps_the_first_three_visits_that_gave_up_and_asks_about_th
 
     tool.take((entry,), moment)
 
-    given = tool.given_up[Condition(site, True)]
-    assert [(visit.plan, visit.origin.args["items"]) for visit in given.visits] == gave_up[:3]
+    condition = Condition(site, True)
+    first, items = gave_up[0]
+    assert tool.given_up[condition] == GivenUp(
+        condition, first, Seed.of({"items": items}), MissWhy.TIMEOUT
+    )
     assert provider.requests[0].args == (("items", '["0"]'),)

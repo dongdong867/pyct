@@ -1,6 +1,7 @@
 """Acceptance tests for the a-rewrite-reads-an-object-s-fields story's kept rewrites: a rewrite that
 reads a field and took the wanted side stands in for its condition in later asks, building the
-object again in its child each time, and a try goes on to the condition's later visits.
+object again in its child each time, and a field read covers a line only the condition's second
+visit reaches.
 
 The targets sit in ``targets/rewrites/objects.py``, so a condition's line is its line in that file.
 """
@@ -70,8 +71,8 @@ def test_each_run_of_a_kept_field_read_builds_the_object_again(
     assert builds_by(noisy) == (len(ran.records), len(children))
 
 
-# llm-rewrite-object-fields-kept-tried-on-a-later-visit
-def test_a_field_read_is_tried_on_the_condition_s_later_visit() -> None:
+# llm-rewrite-object-fields-kept-covers-a-line-only-the-second-visit-reaches
+def test_a_field_read_covers_a_line_only_the_condition_s_second_visit_reaches() -> None:
     provider = FakeRewrites([READS_CODE])
 
     ran = run_rewrites(PICK, {"order": form("Order", code="2")}, provider)

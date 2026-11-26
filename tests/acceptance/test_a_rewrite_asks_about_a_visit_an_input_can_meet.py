@@ -1,7 +1,7 @@
 """Acceptance tests for the a-rewrite-asks-about-a-visit-an-input-can-meet ticket: when a condition
-the solver gives up on sits in a loop, pyct asks about a visit whose path does not already hold
-the same check on the other side, tries the rewrite on the next visit kept when the solver gives
-no input for it on one, and the rewrite's input covers the line.
+the solver gives up on sits in a loop, pyct asks about the condition's first kept plan, whose path
+does not already hold the same check on the other side, solves the rewrite alone, and the
+rewrite's input covers the line.
 
 It runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text.
 """
@@ -51,13 +51,13 @@ AT_PICK = f"llm: rewrite for {file_of('later_visit')}:3:34"
 
 
 # llm-rewrite-visit-an-input-can-meet-covers-a-line-only-the-second-visit-reaches
-def test_a_rewrite_with_no_input_on_the_first_visit_covers_the_line_from_the_second() -> None:
+def test_a_rewrite_solved_alone_covers_a_line_only_the_second_visit_reaches() -> None:
     provider = FakeRewrites([WANTED])
 
     ran = run_rewrites(PICK, {"s": "2"}, provider, LOOPED)
 
-    # one try: asked about the first visit, whose path took `s.startswith("2")`, it took the
-    # wanted side on the second, with no failed try between
+    # one try: asked about the first visit, the expression solved alone gives an input that
+    # takes the wanted side on the second
     [request] = provider.requests
     assert request.args == (("s", '"2"'),)
     assert llm_said(ran.said) == [f"{AT_PICK}: {WANTED}", f"{AT_PICK}: took the wanted side"]

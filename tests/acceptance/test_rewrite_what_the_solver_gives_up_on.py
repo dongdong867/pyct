@@ -1,6 +1,7 @@
 """Acceptance tests for the rewrite-what-the-solver-gives-up-on story: when a run with rewrites is
-stuck on a condition whose asks ran out, pyct asks a fake provider for an easier condition,
-solves it on the same path, and keeps its input when it takes the wanted side on the real code.
+stuck on a condition whose asks ran out, pyct asks a fake provider for an expression equivalent to
+the condition or narrower, solves it alone, and keeps its input when it takes the wanted side on
+the real code.
 
 Each runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text; the stderr lines are
 the command line's words for the notes the run gave.
@@ -43,6 +44,22 @@ def test_a_rewrite_s_input_that_takes_the_side_covers_the_line() -> None:
     assert 3 in found.covered_lines
 
 
+# `big(s)`: `if s.isdigit() and int(s) > 10**30:` on line 2 guards `return 1` on line 3
+DIGITS = "targets.rewrites.digits::big"
+ONE_VALUE = 's == "1000000000000000000000000000001"'
+
+
+# llm-rewrite-when-the-solver-gives-up
+def test_a_reply_of_one_exact_value_covers_the_digits_line() -> None:
+    ran = run_rewrites(DIGITS, {"s": "5"}, FakeRewrites([ONE_VALUE]))
+
+    at = f"llm: rewrite for {file_of('digits')}:2:23"
+    assert llm_said(ran.said) == [f"{at}: {ONE_VALUE}", f"{at}: took the wanted side"]
+    [line_3] = [record for record in ran.records if 3 in record.covered_lines]
+    assert line_3.source is Source.REWRITE
+    assert line_3.args == {"s": "1000000000000000000000000000001"}
+
+
 # llm-rewrite-when-the-solver-gives-up-sends-the-condition-and-its-path
 def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_answer() -> None:
     provider = FakeRewrites(['s == "-1e-30"'])
@@ -58,17 +75,19 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_ans
     assert request.place == "targets.rewrites.path:3:11"
 
 
-# llm-rewrite-when-the-solver-gives-up-skips-a-condition-that-is-unsat
-def test_a_condition_whose_flip_is_unsat_is_not_asked_about() -> None:
-    provider = FakeRewrites(["x == 1"])
+# llm-rewrite-when-the-solver-gives-up-asks-about-a-condition-that-is-unsat
+def test_a_condition_whose_flip_is_unsat_is_asked_about_and_each_failed_try_says_why() -> None:
+    provider = FakeRewrites(["x < 0 and x > 0"])
 
     ran = run_rewrites("targets.rewrites.never::never", {"x": 1}, provider)
 
+    assert provider.requests[0].answer == "unsat"
+    at = f"llm: rewrite for {file_of('never')}:3:11"
+    assert f"{at}, try 1: the solver answered unsat" in llm_said(ran.said)
     assert 4 in ran.result.coverage.uncovered[file_of("never")]
-    assert provider.requests == []
 
 
-# llm-rewrite-when-the-solver-gives-up-skips-a-line-with-no-fork
+# llm-rewrite-no-fork-lost-value-with-summaries-off
 def test_a_line_under_a_condition_with_no_fork_is_not_asked_about() -> None:
     provider = FakeRewrites(["n % 2 == 1"])
 

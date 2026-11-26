@@ -48,11 +48,11 @@ def request_for(
     holders: tuple[str, ...],
     kinds: Kinds,
 ) -> RewriteRequest:
-    """The request for a condition the solver gave up on, with this moment's earlier tries and
-    the parameters a rewrite may not read, since each holds an object inside a list, tuple or
-    dict. ``kinds`` tells the input's objects apart, the method's ``self`` among them."""
-    plan = given.plan
-    earlier = [fork for fork in plan.prefix[:-1] if not fork.raising]
+    """The request for a condition the solver gave up on or that recorded no fork, with this
+    moment's earlier tries and the parameters a rewrite may not read, since each holds an object
+    inside a list, tuple or dict. ``kinds`` tells the input's objects apart, the method's
+    ``self`` among them."""
+    earlier = [fork for fork in given.earlier if not fork.raising]
     # each condition at its last place on the path, so the nearest ones stay
     last = {(fork.site, fork.taken): at for at, fork in enumerate(earlier)}
     sides = sorted(last, key=last.__getitem__)[-EARLIER:]
@@ -62,7 +62,7 @@ def request_for(
         earlier=tuple(Side(_text(site, about), side) for site, side in sides),
         code=about.code,
         args=args_text(given.origin.args, kinds),
-        answer=given.answer.value,
+        answer=given.said,
         tries=tries,
         holders=holders,
     )

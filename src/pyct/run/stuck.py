@@ -15,8 +15,9 @@ llm-stuck-on-time-as-well-as-inputs and
 llm-a-moment-that-asks-nothing-doubles-the-wait-before-the-next.
 
 An entry goes first to the tool its cause names (``owner``): a ``no
-fork`` entry, with or without a source, to summaries, a ``not taken``
-entry whose tries hold a ``timeout`` or an ``unknown`` to rewrites, and a
+fork`` entry with a source lost at a call, a loop source beside it or not,
+to summaries, every other ``no fork`` entry and a ``not taken`` entry whose
+tries hold a ``timeout``, an ``unknown`` or an ``unsat`` to rewrites, and a
 ``handler`` and an ``ended before`` entry to guesses. Decision
 llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it.
 Guesses also take the entries of a tool that is switched off, and each
@@ -36,7 +37,7 @@ from typing import Protocol
 from pyct.binding.bind import Seed
 from pyct.branches.plan import Plan
 from pyct.config.goal import Goal
-from pyct.results.causes import Condition, Reason, WhyEntry
+from pyct.results.causes import Condition, Reason, SourceKind, WhyEntry
 from pyct.results.coverage import Progress, no_gain
 from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import InputRecord, Source, Stop
@@ -161,9 +162,11 @@ def owner(entry: WhyEntry) -> Kind | None:
     """The tool an entry's cause names first, or None for a cause no tool takes."""
     if entry.reason is Reason.NOT_TAKEN:
         tries = entry.tries
-        return Kind.REWRITES if tries is not None and (tries.timeout or tries.unknown) else None
+        gave_up = tries is not None and (tries.timeout or tries.unknown or tries.unsat)
+        return Kind.REWRITES if gave_up else None
     if entry.reason is Reason.NO_FORK:
-        return Kind.SUMMARIES
+        lost = any(source.kind is SourceKind.LOST for source in entry.sources or ())
+        return Kind.SUMMARIES if lost else Kind.REWRITES
     if entry.reason in (Reason.HANDLER, Reason.ENDED_BEFORE):
         return Kind.GUESSES
     return None

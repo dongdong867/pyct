@@ -16,8 +16,9 @@ class Helpers:
 
     ``seeds`` is asked once, before the first input, for seeds that run after the user's own.
     ``summaries`` is asked between passes for a formula of the answer of a call pyct cannot
-    follow (``pyct.run.summaries``). ``rewrites`` is asked at a stuck moment for an easier condition
-    in place of one whose asks ran out (``pyct.run.rewrites``).
+    follow (``pyct.run.summaries``). ``rewrites`` is asked at a stuck moment about a missed branch
+    the solver cannot flip or records no fork at, for an expression it solves alone
+    (``pyct.run.rewrites``).
     """
 
     seeds: SeedProvider | None = None

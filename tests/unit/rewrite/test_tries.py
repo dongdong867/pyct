@@ -30,7 +30,7 @@ from pyct.rewrite.notes import (
 from pyct.rewrite.provider import RewriteReply, RewriteRequest
 from pyct.rewrite.request import VALUE_SIZE, About
 from pyct.rewrite.tries import Asking, Tried
-from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
+from pyct.solver.answer import Answer, Error, Sat
 
 SITE = Site("m.py", 2, 7)
 CONDITION = Condition(SITE, True)
@@ -84,7 +84,7 @@ class Fake:
     def blocked(self) -> str | None:
         return self.blocks.pop(0)
 
-    def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
+    def ask(self, asked: tuple[Branch | Fact, ...], given: GivenUp) -> Answer | None:
         self.asks.append(asked)
         return self.answer
 
@@ -267,38 +267,6 @@ def test_a_solver_that_fails_on_a_rewrite_fails_the_try() -> None:
     assert failed(fake)[0] == "the solver failed: cvc5 said no"
 
 
-# llm-rewrite-retry-asks-for-one-exact-value-after-the-solver-gave-up
-@pytest.mark.parametrize(("answer", "said"), [(Timeout(), "timeout"), (Unknown(), "unknown")])
-def test_a_try_the_solver_could_not_answer_is_marked_given_up_in_the_next_ask(
-    answer: Answer, said: str
-) -> None:
-    fake = Fake(answer=answer)
-
-    tried(fake)
-
-    earlier = fake.requests[1].tries[0]
-    assert (earlier.reason, earlier.solver_gave_up) == (f"the solver answered {said}", True)
-
-
-# llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
-@pytest.mark.parametrize(
-    "fake",
-    [
-        Fake(answer=Unsat()),
-        Fake(answer=Error("cvc5 said no")),
-        Fake(record=InputRecord({"s": "1e-29"}, (FORK,), frozenset())),
-        Fake(reply='__import__("os").getcwd() == s'),
-        Fake(reply="prose"),
-        Fake(ran=ExecutionResult(frozenset(), ())),
-    ],
-    ids=["unsat", "solver failed", "other side", "form", "no expression", "reads no argument"],
-)
-def test_a_try_that_failed_for_another_reason_is_not_marked_given_up(fake: Fake) -> None:
-    tried(fake)
-
-    assert [each.solver_gave_up for each in fake.requests[-1].tries] == [False] * 3
-
-
 # llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask
 def test_a_first_ask_carries_no_earlier_try() -> None:
     fake = Fake()
@@ -337,30 +305,47 @@ def test_a_try_with_no_time_left_for_its_ask_ends_the_tries() -> None:
     assert len(fake.asks) == 1
 
 
-def test_the_try_s_ask_holds_the_rewrite_s_own_fork_in_the_condition_s_place() -> None:
-    fake = Fake()
-
-    tried(fake)
-
-    [asked] = fake.asks
-    assert asked[-1] == Branch(["==", "s", "'1e-30'"], True, Site(FILE, HELD_LINE, HELD_COL))
-    assert FORK not in asked
+def held_fact(file: str) -> Fact:
+    return Fact(["==", ["len", "s"], 5], True, Site(file, HELD_LINE, HELD_COL))
 
 
-def test_a_try_s_ask_holds_the_kept_rewrite_of_an_earlier_condition_in_its_place() -> None:
+@dataclass
+class WithFact(Fake):
+    """The run around the tries, running each rewrite as recording a fact, then its own fork on
+    the other side, both in its own file."""
+
+    def run_rewrite(
+        self, code: types.CodeType, args: Mapping[str, object]
+    ) -> ExecutionResult | Unread | str:
+        site = Site(code.co_filename, HELD_LINE, HELD_COL)
+        fork = Branch(["==", "s", "'1e-30'"], False, site)
+        return ExecutionResult(frozenset(), (fork,), facts=(held_fact(code.co_filename),))
+
+
+def test_the_try_s_ask_holds_the_rewrite_s_own_forks_and_facts_alone() -> None:
     earlier = Branch(["==", ["float", "t"], 2.5], True, Site("m.py", 1, 7))
-    wanted = plan((earlier, FORK))
+    known = Fact(["<", "t", "s"], True, Site("m.py", 1, 7))
+    wanted = plan((earlier, FORK), facts=(known,))
     assert wanted is not None
     given = GivenUp(CONDITION, wanted, Seed.of({"s": "0", "t": "2.5"}), MissWhy.TIMEOUT)
     kept = Kept()
     rewrite = rewrite_code('t == "2.5"', ("s", "t"), "<rewrite m:1:7>")
     assert isinstance(rewrite, Rewrite)
     kept.keep(Condition(earlier.site, True), rewrite)
-    fake = Fake()
+    fake = WithFact()
 
     Asking(fake, given, ABOUT, ("s", "t"), kept).tries(fake)
 
     [asked] = fake.asks
-    assert earlier not in asked
-    sites = [item.site for item in asked if isinstance(item, Branch)]
-    assert Site("<rewrite m:1:7>", HELD_LINE, HELD_COL) in sites
+    assert asked == (held_fact(FILE), own(True))
+
+
+# llm-rewrite-no-fork-counts-a-guarded-line
+def test_a_no_fork_try_counts_an_input_that_runs_a_guarded_line() -> None:
+    given = GivenUp(CONDITION, None, Seed.of({"s": "0"}), None, forks=(FORK,), lines=(3,))
+    ran = Fake(record=InputRecord({"s": "1e-30"}, (), frozenset({2, 3})))
+    missed = Fake(record=InputRecord({"s": "1e-29"}, (), frozenset({2})))
+
+    assert Asking(ran, given, ABOUT, ("s",), Kept()).tries(ran) == Tried(True, True)
+    Asking(missed, given, ABOUT, ("s",), Kept()).tries(missed)
+    assert failed(missed)[0] == 'the input {"s": "1e-29"} ran none of the lines that side guards'

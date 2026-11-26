@@ -23,12 +23,10 @@ class Side:
 @dataclass(frozen=True)
 class EarlierTry:
     """A try at this moment that failed: the rewrite it gave, or the reply's text when it held
-    none, why it failed, and whether the solver answered ``timeout`` or ``unknown`` to the
-    rewrite's ask."""
+    none, and why it failed."""
 
     rewrite: str
     reason: str
-    solver_gave_up: bool = False
 
 
 @dataclass(frozen=True)
@@ -42,10 +40,9 @@ class RewriteRequest:
     ``args`` each parameter with the input's value as JSON, or as Python writes it when JSON
     cannot hold it, and a value that is or holds an object as a placeholder written without
     running the target's code (``pyct.rewrite.request.args_text``); ``answer`` what the solver
-    said, ``timeout`` or ``unknown``; ``tries`` this moment's earlier tries, oldest first, each
-    saying whether the solver answered ``timeout`` or ``unknown`` to its rewrite's ask; and
-    ``holders`` the parameters a rewrite may not read, since each holds an object inside a
-    list, tuple or dict.
+    said, ``timeout``, ``unknown`` or ``unsat``, or ``no fork`` for a condition that recorded
+    none; ``tries`` this moment's earlier tries, oldest first; and ``holders`` the parameters
+    a rewrite may not read, since each holds an object inside a list, tuple or dict.
     """
 
     place: str

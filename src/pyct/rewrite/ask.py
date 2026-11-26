@@ -1,15 +1,12 @@
-"""The ask on the same path: what a rewrite's run recorded, put where the condition sat in a
-plan's ask, and whether an input took the side the condition's missed line needs.
+"""The ask of a rewrite alone: what a rewrite's run recorded, which the solver solves with none of
+the path, and whether an input took the side the condition's missed line needs.
 
-The ask holds the path's forks and facts as the plan holds them, each fork
-at the condition's site and side replaced by what the rewrite recorded on
-the input that path extends: its own forks and facts as they went there,
-each operation's fork before a raise kept on the side that did not raise,
-and its own branch taken true. The plan's aimed fork is one of them, so the
-original condition, whose ask ran out, is left out. What the rewrite's child
-recorded outside the rewrite's own code, as it built the objects the rewrite
-reads fields of, is left out too: the path already holds it from the
-input's own build.
+The ask holds the rewrite's own forks and facts as they went on the input
+whose path the given-up plan extends, each operation's fork before a raise
+kept on the side that did not raise, and its own branch taken true. It
+holds none of the path's forks and none of pyct's facts at the condition's
+place. What the rewrite's child recorded outside the rewrite's own code, as
+it built the objects the rewrite reads fields of, is left out too.
 """
 
 from __future__ import annotations
@@ -24,9 +21,9 @@ from pyct.branches.compare import Parts, same_expression
 from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
-from pyct.results.causes import Condition
+from pyct.results.causes import Condition, Reason
 from pyct.results.failure import FailureKind
-from pyct.results.record import Aim, InputRecord, MissWhy, Stop
+from pyct.results.record import Aim, InputRecord, MissWhy
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite
 from pyct.rewrite.kinds import Kinds
 
@@ -52,48 +49,44 @@ class Unread:
 # recorded, why the reader read no field, or why it did not run
 type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResult | Unread | str]
 
-# runs a real input aimed at a plan, as the loop runs every input: its record, or the stop it met
-type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
-
-
-# the visits kept for one condition: the first plans aimed at it whose asks gave up, a request
-# is about the first, and a rewrite the solver gives no input for on one is tried on the next
-VISITS = 3
-
-
-@dataclass(frozen=True)
-class Visit:
-    """One plan aimed at a condition, and the input whose path that plan extends."""
-
-    plan: Plan
-    origin: Seed
-
 
 @dataclass(frozen=True)
 class GivenUp:
     """A condition the solver gave up on: the first plan aimed at it whose ask ended in
-    ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, the input whose
-    path that plan extends, and the answer; and ``later``, the next such plans, in the order
-    they gave up, up to ``VISITS`` in all. A plan whose path holds its own check on the other
-    side (``holds_its_own_check``) is answered ``unsat`` before any ask in a run with rewrites,
-    so it is never kept."""
+    ``timeout``, ``unknown`` or ``unsat``, or had no time left after a kept rewrite's ask, the
+    input whose path that plan extends, and the answer. A plan whose path holds its own check on
+    the other side (``holds_its_own_check``) is answered ``unsat`` before any ask in a run with
+    rewrites, so it is never kept.
+
+    For a condition that recorded no fork, ``plan`` and ``answer`` are None,
+    ``origin`` is an input that ran the condition, ``forks`` the forks that
+    input took, ``lines`` the missed lines the condition's side guards, and
+    ``path`` that input's place among the run's inputs, from 0, as
+    ``Plan.path`` counts it.
+    """
 
     condition: Condition
-    plan: Plan
+    plan: Plan | None
     origin: Seed
-    answer: MissWhy
-    later: tuple[Visit, ...] = ()
+    answer: MissWhy | None
+    forks: tuple[Branch, ...] = ()
+    lines: tuple[int, ...] = ()
+    path: int = 0
 
     @property
-    def visits(self) -> tuple[Visit, ...]:
-        """Each kept plan with its input, in the order they gave up."""
-        return (Visit(self.plan, self.origin), *self.later)
+    def no_fork(self) -> bool:
+        """Whether the condition recorded no fork, so ``plan`` and ``answer`` are None."""
+        return self.plan is None
 
-    def joined(self, visit: Visit) -> GivenUp:
-        """This condition with ``visit`` kept last, while fewer than ``VISITS`` are kept."""
-        if len(self.visits) >= VISITS:
-            return self
-        return dataclasses.replace(self, later=(*self.later, visit))
+    @property
+    def said(self) -> str:
+        """The answer a request names: the solver's, or ``no fork``."""
+        return Reason.NO_FORK.value if self.answer is None else self.answer.value
+
+    @property
+    def earlier(self) -> tuple[Branch, ...]:
+        """The forks the plan's path took before its aimed fork, or with no plan ``forks``."""
+        return self.forks if self.plan is None else self.plan.prefix[:-1]
 
 
 @dataclass(frozen=True)
@@ -205,6 +198,14 @@ def in_place(
         else:
             made.append(item)
     return tuple(made)
+
+
+def reached(record: InputRecord, given: GivenUp) -> bool:
+    """Whether an input counts for a condition: with a plan, it took the side the missed line
+    needs (``takes``); with none, it ran a line of ``given.lines``."""
+    if given.no_fork:
+        return not record.covered_lines.isdisjoint(given.lines)
+    return takes(record, given.condition)
 
 
 def takes(record: InputRecord, condition: Condition) -> bool:

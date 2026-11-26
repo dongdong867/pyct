@@ -1,15 +1,18 @@
 """The rewrites tool in a run: the stuck moment's rewrites slot, and the loop's asker, which keeps
-the first plans whose asks ran out at each condition, up to ``VISITS``, in the order they gave
-up, and puts a kept rewrite first in each later ask that holds its condition. A plan whose path
-already holds its aimed fork's check on the other side is answered ``unsat`` before any ask, so
-it is never kept. A request is about a condition's first kept plan, and a rewrite is tried on
-each later one in turn while the solver gives no input for it (``pyct.rewrite.tries``).
+the first plan whose ask ran out or was unsat at each condition, and puts a kept rewrite first in
+each later ask that holds its condition. A plan whose path already holds its aimed fork's check
+on the other side is answered ``unsat`` before any ask, so it is never kept. A request is about a
+condition's kept plan, and the solver is asked for each rewrite alone (``pyct.rewrite.tries``).
 
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
-``timeout`` or an ``unknown``, in line order, one condition at a time, and
-ask about each up to 4 times (``pyct.rewrite.tries``). An ask that got no
-answer is said and ends that condition's tries; once any tool's reply leaves
-no token under the limit, or an ask meets it, no rewrite is asked for again
+``timeout``, an ``unknown`` or an ``unsat``, and each ``no fork`` entry
+whose value was not lost at a call, in line order, one condition at a time,
+and ask about each up to 4 times (``pyct.rewrite.tries``). A ``no fork``
+entry is asked about from the first input in run order that ran its
+condition's line, its path that input's forks; with no such input it is
+given up, said, unasked. An ask that got no answer is said and ends that
+condition's tries; once any tool's reply leaves no token under the limit, or
+an ask meets it, no rewrite is asked for again
 this run (``pyct.run.token_limit``), and the connection has said so. A
 rewrite runs only in a child forked from pyct's process: while pyct's process
 runs another thread, before an ask or when the rewrite would run, the
@@ -45,13 +48,13 @@ from pyct.branches.plan import Plan
 from pyct.config.llm import REWRITES_TOOL
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
-from pyct.results.causes import Condition, WhyEntry
+from pyct.results.causes import Condition, Reason, WhyEntry
 from pyct.results.llm_asks import Why
-from pyct.results.record import InputRecord, MissWhy, Source, Stop
-from pyct.rewrite.ask import GivenUp, Unread, Visit, holds_its_own_check
+from pyct.results.record import Aim, InputRecord, Source, Stop
+from pyct.rewrite.ask import GivenUp, Unread, holds_its_own_check
 from pyct.rewrite.condition import FUNCTION, READER
 from pyct.rewrite.kept import Kept
-from pyct.rewrite.notes import RewriteDropped, RewriteNote
+from pyct.rewrite.notes import RewriteDropped, RewriteGivenUp, RewriteNote
 from pyct.rewrite.provider import RewriteProvider
 from pyct.rewrite.request import About
 from pyct.rewrite.tries import Asking, Tried
@@ -67,12 +70,16 @@ from pyct.run.model_runs import (
 )
 from pyct.run.notes import AskSkipped
 from pyct.run.process import InputStartError
+from pyct.run.records import miss_why
 from pyct.run.stuck import Handled, Kind, Moment, Outcome, Running, going
-from pyct.run.target import Target, execution_context
+from pyct.run.target import Target, argument_checks, execution_context
 from pyct.run.tell import Ask, Told
 from pyct.run.token_limit import TokenLimit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.given import Given
+
+# why a no-fork entry is given up when no input ran its condition's line
+NO_INPUT_RAN = "no input ran the condition"
 
 
 class Rewrites(Asker):
@@ -110,21 +117,48 @@ class Rewrites(Asker):
         outcomes: list[Outcome] = []
         asked = False
         for entry in entries:
-            given = None if entry.condition is None else self.given_up.get(entry.condition)
-            if given is None or self.limit.reached or not going(moment.run):
+            if self.limit.reached or not going(moment.run):
                 outcomes.append(Outcome.SKIPPED)
+                continue
+            given = self._given(entry, moment.run)
+            if isinstance(given, Outcome):
+                outcomes.append(given)
                 continue
             tried = self._asking(given).tries(_Around(moment.run, self.told, self.building))
             asked = asked or tried.asked
             outcomes.append(self._outcome(tried))
         return Handled(tuple(outcomes), asked)
 
+    def _given(self, entry: WhyEntry, run: Running) -> GivenUp | Outcome:
+        """What an entry's tries are about: the plan kept for a ``not taken`` entry's condition,
+        ``skipped`` when none is; for a ``no fork`` entry, the first input that ran its
+        condition's line, or ``gave up``, said, when none did."""
+        condition = entry.condition
+        if condition is None:
+            return Outcome.SKIPPED
+        if entry.reason is not Reason.NO_FORK:
+            return self.given_up.get(condition, Outcome.SKIPPED)
+        ran = next(
+            (
+                (at, record)
+                for at, record in enumerate(run.records)
+                if condition.site.line in record.covered_lines
+            ),
+            None,
+        )
+        if ran is None:
+            self.told.note(RewriteGivenUp(condition.site, NO_INPUT_RAN))
+            return Outcome.GAVE_UP
+        at, record = ran
+        origin = Seed.of(record.args, argument_checks(self.target), self.target.home)
+        return GivenUp(condition, None, origin, None, record.forks, entry.lines, at)
+
     def solved(self, wanted: Plan, origin: Seed, limit: float) -> Solved:
         """The ask with each kept rewrite the plan holds in its condition's place first; then,
         when it gives no input, the plan's own, each within what is left of ``limit``. When
         the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
-        and the pick ends as a ``timeout``, its limit run out. The first ``VISITS`` plans at a
-        condition whose asks ended in ``timeout`` or ``unknown`` are kept. A plan whose path
+        and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
+        whose ask ended in ``timeout``, ``unknown`` or ``unsat`` is kept. A plan whose path
         already holds its aimed fork's check on the other side, which no input meets, is
         answered ``unsat`` before any ask or kept rewrite runs, so it is never kept."""
         self._used = ()
@@ -162,23 +196,18 @@ class Rewrites(Asker):
         return False
 
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
-        """Keep the plan when it is among the first ``VISITS`` at its condition whose ask ran
-        out, after the ones kept before it."""
+        """Keep the plan when it is the first at its condition whose ask ran out or was
+        unsat."""
         answer = solved.answer
         aimed = wanted.prefix[-1]
-        if aimed.raising or not isinstance(answer, Timeout | Unknown):
+        if aimed.raising or not isinstance(answer, Timeout | Unknown | Unsat):
             return
         condition = Condition(aimed.site, aimed.taken)
-        why = MissWhy.TIMEOUT if isinstance(answer, Timeout) else MissWhy.UNKNOWN
-        kept = self.given_up.get(condition)
-        if kept is None:
-            self.given_up[condition] = GivenUp(condition, wanted, origin, why)
-        else:
-            self.given_up[condition] = kept.joined(Visit(wanted, origin))
+        self.given_up.setdefault(condition, GivenUp(condition, wanted, origin, miss_why(answer)))
 
     def _asking(self, given: GivenUp) -> Asking:
         site = given.condition.site
-        files = {site.file, *(fork.site.file for fork in given.plan.prefix)}
+        files = {site.file, *(fork.site.file for fork in given.earlier)}
         modules = {file: self.target.module_of(file) for file in files}
         about = About(
             place=f"{modules[site.file]}:{site.line}:{site.col}",
@@ -222,13 +251,15 @@ class _Around:
         """Why no rewrite can run now: pyct's process runs another thread; None when one can."""
         return None if can_fork() else CANNOT_FORK
 
-    def ask(self, asked: tuple[Branch | Fact, ...], plan: Plan, origin: Seed) -> Answer | None:
-        """The solver's answer within the seconds one ask gets, its programs handed out as the
-        run's asks are; None when no time is left."""
+    def ask(self, asked: tuple[Branch | Fact, ...], given: GivenUp) -> Answer | None:
+        """The solver's answer to ``asked`` alone, from ``given``'s input, within the seconds
+        one ask gets, its programs handed out as the run's asks are; None when no time is
+        left."""
         limit = self._limit()
         if limit <= 0:
             return None
-        solved = solver_answer(plan, origin, limit, asked)
+        wanted = given.plan or _own_fork_plan(asked, given.path)
+        solved = solver_answer(wanted, given.origin, limit, asked)
         self.run.tell_ask(solved.asked)
         return solved.answer
 
@@ -250,7 +281,7 @@ class _Around:
     ) -> ExecutionResult | Unread | str:
         return _Child(time.monotonic() + self._limit(), self.building).run(code, args)
 
-    def run_input(self, seed: Seed, plan: Plan) -> InputRecord | Stop:
+    def run_input(self, seed: Seed, plan: Plan | None) -> InputRecord | Stop:
         return self.run.run_input(seed, Source.REWRITE, plan)
 
 
@@ -278,6 +309,12 @@ class _Child:
         if isinstance(ran, CannotFork):
             return CANNOT_FORK
         return ran.result if ran.ended is None else Unread(ran.ended)
+
+
+def _own_fork_plan(asked: tuple[Branch | Fact, ...], path: int) -> Plan:
+    """The plan that names a rewrite's ask, its own fork last, on the input ``path`` names."""
+    forks = tuple(item for item in asked if isinstance(item, Branch))
+    return Plan(forks, Aim(forks[-1].site, len(forks) - 1), path)
 
 
 def _unasked(wanted: Plan, answer: Answer) -> Solved:

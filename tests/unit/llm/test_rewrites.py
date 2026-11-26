@@ -4,8 +4,6 @@ came, asking about the condition's site."""
 import dataclasses
 from dataclasses import dataclass, field
 
-import pytest
-
 from pyct.config.llm import DEFAULT_LIMIT
 from pyct.llm.connection import Connection
 from pyct.llm.rewrites import REWRITES, LlmRewrites, request_text
@@ -85,44 +83,35 @@ def test_a_retry_s_request_holds_each_earlier_try_and_why_it_failed() -> None:
     assert "before it" not in text
 
 
-# what a retry says once the solver could not answer the latest try's ask
-EXACT_VALUE_SAID = (
-    "The solver could not answer that condition. Answer this time with a condition that fixes"
-    " each parameter it reads to one exact value, such as `name == value`, that the wanted"
-    " side's inputs meet."
+# what every request asks for, the first and each retry
+EXPRESSION_ASKED = (
+    "Write an expression on the parameters that is equivalent to the condition or narrower, so"
+    " that each input meeting it reaches the condition and takes the wanted side, and that fixes"
+    ' each value it reads to a concrete one, such as `s == "1e-30"`.'
 )
 OTHER_SIDE = 'the input {"s": "1e-29"} took the other side'
 
 
-# llm-rewrite-retry-asks-for-one-exact-value-after-the-solver-gave-up
-@pytest.mark.parametrize("answer", ["timeout", "unknown"])
-def test_a_retry_after_the_solver_gave_up_on_the_latest_try_asks_for_one_exact_value(
-    answer: str,
-) -> None:
-    reason = f"the solver answered {answer}"
-    tried = (
-        EarlierTry('s == "1e-29"', OTHER_SIDE),
-        EarlierTry("len(s) > 31", reason, solver_gave_up=True),
-    )
+def test_every_request_asks_for_an_equivalent_or_narrower_expression_with_concrete_values() -> None:
+    retry = dataclasses.replace(REQUEST, tries=(EarlierTry('s == "1e-29"', OTHER_SIDE),))
 
-    text = request_text(dataclasses.replace(REQUEST, tries=tried))
-
-    assert f"len(s) > 31  ->  {reason}\n\n{EXACT_VALUE_SAID}\n\n{FORM}" in text
+    for request in (REQUEST, retry):
+        assert EXPRESSION_ASKED in request_text(request)
 
 
-# llm-rewrite-retry-asks-for-one-exact-value-not-after-another-failure
-def test_a_retry_after_another_failure_does_not_ask_for_one_exact_value() -> None:
-    solver_gave_up = EarlierTry("len(s) > 31", "the solver answered unknown", solver_gave_up=True)
-    other = EarlierTry('s == "1e-29"', OTHER_SIDE)
-    refused = EarlierTry('__import__("os").getcwd() == s', "a rewrite may not call __import__")
-
-    for tried in ((other,), (refused,), (solver_gave_up, other)):
-        assert "one exact value" not in request_text(dataclasses.replace(REQUEST, tries=tried))
+# what a request says once the solver answered unsat for the condition on the input's path
+OTHER_PATH = (
+    "The input's path cannot reach the wanted side as it stands. Write an expression whose"
+    " inputs reach it along another path, one you read from the code."
+)
 
 
-# llm-rewrite-retry-asks-for-one-exact-value-not-in-a-first-ask
-def test_a_first_ask_does_not_ask_for_one_exact_value() -> None:
-    assert "one exact value" not in request_text(REQUEST)
+# llm-rewrite-when-the-solver-gives-up-asks-about-a-condition-that-is-unsat
+def test_an_unsat_request_asks_for_another_path() -> None:
+    unsat = dataclasses.replace(REQUEST, answer="unsat")
+
+    assert OTHER_PATH in request_text(unsat)
+    assert OTHER_PATH not in request_text(REQUEST)
 
 
 # what the request says once a value or a reason it shows writes a plain dict's escaped key
@@ -160,3 +149,20 @@ def test_an_ask_with_no_answer_comes_back_as_it_is() -> None:
 
     assert isinstance(reply, Unanswered)
     assert reply.why is Why.PROVIDER
+
+
+# what a no-fork request says in place of the solver's answer
+NOT_FOLLOWED = "pyct does not follow the value the condition below reads"
+
+
+# llm-rewrite-no-fork-request
+def test_a_no_fork_request_says_pyct_does_not_follow_the_value_and_asks_for_another_path() -> None:
+    text = request_text(dataclasses.replace(REQUEST, answer="no fork"))
+
+    assert NOT_FOLLOWED in text
+    assert "could not answer" not in text
+    assert "The solver's answer" not in text
+    assert 'The conditions that input\'s path took, nearest last:\ns.startswith("-"): true' in text
+    assert "An input that ran the condition, each value as JSON" in text
+    assert OTHER_PATH in text
+    assert NOT_FOLLOWED not in request_text(REQUEST)
