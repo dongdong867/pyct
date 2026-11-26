@@ -1,6 +1,7 @@
 """Acceptance tests for the rewrite-what-the-solver-gives-up-on story: when a run with rewrites is
-stuck on a condition whose asks ran out, pyct asks a fake provider for an easier condition,
-solves it on the same path, and keeps its input when it takes the wanted side on the real code.
+stuck on a condition whose asks ran out, pyct asks a fake provider for an expression equivalent to
+the condition or narrower, solves it alone, and keeps its input when it takes the wanted side on
+the real code.
 
 Each runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text; the stderr lines are
 the command line's words for the notes the run gave.

@@ -1,6 +1,7 @@
 """A visit to a condition in a loop whose path already holds the same check on the other side: a
 run with rewrites answers it unsat without the solver and keeps no plan for it, a run without
-rewrites asks as before, and any other visit the solver gives up on is kept and asked about."""
+rewrites asks as before, and the first other visit the solver gives up on is kept and asked
+about."""
 
 import types
 

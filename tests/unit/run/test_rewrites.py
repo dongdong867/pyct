@@ -305,5 +305,6 @@ def test_a_try_s_ask_past_the_budget_is_not_asked() -> None:
     site = Site(file, 2, 7)
     wanted = plan((Branch([">", "n", 0], False, site),))
     assert wanted is not None
+    given = GivenUp(Condition(site, True), wanted, Seed.of({"n": 0}), MissWhy.TIMEOUT)
 
-    assert around.ask(wanted.asked, wanted, Seed.of({"n": 0})) is None
+    assert around.ask(wanted.asked, given) is None

@@ -1,7 +1,7 @@
 """Acceptance tests for the a-rewrite-asks-about-a-visit-an-input-can-meet ticket: when a condition
-the solver gives up on sits in a loop, pyct asks about a visit whose path does not already hold
-the same check on the other side, tries the rewrite on the next visit kept when the solver gives
-no input for it on one, and the rewrite's input covers the line.
+the solver gives up on sits in a loop, pyct asks about the condition's first kept plan, whose path
+does not already hold the same check on the other side, solves the rewrite alone, and the
+rewrite's input covers the line.
 
 It runs ``run()`` with a fake ``RewriteProvider`` that answers fixed text.
 """
