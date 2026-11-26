@@ -1,8 +1,7 @@
-"""The bounds a recorded run keeps to, a loop's (`pyct.core.entry.pieces`) and a loss site's
-(`pyct.core.entry.losses`) alike, apart from either, so that importing the losses' recording
-loads no hook of a piece."""
+"""The bounds a loss site's recorded run keeps to (`pyct.core.entry.losses`), apart from the
+recording, so that the journal reads them with no import of it."""
 
-# the runs of each piece recorded in an input, its first
+# the runs of each loss site recorded in an input, its first
 MOST_RUNS = 3
 # a recorded value's JSON text is shorter than this many characters, each one byte
 MOST_VALUE = 2048

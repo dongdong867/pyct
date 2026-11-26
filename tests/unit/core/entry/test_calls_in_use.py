@@ -7,10 +7,12 @@ Here at an operation pyct has not taught, through foundation's slot, with formul
 import contextlib
 import enum
 import inspect
+import math
 from collections.abc import Callable, Iterator, Mapping
 
-from pyct.core.entry import calls_in_use, in_use, losses, pieces
+from pyct.core.entry import bound, calls_in_use, in_use, losses
 from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse
+from pyct.core.entry.math_calls import ROUTERS
 from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import (
@@ -73,14 +75,14 @@ def using(formula: Formula, *, alone: bool = True, recording: bool = True) -> It
         "__pow__", ("n", None, None), formula
     )
     sink = Marking()
-    pieces.start(sink, alone=alone)
+    in_use.start()
     if recording:
         losses.start(sink, alone=alone)
     try:
         yield sink
     finally:
         losses.forget()
-        pieces.forget()
+        in_use.forget()
         escapes.forget()
         CALLS_IN_USE.clear()
 
@@ -295,3 +297,35 @@ def test_a_drop_s_text_of_a_set_of_tracked_values_records_no_fork() -> None:
     [drop] = drops(sink)
     assert drop.got == "frozenset({13, 14})"
     assert [fork for fork in forks(sink) if not fork.summary] == []
+
+
+def recorded_by(formula: Callable[[Mapping[str, object]], object]) -> list[SinkItem]:
+    """Each fork, fact and downgrade an input records when the site is in use with a formula that
+    calls ``formula`` on the values going in and gives the site's own answer."""
+
+    def calling(values: Mapping[str, object]) -> Mapping[str, object]:
+        formula(values)
+        return by_four(values)
+
+    with using(calling) as sink:
+        quarter(tracked(13, sink))
+    return [each for each in sink if isinstance(each, Branch | Fact | Downgrade)]
+
+
+def test_a_fact_the_formula_s_truth_test_records_is_placed_at_the_site() -> None:
+    def proven(values: Mapping[str, object]) -> None:
+        length = bound.len(str(values["n"]))
+        assert isinstance(length, int)
+        if length >= 0:
+            return
+
+    [fact] = recorded_by(proven)
+    assert type(fact) is Fact
+    assert (fact.expression, fact.site) == ([">=", ["len", ["str", "n"]], 0], QUARTER)
+
+
+def test_a_downgrade_through_math_in_the_formula_is_placed_at_the_site() -> None:
+    def logged(values: Mapping[str, object]) -> None:
+        ROUTERS[id(math.log)](values["n"])
+
+    assert recorded_by(logged) == [Downgrade(name="log", site=QUARTER)]

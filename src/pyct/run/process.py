@@ -340,7 +340,6 @@ def ending(reading: Reading, waited: Waited) -> ExecutionResult:
         facts=reading.facts,
         failure=_failure(reading, waited),
         reach=reading.reach,
-        pieces=reading.pieces,
         drops=reading.drops,
         losses=reading.losses,
     )

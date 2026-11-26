@@ -23,17 +23,16 @@ from pyct.run.token_limit import TokenLimit
 from tests.acceptance.fake_seeds import FakeSeeds
 from tests.acceptance.llm_rewrites import FakeRewrites
 from tests.acceptance.llm_summaries import (
-    COUNT,
-    COUNTS,
-    SEED,
     TOKENS,
     FakeSummaries,
     one_thread,  # noqa: F401
 )
+from tests.acceptance.lost_calls import HALF, QUARTER, SHIFTED
 
 # limits under which a run would hold a moment every 5 inputs, up to the cap of 3 that ask
 LONG = Limits(budget=Budget(60), plateau=Plateau(40), solver_timeout=SolverTimeout(1.0))
 LOOPS = "targets.rewrites.loops::loops"
+SEED = {"n": 3}
 
 
 @pytest.fixture
@@ -57,24 +56,24 @@ def ran(
     helpers: Helpers,
     isolation: Isolation = Isolation.IN_PROCESS,
 ) -> RunResult:
-    """``run()`` on ``spec`` with ``helpers``, its package recording each loop's runs, each input
-    where ``isolation`` says."""
+    """``run()`` on ``spec`` with ``helpers``, each input where ``isolation`` says."""
     setup = Setup(isolation=isolation, helpers=helpers)
-    with interception(spec, pieces=True):
+    with interception(spec):
         return run(load_target(spec), seed, limits=LONG, setup=setup)
 
 
 def test_a_summaries_reply_that_reaches_the_limit_ends_every_tool_s_asks(
     causes: list[int],
 ) -> None:
-    summaries = FakeSummaries([COUNT], limit=sum(TOKENS))
-    rewrites = FakeRewrites(['s == "1e-30"'])
+    # a formula that fails its check, so that the line after the loss site stays missed
+    summaries = FakeSummaries([HALF], limit=sum(TOKENS))
+    rewrites = FakeRewrites(["n == 2"])
 
     # inputs in processes of their own, since summaries ask nothing while they run in pyct's
-    ran(COUNTS, SEED, Helpers(summaries=summaries, rewrites=rewrites), Isolation.AUTO)
+    ran(SHIFTED, SEED, Helpers(summaries=summaries, rewrites=rewrites), Isolation.AUTO)
 
     assert len(summaries.requests) == 1
-    assert len(causes) == 1
+    assert causes == []
     assert rewrites.requests == []
 
 
@@ -83,7 +82,7 @@ def test_a_rewrites_reply_that_reaches_the_limit_ends_every_tool_s_asks(
 ) -> None:
     # the first moment's fourth and last ask reaches the limit
     rewrites = FakeRewrites(['s == "1e-29"'], limit=4 * sum(TOKENS))
-    summaries = FakeSummaries([COUNT])
+    summaries = FakeSummaries([QUARTER])
 
     ran(LOOPS, {"s": "0", "n": 0}, Helpers(summaries=summaries, rewrites=rewrites))
 
@@ -92,12 +91,12 @@ def test_a_rewrites_reply_that_reaches_the_limit_ends_every_tool_s_asks(
 
 
 def test_a_seeds_reply_that_reaches_the_limit_leaves_no_moment(causes: list[int]) -> None:
-    seeds = FakeSeeds(SeedReply(('{"s": "zz"}',), AskCost(1, *TOKENS, tokens_left=0)))
-    summaries = FakeSummaries([COUNT])
+    seeds = FakeSeeds(SeedReply(('{"n": 7}',), AskCost(1, *TOKENS, tokens_left=0)))
+    summaries = FakeSummaries([HALF])
 
-    result = ran(COUNTS, SEED, Helpers(seeds=seeds, summaries=summaries))
+    result = ran(SHIFTED, SEED, Helpers(seeds=seeds, summaries=summaries), Isolation.AUTO)
 
-    assert len(result.records) > 7
+    assert [record.args for record in result.records] == [{"n": 3}, {"n": 7}]
     assert causes == []
     assert summaries.requests == []
 

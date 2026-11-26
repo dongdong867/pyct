@@ -1,7 +1,6 @@
 """A fake ``SummaryProvider`` that answers fixed text, and ``run()`` with summaries on, the
-target's package intercepted with the recording of each loop's runs and each input forked, for
-the acceptance tests of the ask-for-a-stuck-loop-s-summary and
-track-a-value-through-a-loop-summary stories.
+target's package intercepted and each input forked, for the acceptance tests of the summaries
+stories.
 
 The fake reads each reply as ``pyct.llm.summaries`` does, and numbers its tries per place and
 charges each reply's tokens against a limit as the connection does, so a test reads the try
@@ -35,20 +34,16 @@ from pyct.run.isolation import Isolation
 from pyct.run.notes import Note
 from pyct.run.run import run
 from pyct.run.setup import Setup
-from pyct.run.summaries import ShownRun, SummaryReply, SummaryRequest
+from pyct.run.summaries import SummaryReply, SummaryRequest
 from pyct.run.target import interception, load_target
 from pyct.run.tell import Tell
-from tests.acceptance.harness import REPO_ROOT
 
-# `F` and `G` of the criteria
-F = str(REPO_ROOT / "targets" / "why" / "stuck.py")
-G = str(REPO_ROOT / "targets" / "summaries" / "loops.py")
+# a target with a loop and no loss site, and its seed
 COUNTS = "targets.why.stuck::counts"
-COUNTED = "targets.why.stuck::counted"
 SEED = {"s": "ab"}
 # a plateau that ends the run 3 inputs after its first moment, so it holds one moment
 ONE_MOMENT = Limits(plateau=Plateau(8))
-# the reply `COUNT` of the criteria
+# a formula of `counts`'s loop
 COUNT = 'Here it is:\n```python\ndef summary(s, t):\n    return {"t": t + s.count("z")}\n```\n'
 # the tokens in and out each reply the fake gives costs
 TOKENS = (120, 30)
@@ -91,52 +86,6 @@ class FakeSummaries:
         return AskCost(attempt, tokens_in, tokens_out, tokens_left=left)
 
 
-def held_back(runs: Sequence[ShownRun]) -> tuple[tuple[str, str], ...]:
-    """The values going in a request holds back from these runs, written as it shows them, in
-    run order, as the story refuse-a-summary-that-only-repeats-its-runs picks them: the latest
-    run whose changed values no run with other values going in has and that moved a changed
-    name, else the latest that moved one, else the latest whose changed values are its own,
-    else the latest."""
-
-    def alone(run: ShownRun) -> bool:
-        return all(other.changed != run.changed for other in runs if other.going_in != run.going_in)
-
-    def moved(run: ShownRun) -> bool:
-        return any(dict(run.going_in).get(name) != value for name, value in run.changed)
-
-    for kind in (lambda run: alone(run) and moved(run), moved, alone):
-        found = [each for each in runs if kind(each)]
-        if found:
-            return found[-1].going_in
-    return runs[-1].going_in
-
-
-def checked_on(provider: FakeSummaries, ask: int = 0) -> str:
-    """The text the ``checked on`` line holds for the formula of ``provider``'s ask numbered
-    ``ask``, from 0: the complete runs of its loop the inputs then held, and those whose values
-    going in no run its request showed has, as the story
-    refuse-a-summary-that-only-repeats-its-runs counts them."""
-    request = provider.requests[ask]
-    line, col = (int(part) for part in request.place.rsplit(":", 2)[1:])
-    runs = [
-        each
-        for record in provider.records[: provider.inputs_then[ask]]
-        for each in record.pieces
-        if (each.site.line, each.site.col) == (line, col)
-        and set(request.changed) <= {changed.name for changed in each.changed}
-    ]
-    seen = {shown.going_in for shown in request.runs}
-    hidden = sum(
-        tuple(
-            (going.name, going.value) for going in each.going_in if going.name in request.parameters
-        )
-        not in seen
-        for each in runs
-    )
-    text = f"checked on {len(runs)} past runs"
-    return f"{text}, {hidden} of them not shown" if hidden else text
-
-
 @dataclass
 class Summarized:
     """What a run with summaries gave: its result, each input as it finished, the stderr line each
@@ -160,10 +109,10 @@ def run_summaries(
     limits: Limits = ONE_MOMENT,
     isolation: Isolation = Isolation.AUTO,
 ) -> Summarized:
-    """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package and
-    records each loop's runs, every input and each formula check in a child forked from this
-    process, with ``provider`` as the summaries helper. ``isolation`` says where each input runs
-    instead, such as in a fresh interpreter."""
+    """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package, every
+    input and each formula check in a child forked from this process, with ``provider`` as the
+    summaries helper. ``isolation`` says where each input runs instead, such as in a fresh
+    interpreter."""
     records = provider.records
     said: list[str] = []
     printed: list[tuple[str, Coverage]] = []
@@ -180,7 +129,7 @@ def run_summaries(
 
     setup = Setup(isolation=isolation, helpers=Helpers(summaries=provider))
     tell = Tell(report=report, noted=noted)
-    with interception(spec, pieces=True):
+    with interception(spec):
         result = run(load_target(spec), seed, limits=limits, setup=setup, tell=tell)
     return Summarized(result, records, said, printed)
 
@@ -189,7 +138,8 @@ def run_summaries(
 def targets_imported_afresh() -> Generator[None]:
     """Each ``targets`` module dropped from ``sys.modules`` for the block, so that the block
     imports it again. After it, each ``targets`` module the block imported is dropped, so that
-    none compiled with the loop hooks reaches a later test, and each one dropped is back."""
+    none the block's interception substituted reaches a later test, and each one dropped is
+    back."""
     before = {name: module for name, module in sys.modules.items() if _in_targets(name)}
     for name in before:
         del sys.modules[name]
@@ -211,7 +161,7 @@ def one_thread(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None
     input's or a formula's child forks beside it safely, since it takes no lock the call needs,
     so no input moves to a fresh interpreter. The target's
     substituted code is kept in a cache folder of the test's own, and each target module is
-    imported again under the interception that records loops (``targets_imported_afresh``)."""
+    imported again under the run's interception (``targets_imported_afresh``)."""
     monkeypatch.setattr(model_runs, "running", lambda: 1)
     monkeypatch.setattr(isolation, "running", lambda: 1)
     monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))

@@ -36,13 +36,9 @@ type Code = Callable[..., object]
 _STATIC_FUNC = vars(staticmethod)["__func__"]
 _CLASS_FUNC = vars(classmethod)["__func__"]
 
-# the comments that mark a loop's first and last line in the code a summaries ask sends
-MARK_START = "# >>> the loop"
-MARK_END = "# <<< the loop"
-
 
 def marks(word: str) -> tuple[str, str]:
-    """The comments that mark the first and last line of a piece the ``word`` names, ``loop`` or
+    """The comments that mark the first and last line of a piece the ``word`` names, such as
     ``call``, in the code a summaries ask sends."""
     return f"# >>> the {word}", f"# <<< the {word}"
 
@@ -60,7 +56,7 @@ def code_with_piece(
     target: Target,
     file: str,
     lines: tuple[int, int],
-    word: str = "loop",
+    word: str,
     files: SourceFiles | None = None,
 ) -> str:
     """The source of the innermost function in ``file`` that holds a piece's first and last

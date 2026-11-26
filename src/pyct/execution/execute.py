@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind_call
 from pyct.binding.builds import Build, BuildError, CallPlan, SelfBuild, plan_call
-from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, LossRun, PieceRun
+from pyct.core.foundation.branch import Branch, Fact, FormulaDrop, LossRun
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.branch_ways import CodeWays
@@ -64,12 +64,10 @@ class ExecutionResult:
 
     On a failure the lines, forks and facts are those reached before it. ``facts`` are what its
     path holds beside the forks, each placed after the forks recorded before it. ``reach`` is
-    the functions of the file it entered and the ways their branches went. ``pieces`` are the
-    recorded runs of the pieces of the target's code, in the order each ended
-    (`pyct.core.entry.pieces`), none when its code has no hooks, ``losses`` the recorded
-    runs of its loss sites, in the order recorded, none with the context's ``losses`` off
-    (`pyct.core.entry.losses`), and ``drops`` the loops' formulas dropped in it
-    (`pyct.core.entry.in_use`).
+    the functions of the file it entered and the ways their branches went. ``losses`` are the
+    recorded runs of its loss sites, in the order recorded, none with the context's ``losses``
+    off (`pyct.core.entry.losses`), and ``drops`` the loss sites' formulas dropped in it
+    (`pyct.core.entry.calls_in_use`).
     """
 
     lines: frozenset[int]
@@ -78,7 +76,6 @@ class ExecutionResult:
     failure: Failure | None = None
     facts: tuple[Fact, ...] = ()
     reach: Reach = field(default_factory=Reach)
-    pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
     losses: tuple[LossRun, ...] = ()
 
@@ -138,7 +135,6 @@ def _result(tally: Tally, failure: Failure | None) -> ExecutionResult:
         failure=failure,
         facts=tuple(tally.facts),
         reach=tally.reach(),
-        pieces=tuple(tally.pieces),
         drops=tuple(tally.drops),
         losses=tuple(tally.losses),
     )

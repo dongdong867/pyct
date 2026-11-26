@@ -1,5 +1,5 @@
-"""What a summaries ask is about and gives back, for a loop or a loss site, and the provider that
-answers it.
+"""What a summaries ask about a loss site is about and gives back, and the provider that answers
+it.
 
 ``SummaryProvider`` is declared here, in the run layer that consumes it (``pyct.run.summaries``),
 and implemented in ``pyct.llm.summaries``. Decision llm-summary-provider-declared-in-run.
@@ -38,14 +38,13 @@ class CallAsk:
 class SummaryRequest:
     """What a summaries ask is about.
 
-    ``place`` is the loop's or the loss site's site as the request and the recording name it,
+    ``place`` is the loss site's site as the request and the recording name it,
     ``module:line:col`` with the module's dotted name. ``code`` is the source of the function
-    that holds it, the piece marked, then the code of the functions it calls in its package,
+    that holds it, the site marked, then the code of the functions it calls in its package,
     then, for a watched call, its callee's. ``parameters`` are the formula's parameters, the
-    names going in that every complete run holds; ``changed`` the names the loop changes, or
-    ``answer``; ``runs`` the runs shown; ``tries`` the earlier tries at this place, oldest
-    first; ``not_shown`` the complete runs whose values going in no shown run has. ``call``
-    is set for a loss site.
+    values going in named as the code writes them; ``changed`` is ``answer``; ``runs`` the runs
+    shown; ``call`` what the ask says of the site; ``tries`` the earlier tries at this place,
+    oldest first; ``not_shown`` the complete runs whose values going in no shown run has.
     """
 
     place: str
@@ -53,9 +52,9 @@ class SummaryRequest:
     parameters: tuple[str, ...]
     changed: tuple[str, ...]
     runs: tuple[ShownRun, ...]
+    call: CallAsk
     tries: tuple[EarlierFormula, ...] = ()
     not_shown: int = 0
-    call: CallAsk | None = None
 
 
 @dataclass(frozen=True)
@@ -69,7 +68,6 @@ class SummaryReply:
 
 
 class SummaryProvider(Protocol):
-    """Gives a loop's or a loss site's summary. It never raises for an LLM problem: it returns
-    Unanswered."""
+    """Gives a loss site's summary. It never raises for an LLM problem: it returns Unanswered."""
 
     def summarize(self, request: SummaryRequest) -> SummaryReply | Unanswered: ...

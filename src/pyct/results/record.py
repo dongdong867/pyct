@@ -15,13 +15,12 @@ from pyct.core.foundation.branch import (
     ForkSite,
     FormulaDrop,
     LossRun,
-    PieceRun,
     Site,
 )
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
-from pyct.results.llm_asks import LoopSummary
+from pyct.results.llm_asks import SiteSummary
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
 
 # how long past a run's deadline pyct goes on working out why lines were missed
@@ -37,8 +36,8 @@ class Source(StrEnum):
     LLM_SEED = "llm_seed"
     # an input the solver gave for the LLM's rewrite of a condition it gave up on
     REWRITE = "rewrite"
-    # an input run again once a loop's formula came into use, or one the solver gave for a
-    # formula's fork: one a loop's formula recorded, or one that reads a value a formula gave
+    # an input run again once a loss site's formula came into use, or one the solver gave for a
+    # formula's fork: one a formula recorded, or one that reads a value a formula gave
     SUMMARY = "summary"
 
 
@@ -85,12 +84,10 @@ class InputRecord:
     ask gave, a kept rewrite's included, and None for every other input. It is
     a measurement, which no two runs share, so two records compare without it.
     ``first_covered`` is the lines this input covered that no earlier input
-    and not the import did, keyed by file as coverage is. ``pieces`` are the
-    recorded runs of the pieces of the target's code, with the interception's
-    pieces switch on (`pyct.core.entry.pieces`), which no line prints, and
-    ``drops`` each loop's formula dropped in the input (`pyct.core.entry.in_use`),
-    which no line prints either, and ``losses`` the recorded runs of its loss sites, with
-    summaries switched on (`pyct.core.entry.losses`), which no line prints.
+    and not the import did, keyed by file as coverage is. ``drops`` are each loss site's
+    formula dropped in the input (`pyct.core.entry.calls_in_use`), which no line prints, and
+    ``losses`` the recorded runs of its loss sites, with summaries switched on
+    (`pyct.core.entry.losses`), which no line prints either.
     """
 
     args: Mapping[str, object]
@@ -105,7 +102,6 @@ class InputRecord:
     reach: Reach = field(default_factory=Reach)
     solver_seconds: float | None = field(default=None, compare=False)
     first_covered: Mapping[str, frozenset[int]] = field(default_factory=dict)
-    pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
     losses: tuple[LossRun, ...] = ()
 
@@ -231,7 +227,7 @@ class RunResult:
     when it stopped, or picked and then left by the stop.
     ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
     ``goal`` is what the run was for.
-    ``summaries`` is each loop the summaries tool sent an ask for, in code order.
+    ``summaries`` is each loss site the summaries tool sent an ask for, in code order.
     """
 
     entry: str
@@ -243,7 +239,7 @@ class RunResult:
     untried: Mapping[ForkSite, int] = field(default_factory=dict)
     deadline: float | None = None
     goal: Goal = Goal.COVERAGE
-    summaries: tuple[LoopSummary, ...] = ()
+    summaries: tuple[SiteSummary, ...] = ()
 
     @property
     def inputs(self) -> int:

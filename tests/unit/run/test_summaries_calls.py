@@ -23,30 +23,9 @@ from pyct.run.summary_asks import SummaryReply, SummaryRequest
 from pyct.run.target import load_target
 from pyct.run.tell import Tell, Told
 from pyct.run.token_limit import TokenLimit
-from tests.unit.run.test_summaries import Run
+from tests.unit.run.test_summaries import FILE, Run, record, shift
 
-FILE = load_target("targets.summaries.calls::deep").file
 QUARTER = 'def summary(n):\n    return {"answer": n % 4}\n'
-
-
-def shift(line: int, col: int, n: int, by: int, name: str = "__pow__") -> LossRun:
-    """A run of ``pow(n, 1, 2**by)`` at the line and column of ``calls.py``."""
-    going_in = (
-        GoingIn("arg1", str(n), tracked=True),
-        GoingIn("arg2", "1", tracked=False),
-        GoingIn("arg3", str(2**by), tracked=False),
-    )
-    return LossRun(
-        Site(FILE, line, col),
-        name,
-        LossKind.OPERATION,
-        going_in,
-        (Changed("answer", str(n % 2**by)),),
-    )
-
-
-def record(*runs: LossRun) -> InputRecord:
-    return InputRecord(args={"n": 3}, forks=(), covered_lines=frozenset(), losses=runs)
 
 
 DEEP = record(shift(36, 8, 3, 1), shift(37, 8, 3, 2), shift(38, 8, 3, 3), shift(40, 11, 3, 4))
@@ -143,12 +122,7 @@ def test_a_checked_formula_is_kept_with_its_name() -> None:
     summaries.between(heard(summaries, [record(shift(37, 8, 13, 2))]))
 
     [state] = summaries.states()
-    assert (state.kind, state.name, state.state, state.checked_on) == (
-        "call",
-        "__pow__",
-        SummaryState.IN_USE,
-        1,
-    )
+    assert (state.name, state.state, state.checked_on) == ("__pow__", SummaryState.IN_USE, 1)
     assert (state.line, state.col, state.changes, state.formula) == (37, 8, ("answer",), QUARTER)
 
 

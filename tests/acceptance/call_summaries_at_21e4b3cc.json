@@ -1,0 +1,456 @@
+{
+  "shifted-in-use": {
+    "requests": [
+      "pyct tests one Python function by running it on inputs a solver finds by flipping the branches each input took. pyct no longer follows the value the call below answers, since it does not follow the operation or the function it calls, so a condition that reads the answer gets no branch. Write a formula that gives the call's answer from the values going into it, without making the call. pyct checks the formula on the call's recorded runs, then that it can follow the values the formula gives.\n\nCall `pow(n, 1, 4)` at targets.summaries.calls:11:11, marked in the code by the comments `# >>> the call` and `# <<< the call`. The function's code, then the code of the functions it calls in its package:\n```python\n# targets.summaries.calls._quarter\ndef _quarter(n: int) -> int:\n    # >>> the call\n    return pow(n, 1, 4)\n    # <<< the call\n```\n\nValues going in, the formula's parameters: n\nThe formula's answer: answer\n\nRecorded runs of the call, each as the values going in, then its answer, as JSON:\nn = 3  ->  answer = 3\n\npyct follows a value through these operations, so a formula built from them gives a value pyct can solve for:\n- int: compares, + - * / // %, divmod, unary -, abs, x ** n with a plain n, int, float, str, chr, min, max, sum, sorted, round, math.floor, math.ceil, math.trunc.\n- float: compares, + - * / // %, divmod, unary -, abs, int, float, round with one argument, min, max, sum, math.sqrt, math.floor, math.ceil, math.trunc, math.fabs, math.isnan, math.isinf, math.isfinite.\n- bool: compares, arithmetic, & | ^ between bools, int, float.\n- str: compares, len, +, s * k with a plain k, s[i], slices, sep.join, split, rsplit, partition, splitlines, find, rfind, index, rindex, count, startswith, endswith, upper, lower, casefold, capitalize, title, swapcase, strip, lstrip and rstrip with plain characters, zfill, center, ljust, rjust, replace, removeprefix, removesuffix, isdigit, isdecimal, isnumeric, isalpha, isalnum, isspace, isupper, islower, isascii, isprintable, int, float, ord.\n- list: len, L[i], slices, +, L * k, sum, min, max, sorted.\n- dict: len, d[k], d.get(k).\nAn if statement, and, or and not choose between values rather than compute one. pyct does not follow bit operations on ints, ~, ** on a float or with a value pyct follows as the exponent, bin, hex, oct, bit_length, encode, decode, bytes, repr, hash, format, f-strings with text around the value, the re module, or sets.\n\nAnswer with one fenced Python code block that defines one function and nothing else: def summary(n):, which gives the call's answer from the values going in, without a loop. Write the def line exactly as shown, with no annotation, default or decorator. It holds at most 10 statements, each an assignment to a name or an if statement that holds the same, and ends with a return of a dict with one entry per changed name, keyed by the name: return {\"answer\": ...}. It may read its parameters, the names it assigns, and their items, written x[i] or d[\"k\"]; literals; comparisons; and, or, not; arithmetic; abs, bool, chr, divmod, float, int, len, max, min, ord, round, sorted, str, sum; math.<function>; and the methods of the values whose names do not start with _, other than format and format_map. It has no import, other function, lambda, loop, comprehension, if expression or call of itself."
+    ],
+    "said": [
+      "llm: summary for the call __pow__ at targets/summaries/calls.py:11:11: answer = n % 4",
+      "llm: summary for the call __pow__ at targets/summaries/calls.py:11:11: checked on 1 past runs"
+    ],
+    "inputs": [
+      {
+        "args": {
+          "n": 3
+        },
+        "forks": [],
+        "covered": {
+          "targets/summaries/calls.py": [
+            11,
+            15,
+            16,
+            18
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [
+          {
+            "name": "__pow__",
+            "count": 1,
+            "file": "targets/summaries/calls.py",
+            "line": 11,
+            "col": 11
+          }
+        ],
+        "source": "seed",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "n": 3
+        },
+        "forks": [
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 16,
+            "col": 7,
+            "taken": false,
+            "expression": [
+              "==",
+              [
+                "%",
+                "n",
+                4
+              ],
+              2
+            ]
+          }
+        ],
+        "covered": {
+          "targets/summaries/calls.py": [
+            11,
+            15,
+            16,
+            18
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [],
+        "source": "summary",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "n": 2
+        },
+        "forks": [
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 16,
+            "col": 7,
+            "taken": true,
+            "expression": [
+              "==",
+              [
+                "%",
+                "n",
+                4
+              ],
+              2
+            ]
+          }
+        ],
+        "covered": {
+          "targets/summaries/calls.py": [
+            11,
+            15,
+            16,
+            17
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [],
+        "source": "summary",
+        "aim": {
+          "file": "targets/summaries/calls.py",
+          "line": 16,
+          "col": 7,
+          "position": 0
+        },
+        "mismatch_at": null
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "call",
+        "name": "__pow__",
+        "file": "targets/summaries/calls.py",
+        "line": 11,
+        "col": 11,
+        "changes": [
+          "answer"
+        ],
+        "formula": "def summary(n):\n    return {\"answer\": n % 4}\n",
+        "condition": null,
+        "state": "in use",
+        "tries": 1,
+        "checked_on": 1
+      }
+    ]
+  },
+  "watched-call-in-use": {
+    "requests": [
+      "pyct tests one Python function by running it on inputs a solver finds by flipping the branches each input took. pyct no longer follows the value the call below answers, since it does not follow the operation or the function it calls, so a condition that reads the answer gets no branch. Write a formula that gives the call's answer from the values going into it, without making the call. pyct checks the formula on the call's recorded runs, then that it can follow the values the formula gives.\n\nCall `textwrap.dedent(s)` at targets.summaries.calls:63:8, marked in the code by the comments `# >>> the call` and `# <<< the call`. The function's code, then the code of the functions it calls in its package, then the source of its callee, textwrap.dedent:\n```python\n# targets.summaries.calls.dedented\ndef dedented(s: str) -> str:\n    # >>> the call\n    t = textwrap.dedent(s)\n    # <<< the call\n    if t == \"ab\":\n        return \"ab\"\n    return \"other\"\n\n# textwrap.dedent\n<the source of textwrap.dedent>\n```\n\nValues going in, the formula's parameters: s\nThe formula's answer: answer\n\nRecorded runs of the call, each as the values going in, then its answer, as JSON:\ns = \"  ab\"  ->  answer = \"ab\"\n\npyct follows a value through these operations, so a formula built from them gives a value pyct can solve for:\n- int: compares, + - * / // %, divmod, unary -, abs, x ** n with a plain n, int, float, str, chr, min, max, sum, sorted, round, math.floor, math.ceil, math.trunc.\n- float: compares, + - * / // %, divmod, unary -, abs, int, float, round with one argument, min, max, sum, math.sqrt, math.floor, math.ceil, math.trunc, math.fabs, math.isnan, math.isinf, math.isfinite.\n- bool: compares, arithmetic, & | ^ between bools, int, float.\n- str: compares, len, +, s * k with a plain k, s[i], slices, sep.join, split, rsplit, partition, splitlines, find, rfind, index, rindex, count, startswith, endswith, upper, lower, casefold, capitalize, title, swapcase, strip, lstrip and rstrip with plain characters, zfill, center, ljust, rjust, replace, removeprefix, removesuffix, isdigit, isdecimal, isnumeric, isalpha, isalnum, isspace, isupper, islower, isascii, isprintable, int, float, ord.\n- list: len, L[i], slices, +, L * k, sum, min, max, sorted.\n- dict: len, d[k], d.get(k).\nAn if statement, and, or and not choose between values rather than compute one. pyct does not follow bit operations on ints, ~, ** on a float or with a value pyct follows as the exponent, bin, hex, oct, bit_length, encode, decode, bytes, repr, hash, format, f-strings with text around the value, the re module, or sets.\n\nAnswer with one fenced Python code block that defines one function and nothing else: def summary(s):, which gives the call's answer from the values going in, without a loop. Write the def line exactly as shown, with no annotation, default or decorator. It holds at most 10 statements, each an assignment to a name or an if statement that holds the same, and ends with a return of a dict with one entry per changed name, keyed by the name: return {\"answer\": ...}. It may read its parameters, the names it assigns, and their items, written x[i] or d[\"k\"]; literals; comparisons; and, or, not; arithmetic; abs, bool, chr, divmod, float, int, len, max, min, ord, round, sorted, str, sum; math.<function>; and the methods of the values whose names do not start with _, other than format and format_map. It has no import, other function, lambda, loop, comprehension, if expression or call of itself."
+    ],
+    "said": [
+      "llm: summary for the call textwrap.dedent at targets/summaries/calls.py:63:8: answer = s.strip()",
+      "llm: summary for the call textwrap.dedent at targets/summaries/calls.py:63:8: checked on 1 past runs"
+    ],
+    "inputs": [
+      {
+        "args": {
+          "s": "  ab"
+        },
+        "forks": [],
+        "covered": {
+          "targets/summaries/calls.py": [
+            63,
+            64,
+            65
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [
+          {
+            "name": "textwrap.dedent",
+            "count": 1,
+            "file": "targets/summaries/calls.py",
+            "line": 63,
+            "col": 8
+          }
+        ],
+        "source": "seed",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "s": "  ab"
+        },
+        "forks": [
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 64,
+            "col": 7,
+            "taken": true,
+            "expression": [
+              "==",
+              [
+                "strip",
+                "s"
+              ],
+              "'ab'"
+            ]
+          }
+        ],
+        "covered": {
+          "targets/summaries/calls.py": [
+            63,
+            64,
+            65
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [],
+        "source": "summary",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "s": ""
+        },
+        "forks": [
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 64,
+            "col": 7,
+            "taken": false,
+            "expression": [
+              "==",
+              [
+                "strip",
+                "s"
+              ],
+              "'ab'"
+            ]
+          }
+        ],
+        "covered": {
+          "targets/summaries/calls.py": [
+            63,
+            64,
+            66
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [],
+        "source": "summary",
+        "aim": {
+          "file": "targets/summaries/calls.py",
+          "line": 64,
+          "col": 7,
+          "position": 0
+        },
+        "mismatch_at": null
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "call",
+        "name": "textwrap.dedent",
+        "file": "targets/summaries/calls.py",
+        "line": 63,
+        "col": 8,
+        "changes": [
+          "answer"
+        ],
+        "formula": "def summary(s):\n    return {\"answer\": s.strip()}\n",
+        "condition": null,
+        "state": "in use",
+        "tries": 1,
+        "checked_on": 1
+      }
+    ]
+  },
+  "formula-dropped": {
+    "requests": [
+      "pyct tests one Python function by running it on inputs a solver finds by flipping the branches each input took. pyct no longer follows the value the call below answers, since it does not follow the operation or the function it calls, so a condition that reads the answer gets no branch. Write a formula that gives the call's answer from the values going into it, without making the call. pyct checks the formula on the call's recorded runs, then that it can follow the values the formula gives.\n\nCall `pow(n, 2, 10)` at targets.summaries.calls:84:8, marked in the code by the comments `# >>> the call` and `# <<< the call`. The function's code, then the code of the functions it calls in its package:\n```python\n# targets.summaries.calls.bounded\ndef bounded(n: int) -> str:\n    # >>> the call\n    r = pow(n, 2, 10)\n    # <<< the call\n    if r == 9:\n        return \"nine\"\n    if r > 9:\n        return \"never\"\n    return \"other\"\n```\n\nValues going in, the formula's parameters: n\nThe formula's answer: answer\n\nRecorded runs of the call, each as the values going in, then its answer, as JSON:\nn = 2  ->  answer = 4\n\npyct follows a value through these operations, so a formula built from them gives a value pyct can solve for:\n- int: compares, + - * / // %, divmod, unary -, abs, x ** n with a plain n, int, float, str, chr, min, max, sum, sorted, round, math.floor, math.ceil, math.trunc.\n- float: compares, + - * / // %, divmod, unary -, abs, int, float, round with one argument, min, max, sum, math.sqrt, math.floor, math.ceil, math.trunc, math.fabs, math.isnan, math.isinf, math.isfinite.\n- bool: compares, arithmetic, & | ^ between bools, int, float.\n- str: compares, len, +, s * k with a plain k, s[i], slices, sep.join, split, rsplit, partition, splitlines, find, rfind, index, rindex, count, startswith, endswith, upper, lower, casefold, capitalize, title, swapcase, strip, lstrip and rstrip with plain characters, zfill, center, ljust, rjust, replace, removeprefix, removesuffix, isdigit, isdecimal, isnumeric, isalpha, isalnum, isspace, isupper, islower, isascii, isprintable, int, float, ord.\n- list: len, L[i], slices, +, L * k, sum, min, max, sorted.\n- dict: len, d[k], d.get(k).\nAn if statement, and, or and not choose between values rather than compute one. pyct does not follow bit operations on ints, ~, ** on a float or with a value pyct follows as the exponent, bin, hex, oct, bit_length, encode, decode, bytes, repr, hash, format, f-strings with text around the value, the re module, or sets.\n\nAnswer with one fenced Python code block that defines one function and nothing else: def summary(n):, which gives the call's answer from the values going in, without a loop. Write the def line exactly as shown, with no annotation, default or decorator. It holds at most 10 statements, each an assignment to a name or an if statement that holds the same, and ends with a return of a dict with one entry per changed name, keyed by the name: return {\"answer\": ...}. It may read its parameters, the names it assigns, and their items, written x[i] or d[\"k\"]; literals; comparisons; and, or, not; arithmetic; abs, bool, chr, divmod, float, int, len, max, min, ord, round, sorted, str, sum; math.<function>; and the methods of the values whose names do not start with _, other than format and format_map. It has no import, other function, lambda, loop, comprehension, if expression or call of itself."
+    ],
+    "said": [
+      "llm: summary for the call __pow__ at targets/summaries/calls.py:84:8: answer = n * n",
+      "llm: summary for the call __pow__ at targets/summaries/calls.py:84:8: checked on 1 past runs",
+      "llm: summary for the call __pow__ at targets/summaries/calls.py:84:8 dropped at input 3: answer was 6, the formula gave 16"
+    ],
+    "inputs": [
+      {
+        "args": {
+          "n": 2
+        },
+        "forks": [],
+        "covered": {
+          "targets/summaries/calls.py": [
+            84,
+            85,
+            87,
+            89
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [
+          {
+            "name": "__pow__",
+            "count": 1,
+            "file": "targets/summaries/calls.py",
+            "line": 84,
+            "col": 8
+          }
+        ],
+        "source": "seed",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "n": 2
+        },
+        "forks": [
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 85,
+            "col": 7,
+            "taken": false,
+            "expression": [
+              "==",
+              [
+                "*",
+                "n",
+                "n"
+              ],
+              9
+            ]
+          },
+          {
+            "file": "targets/summaries/calls.py",
+            "line": 87,
+            "col": 7,
+            "taken": false,
+            "expression": [
+              ">",
+              [
+                "*",
+                "n",
+                "n"
+              ],
+              9
+            ]
+          }
+        ],
+        "covered": {
+          "targets/summaries/calls.py": [
+            84,
+            85,
+            87,
+            89
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [],
+        "source": "summary",
+        "aim": null,
+        "mismatch_at": null
+      },
+      {
+        "args": {
+          "n": -4
+        },
+        "forks": [],
+        "covered": {
+          "targets/summaries/calls.py": [
+            84,
+            85,
+            87,
+            89
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [
+          {
+            "name": "__pow__",
+            "count": 1,
+            "file": "targets/summaries/calls.py",
+            "line": 84,
+            "col": 8
+          }
+        ],
+        "source": "summary",
+        "aim": {
+          "file": "targets/summaries/calls.py",
+          "line": 87,
+          "col": 7,
+          "position": 1
+        },
+        "mismatch_at": 0
+      },
+      {
+        "args": {
+          "n": -3
+        },
+        "forks": [],
+        "covered": {
+          "targets/summaries/calls.py": [
+            84,
+            85,
+            86
+          ]
+        },
+        "total": {
+          "targets/summaries/calls.py": 79
+        },
+        "failure": null,
+        "downgrades": [
+          {
+            "name": "__pow__",
+            "count": 1,
+            "file": "targets/summaries/calls.py",
+            "line": 84,
+            "col": 8
+          }
+        ],
+        "source": "summary",
+        "aim": {
+          "file": "targets/summaries/calls.py",
+          "line": 85,
+          "col": 7,
+          "position": 0
+        },
+        "mismatch_at": 0
+      }
+    ],
+    "summaries": [
+      {
+        "kind": "call",
+        "name": "__pow__",
+        "file": "targets/summaries/calls.py",
+        "line": 84,
+        "col": 8,
+        "changes": [
+          "answer"
+        ],
+        "formula": "def summary(n):\n    return {\"answer\": n * n}\n",
+        "condition": null,
+        "state": "dropped",
+        "tries": 1,
+        "checked_on": 1
+      }
+    ]
+  }
+}

@@ -7,7 +7,7 @@ llm-summaries-ask-about-a-piece-once-an-input-recorded-a-run-of-it. While
 the run's inputs run in pyct's own process no formula could come into use,
 so a site gets no ask, said once in the run. A turn sends its ask through
 the summaries tool (`pyct.run.summaries.Summaries`), which reads and checks
-the reply as it does a loop's.
+the reply.
 
 A formula that passed both checks comes into use from the next input on,
 in core's table of loss sites in use (`pyct.core.entry.calls_in_use`), when
@@ -21,19 +21,22 @@ checked, said once for each site.
 
 from __future__ import annotations
 
+import json
 import os
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Protocol
 
 from pyct.core.entry import losses
 from pyct.core.entry.in_use import CALLS_IN_USE
-from pyct.core.foundation.branch import FormulaDrop, Site
+from pyct.core.foundation.branch import DropReason, FormulaDrop, Site
 from pyct.results.llm_asks import SummaryState
 from pyct.results.record import InputRecord
 from pyct.results.source_files import SourceFiles
 from pyct.run.call_summaries import (
-    CALL,
+    ANSWERS,
+    CHANGED,
+    AskedCall,
     LossSites,
     asked_call,
     call_request,
@@ -41,26 +44,24 @@ from pyct.run.call_summaries import (
     skipped_because,
 )
 from pyct.run.formula_runner import FormulaRunner, FormulaText, call_in_use
-from pyct.run.loops_in_use import (
-    IN_PYCT_S_PROCESS,
-    dropped_because,
-    kinds_unused_because,
-    place_of,
-)
 from pyct.run.model_runs import CANNOT_FORK, can_fork
 from pyct.run.notes import SummaryDropped, SummaryNotUsed, SummarySkipped
 from pyct.run.stuck import Outcome, Running, going
 from pyct.run.summary_asks import EarlierFormula, SummaryRequest
-from pyct.run.summary_outcomes import Asked, LoopState
-from pyct.run.summary_runs import AskedLoop
+from pyct.run.summary_checks import CompleteRun
+from pyct.run.summary_outcomes import Asked, SiteState
 from pyct.run.target import Target
 from pyct.run.tell import Told
 from pyct.run.token_limit import TokenLimit
 
 # why a loss site is not asked about: no run of it is recorded
 NO_RECORDED_RUN = "no recorded run"
+# why a formula is not used: the run's inputs run in pyct's own process
+IN_PYCT_S_PROCESS = "inputs run in pyct's own process"
 # the states of a loss site whose formula is kept
 _KEPT = (SummaryState.IN_USE, SummaryState.CHECKED)
+# each other kind a value's JSON text reads as, in plain words
+_OTHER_KINDS: dict[type, str] = {list: "a list", dict: "a dict", type(None): "None"}
 
 
 class Asking(Protocol):
@@ -69,7 +70,7 @@ class Asking(Protocol):
     whether the run's inputs run in a process of their own, the inputs to run again after the
     turn, a note said once, the ask itself, and a site's place as an ask names it."""
 
-    loops: dict[Site, LoopState]
+    sites: dict[Site, SiteState]
     told: Told
     limit: TokenLimit
     files: SourceFiles
@@ -80,7 +81,7 @@ class Asking(Protocol):
     def say_once(self, note: SummarySkipped | SummaryNotUsed) -> None: ...
 
     def asked(
-        self, loop: AskedLoop, state: LoopState, request: SummaryRequest, run: Running
+        self, call: AskedCall, state: SiteState, request: SummaryRequest, run: Running
     ) -> tuple[Asked, bool]: ...
 
     def place(self, site: Site) -> str: ...
@@ -95,12 +96,10 @@ class CallsInUse:
     def use(self, text: FormulaText, code: types.CodeType) -> None:
         """Put the formula's loss site in use from the next input on: its text, which names the
         site's downgrade and positions, and its code as pyct's process compiled it."""
-        call = call_in_use(FormulaRunner(code, text, os.getpid()))
-        if call is not None:
-            # loaded here, in pyct's own process, so that each forked input has it
-            losses.load_calls_in_use()
-            self.sites.add(Site(*text.place))
-            CALLS_IN_USE[text.place] = call
+        # loaded here, in pyct's own process, so that each forked input has it
+        losses.load_calls_in_use()
+        self.sites.add(Site(*text.place))
+        CALLS_IN_USE[text.place] = call_in_use(FormulaRunner(code, text, os.getpid()))
 
     def stop(self, site: Site) -> None:
         """Take the loss site at ``site`` out of use from the next input on."""
@@ -146,29 +145,27 @@ class CallTurns:
         if call is None or reason is not None or not can_fork():
             tool.say_once(SummarySkipped(site, reason or CANNOT_FORK, call=name))
             return
-        state = tool.loops.get(site) or LoopState(call.loop.piece.changed, kind=CALL, name=name)
+        state = tool.sites.get(site) or SiteState(CHANGED, name)
         self.positions[site] = call.positions
         request = call_request(tool.target, call, tool.place(site), tool.files, state)
-        tool.asked(call.loop, state, request, run)
+        tool.asked(call, state, request, run)
 
-    def used(
-        self, loop: AskedLoop, name: str, text: str, file: str, code: types.CodeType
-    ) -> SummaryState:
+    def used(self, call: AskedCall, text: str, file: str, code: types.CodeType) -> SummaryState:
         """A loss site's formula that passed both checks, from its text, its code objects' file
         name and its code: in use when it can be, the input of its site's latest complete run
         kept to run again, else kept as checked and said with why."""
-        site, changed = loop.site, loop.piece.changed
+        site, name = call.site, call.name
         tool = self.tool
         reason = (
-            IN_PYCT_S_PROCESS if not tool.isolated() else kinds_unused_because(loop.runs, changed)
+            IN_PYCT_S_PROCESS if not tool.isolated() else kinds_unused_because(call.runs, CHANGED)
         )
         if reason is not None:
             tool.say_once(SummaryNotUsed(site, reason, call=name))
             return SummaryState.CHECKED
         place, positions = place_of(site), self.positions[site]
-        formula = FormulaText(text, loop.parameters, changed, place, file, name, positions)
+        formula = FormulaText(text, call.parameters, CHANGED, place, file, name, positions)
         self.in_use.use(formula, code)
-        tool.again.append(loop.runs[-1].number)
+        tool.again.append(call.runs[-1].number)
         return SummaryState.IN_USE
 
     def heard(self, record: InputRecord, number: int) -> None:
@@ -187,9 +184,8 @@ class CallTurns:
         its earlier tries with why, and the run it failed on, for its ask at the next turn."""
         site = drop.site
         self.in_use.stop(site)
-        state = self.tool.loops[site]
+        state = self.tool.sites[site]
         state.last = SummaryState.DROPPED
-        state.dropped = True
         reason = dropped_because(drop)
         state.tries.append(
             EarlierFormula(state.formula or "", f"dropped at input {number}: {reason}")
@@ -206,7 +202,7 @@ class CallTurns:
             return
         for site in sorted(self.in_use.sites, key=lambda site: (site.file, site.line, site.col)):
             self.in_use.stop(site)
-            state = self.tool.loops[site]
+            state = self.tool.sites[site]
             state.last = SummaryState.CHECKED
             self.tool.say_once(SummaryNotUsed(site, IN_PYCT_S_PROCESS, call=state.name))
 
@@ -219,7 +215,46 @@ class CallTurns:
             return Outcome.SKIPPED if waiting else Outcome.GAVE_UP
         if site in waiting:
             return Outcome.SKIPPED
-        state = self.tool.loops.get(site)
-        if state is not None and state.kind == CALL and state.last in _KEPT:
+        state = self.tool.sites.get(site)
+        if state is not None and state.last in _KEPT:
             return Outcome.TOOK
         return Outcome.GAVE_UP
+
+
+def dropped_because(drop: FormulaDrop) -> str:
+    """Why an input's run of a loss site dropped its formula, in plain words, each value its JSON
+    text: the site's answer and the formula's, the raise's type, or the name it gave no value."""
+    if drop.reason is DropReason.MISMATCH:
+        return f"{drop.name} was {drop.value}, the formula gave {drop.got}"
+    if drop.reason is DropReason.RAISED:
+        return f"the formula raised {drop.got}"
+    return f"the formula gave no {drop.name}"
+
+
+def kinds_unused_because(runs: Sequence[CompleteRun], changed: Sequence[str]) -> str | None:
+    """Why a checked formula does not come into use by what its runs recorded, or None when it
+    may: a changed value of one of them is not an int, float, str or bool."""
+    for each in runs:
+        for value in each.run.changed:
+            kind = _kind(value.value) if value.name in changed else None
+            if kind is not None:
+                return f"{value.name} is {kind}"
+    return None
+
+
+def _kind(text: str) -> str | None:
+    """What a recorded value's JSON text holds, in plain words, when it is not an int, float,
+    str or bool: ``a list``, ``a dict`` or ``None``, and ``unreadable`` for text JSON does not
+    read; None when it is one of those four."""
+    try:
+        value = json.loads(text)
+    except ValueError:
+        return "unreadable"
+    if isinstance(value, ANSWERS):
+        return None
+    return _OTHER_KINDS[type(value)]
+
+
+def place_of(site: Site) -> tuple[str, int, int]:
+    """The site as core's table keys a loss site in use: its file, line and column."""
+    return (site.file, site.line, site.col)

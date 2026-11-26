@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 
-from pyct.core.entry import losses, pieces, substitutes, watch
+from pyct.core.entry import in_use, losses, substitutes, watch
 from pyct.core.entry.in_use import CALLS_IN_USE, CallInUse
 from pyct.core.entry.recorded import MOST_RUNS
 from pyct.core.entry.watch import answer, called, given
@@ -36,13 +36,13 @@ def using(line: int, col: int, call: CallInUse, *, alone: bool = True) -> Iterat
     and column of this file, whose sink is the list yielded."""
     CALLS_IN_USE[(__file__, line, col)] = call
     sink: list[SinkItem] = []
-    pieces.start(sink, alone=alone)
+    in_use.start()
     losses.start(sink, alone=alone)
     try:
         yield sink
     finally:
         losses.forget()
-        pieces.forget()
+        in_use.forget()
         escapes.forget()
         CALLS_IN_USE.clear()
 

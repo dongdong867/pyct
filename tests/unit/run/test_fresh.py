@@ -143,10 +143,10 @@ def test_the_new_interpreter_s_side_runs_the_input_it_is_handed() -> None:
     assert [branch.taken for branch in reading.branches] == [True]
 
 
-def test_a_fresh_interpreter_is_handed_the_interception_with_its_switches(
+def test_a_fresh_interpreter_is_handed_the_interception_pyct_s_process_holds(
     tmp_path: Path,
 ) -> None:
-    held = Interception(module="targets.intercept.identity", cache=tmp_path, pieces=True)
+    held = Interception(module="targets.intercept.identity", cache=tmp_path)
     target = load_target(IDENTITY)
 
     with (

@@ -10,7 +10,7 @@ import pytest
 
 from tests.acceptance import llm_summaries
 
-FRESH = "targets.summaries.loops"
+FRESH = "targets.summaries.calls"
 HELD = "targets.held_by_this_test"
 
 

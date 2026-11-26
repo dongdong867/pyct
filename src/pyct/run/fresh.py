@@ -9,7 +9,7 @@ library, so it is the way only when forking is unsafe.
 
 Only the input crosses on the way in: pyct's import path, the target's name
 and file, the arguments, the deadline and the interception pyct's own
-process holds open, then the text of each loop's formula in use as the
+process holds open, then the text of each loss site's formula in use as the
 request is made (`pyct.run.formula_runner`), pickled into a file the new
 interpreter reads. The new interpreter compiles and puts in use those
 formulas, then opens the same interception before it imports the target.
@@ -43,7 +43,7 @@ from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
 from pyct.run.formula_runner import handed_formulas, install
-from pyct.run.journal import CAPACITY, PIECE_ROOM, JournalWriter
+from pyct.run.journal import CAPACITY, RUN_ROOM, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import execution_context, load_target
@@ -99,7 +99,7 @@ def in_a_fresh_interpreter(
 
 def main(request: int, journal: int) -> NoReturn:
     """The new interpreter's side: read the input, import the target by name, run it once."""
-    writer = JournalWriter(mmap.mmap(journal, CAPACITY + PIECE_ROOM), pieces=PIECE_ROOM)
+    writer = JournalWriter(mmap.mmap(journal, CAPACITY + RUN_ROOM), runs=RUN_ROOM)
     serve(writer, functools.partial(_requested, request))
 
 
@@ -123,8 +123,8 @@ def _intercepting(interception: Interception | None) -> contextlib.AbstractConte
 @contextlib.contextmanager
 def _journal() -> Generator[tuple[int, mmap.mmap]]:
     """A journal in an unlinked file, mapped here, whose descriptor the new interpreter maps: its
-    own bytes, then the room of the recorded runs of the input's pieces."""
-    size = CAPACITY + PIECE_ROOM
+    own bytes, then the room of the recorded runs of the input's loss sites."""
+    size = CAPACITY + RUN_ROOM
     with contextlib.ExitStack() as stack:
         try:
             backing = stack.enter_context(tempfile.TemporaryFile())

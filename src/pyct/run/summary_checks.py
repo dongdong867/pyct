@@ -1,6 +1,6 @@
-"""A loop's summary as the model writes it: the answer's form the request gives, the formula the
-reply's code writes once it passes the form check (`pyct.run.summary_form`), and the two checks
-the formula runs through before it is kept.
+"""A loss site's summary as the model writes it: the answer's form the request gives, the formula
+the reply's code writes once it passes the form check (`pyct.run.summary_form`), the runs it is
+checked on, and the two checks the formula runs through before it is kept.
 
 The formula runs only in a child forked from pyct's process
 (`pyct.run.model_runs`). First, in one child, on every complete run in
@@ -26,7 +26,7 @@ from typing import Any
 
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.plain_json import plain_json
-from pyct.core.foundation.branch import PieceRun
+from pyct.core.foundation.branch import Changed, GoingIn
 from pyct.execution.blame import one_line
 from pyct.intercept.model_code import Refused
 from pyct.results.failure import FailureKind
@@ -50,20 +50,14 @@ CHECK_SECONDS = 2.0
 BUDGET_RAN_OUT = "the run's budget ran out"
 
 
-def answer_form(parameters: Sequence[str], changed: Sequence[str], noun: str = "loop") -> str:
-    """How the reply writes a formula for a loop, or for the piece ``noun`` names, with these
-    names going in and changed."""
+def answer_form(parameters: Sequence[str], changed: Sequence[str]) -> str:
+    """How the reply writes a formula for a loss site, with these names going in and changed."""
     entries = ", ".join(f'"{name}": ...' for name in changed)
     calls = ", ".join(sorted(FORMULA_CALLS))
-    gives = (
-        "the values the loop leaves in its changed names"
-        if noun == "loop"
-        else f"the {noun}'s answer"
-    )
     return (
         "Answer with one fenced Python code block that defines one function and nothing else:"
-        f" def {SUMMARY}({', '.join(parameters)}):, which gives {gives} from the values going"
-        " in, without a loop. Write the def line exactly"
+        f" def {SUMMARY}({', '.join(parameters)}):, which gives the call's answer from the values"
+        " going in, without a loop. Write the def line exactly"
         " as shown, with no annotation, default or decorator. It holds at most"
         f" {MOST_STATEMENTS} statements, each an assignment to a name or an if statement that"
         " holds the same, and ends with a return of a dict with one entry per changed name,"
@@ -86,12 +80,21 @@ class Formula:
 
 
 @dataclass(frozen=True)
+class AskedRun:
+    """A loss site's run as an ask sees it: each value going in under its parameter's name, and
+    the answer under ``answer``."""
+
+    going_in: tuple[GoingIn, ...]
+    changed: tuple[Changed, ...]
+
+
+@dataclass(frozen=True)
 class CompleteRun:
-    """A recorded run of a loop that holds every name it changes, and the input that recorded
-    it, numbered in the run from 1."""
+    """A recorded run of a loss site whose values going in fit its code, and the input that
+    recorded it, numbered in the run from 1."""
 
     number: int
-    run: PieceRun
+    run: AskedRun
 
 
 @dataclass(frozen=True)
@@ -201,7 +204,7 @@ def _followed(
     return f"{lost[0]} is not tracked"
 
 
-def _going_in(run: PieceRun, parameters: Sequence[str]) -> dict[str, object]:
+def _going_in(run: AskedRun, parameters: Sequence[str]) -> dict[str, object]:
     """The run's value of each parameter, read from its JSON text."""
     held = {each.name: each.value for each in run.going_in}
     return {name: json.loads(held[name]) for name in parameters}
@@ -248,7 +251,7 @@ class _Case:
     recorded: dict[str, str]
 
 
-def _recorded(run: PieceRun) -> dict[str, str]:
+def _recorded(run: AskedRun) -> dict[str, str]:
     return {each.name: each.value for each in run.changed}
 
 
@@ -286,7 +289,7 @@ def _tracker(
 
 
 def _text(value: object) -> str:
-    """A value as JSON text, as a loop's run records it, or the kind of a value JSON cannot
+    """A value as JSON text, as a loss site's run records it, or the kind of a value JSON cannot
     hold."""
     try:
         return json.dumps(plain_json(value, tuples=False))

@@ -11,9 +11,7 @@ import types
 import pytest
 
 from pyct.core.entry import in_use
-from pyct.core.entry.in_use import LoopInUse
-from pyct.core.foundation.branch import Changed
-from pyct.intercept.compiled import substituted_code
+from pyct.core.entry.in_use import CallInUse
 from pyct.intercept.model_code import compile_model_code
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import model_runs
@@ -150,25 +148,12 @@ def test_a_process_running_a_second_thread_cannot_fork() -> None:
     assert done == CannotFork()
 
 
-def test_a_recorded_run_of_a_piece_in_the_child_s_journal_passes_through() -> None:
-    # model-written code has no hooks, but the child's journal is an input's, so code with them
-    # writes its runs there and they come back with the rest
-    code = substituted_code(
-        b"def f(n):\n    i = 0\n    while i < n:\n        i += 1\n    return i\n", FILE, pieces=True
-    )
-    done = run_model(ModelCall(code, "f", {"n": 2}), time.monotonic() + 5.0)
+def test_a_child_meets_no_loss_site_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
+    site = CallInUse("__pow__", ("n", None, None), lambda values: values)
+    monkeypatch.setitem(in_use.CALLS_IN_USE, (FILE, 2, 4), site)
 
-    assert isinstance(done, ModelRun)
-    assert done.answer == "2"
-    assert [run.changed for run in done.result.pieces] == [(Changed("i", "2"),)]
-
-
-def test_a_child_meets_no_loop_in_use(monkeypatch: pytest.MonkeyPatch) -> None:
-    loop = LoopInUse(("s",), ("t",), lambda values: values)
-    monkeypatch.setitem(in_use.IN_USE, (FILE, 2, 4), loop)
-
-    done = ran("def f():\n    return in_use()\n", {}, in_use=lambda: len(in_use.IN_USE))
+    done = ran("def f():\n    return in_use()\n", {}, in_use=lambda: len(in_use.CALLS_IN_USE))
 
     assert done.answer == "0"
     # the table in pyct's process is as it was
-    assert in_use.IN_USE[(FILE, 2, 4)] is loop
+    assert in_use.CALLS_IN_USE[(FILE, 2, 4)] is site

@@ -1,7 +1,7 @@
 """Whether a file or folder is Python's standard library's: under the folder its own files lie
 in, and not under a folder of installed packages, as a system Python's site-packages inside it is,
 or code frozen into the interpreter. pyct's own imports (`pyct.run.own_imports`) look there, and
-a loop in use's plain copy (`pyct.core.entry.plain_copy`) trusts a key's hash whose code lies
+a loss site in use's plain copy (`pyct.core.entry.plain_copy`) trusts a key's hash whose code lies
 there."""
 
 from __future__ import annotations

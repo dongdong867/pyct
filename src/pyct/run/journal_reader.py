@@ -34,7 +34,6 @@ from pyct.core.foundation.branch import (
     Fact,
     FormulaDrop,
     LossRun,
-    PieceRun,
     Site,
 )
 from pyct.results.coverage import Reach
@@ -60,7 +59,6 @@ from pyct.run.journal import (
     NUMBER,
     OPEN,
     PART,
-    PIECE,
     RECORDS,
     START,
     STATE,
@@ -71,7 +69,7 @@ from pyct.run.journal import (
     Journal,
     padded,
 )
-from pyct.run.journal_pieces import loss_run, piece_run
+from pyct.run.journal_losses import loss_run
 
 _DECODER = json.JSONDecoder()
 
@@ -103,9 +101,8 @@ class Reading:
     be read. ``bound`` says the writer stopped at the bound on what pyct
     keeps for one input, which is the input's own ending. ``reach`` is the
     functions the call entered and the ways their branches went,
-    ``pieces`` the recorded runs of the pieces of the target's code,
-    ``losses`` those of its loss sites, and ``drops`` the loops' formulas
-    dropped in the call.
+    ``losses`` the recorded runs of its loss sites, and ``drops`` the loss
+    sites' formulas dropped in the call.
     """
 
     lines: frozenset[int]
@@ -118,7 +115,6 @@ class Reading:
     facts: tuple[Fact, ...] = ()
     bound: str | None = None
     reach: Reach = field(default_factory=Reach)
-    pieces: tuple[PieceRun, ...] = ()
     drops: tuple[FormulaDrop, ...] = ()
     losses: tuple[LossRun, ...] = ()
 
@@ -234,7 +230,6 @@ class _Facts:
     # the facts the path holds, each placed after the fork records read before it
     facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
-    pieces: list[PieceRun] = field(default_factory=list)
     losses: list[LossRun] = field(default_factory=list)
     drops: list[FormulaDrop] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
@@ -283,21 +278,14 @@ class _Facts:
             self.recount(payload.obj)
             self._downgrade(bytes(payload), carries_on=kind == CARRY_ON)
             self.counted_at = at
-        elif kind in (PIECE, LOSS):
-            self._run(kind, bytes(payload))
+        elif kind == LOSS:
+            self.losses.append(loss_run(bytes(payload), self._site))
         elif kind == START:
             self.started = True
         elif kind == END:
             self.ended, self.end = True, _ending(_decoded(payload))
         else:
             raise ValueError(f"no record of kind {kind}")
-
-    def _run(self, kind: int, payload: bytes) -> None:
-        """Add a recorded run of a piece or of a loss site."""
-        if kind == PIECE:
-            self.pieces.append(piece_run(payload, self._site))
-        else:
-            self.losses.append(loss_run(payload, self._site))
 
     def _reached(self, kind: int, payload: memoryview) -> None:
         """Add a function the call entered, or a way a branch went."""
@@ -381,8 +369,8 @@ class _Facts:
         raise ValueError("a fact is [expression, taken, file, line, col, raising] and its place")
 
     def _drop(self, value: object) -> FormulaDrop:
-        """A loop's dropped formula, read from its site, its name, its two values, its reason and
-        the position of its run."""
+        """A loss site's dropped formula, read from its site, its name, its two values, its reason
+        and the position of its run."""
         match value:
             case [
                 str() as file,
@@ -421,7 +409,6 @@ class _Facts:
             branches=tuple(self.branches),
             downgrades=tuple(self.downgrades),
             facts=tuple(self.facts),
-            pieces=tuple(self.pieces),
             losses=tuple(self.losses),
             drops=tuple(self.drops),
             started=self.started,

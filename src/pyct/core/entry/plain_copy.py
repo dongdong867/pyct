@@ -1,6 +1,6 @@
-"""The plain copy a loop in use (`pyct.core.entry.in_use`) takes of a tracked list or dict whose
-form no longer describes it, made with none of the methods the target wrote for its containers,
-and no hash or equality it wrote for its keys, run.
+"""The plain copy a loss site in use takes of a tracked list or dict going in whose form no longer
+describes it (`pyct.core.entry.in_use.as_it_went_in`), made with none of the methods the target
+wrote for its containers, and no hash or equality it wrote for its keys, run.
 
 The copy is a new plain list or dict. Each list, tuple, dict, set and frozenset it holds, at every
 depth, a subclass of one included, that is tracked or holds a tracked value at some depth is a new

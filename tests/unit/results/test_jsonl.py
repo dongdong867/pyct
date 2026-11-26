@@ -1,7 +1,15 @@
 import json
 
 from pyct.config.goal import Goal
-from pyct.core.foundation.branch import Branch, Changed, Expression, GoingIn, PieceRun, Site
+from pyct.core.foundation.branch import (
+    Branch,
+    Changed,
+    Expression,
+    GoingIn,
+    LossKind,
+    LossRun,
+    Site,
+)
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -47,12 +55,16 @@ def test_render_is_one_json_line_with_sorted_lines() -> None:
     }
 
 
-def test_render_leaves_the_recorded_runs_of_pieces_off_the_line() -> None:
+def test_render_leaves_the_recorded_runs_of_loss_sites_off_the_line() -> None:
     site = Site(file="m.py", line=5, col=4)
-    run = PieceRun(
-        site=site, going_in=(GoingIn("x", "1", tracked=True),), changed=(Changed("t", "2"),)
+    run = LossRun(
+        site,
+        "__pow__",
+        LossKind.OPERATION,
+        (GoingIn("arg1", "1", tracked=True),),
+        (Changed("answer", "2"),),
     )
-    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}), pieces=(run,))
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}), losses=(run,))
 
     assert render(record, COVERAGE) == render(SEED, COVERAGE)
 

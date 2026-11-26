@@ -51,9 +51,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Interception:
-    """What one block substitutes: the target's module, whose top-level package is in scope, the
-    folder its substituted code is kept in, and whether each loop and comprehension's assignment
-    in a function gets pyct's hooks (`pyct.intercept.loops`).
+    """What one block substitutes: the target's module, whose top-level package is in scope, and
+    the folder its substituted code is kept in.
 
     For ``shop.cart`` the scope is ``shop`` and every module under it; for a
     top-level module, that module alone.
@@ -61,7 +60,6 @@ class Interception:
 
     module: str
     cache: Path
-    pieces: bool = False
 
     @property
     def package(self) -> str:
@@ -137,7 +135,7 @@ class _Finder:
         spec = self._found(name, path, target)
         if spec is None or type(spec.loader) is not importlib.machinery.SourceFileLoader:
             return spec
-        spec.loader = _Loader(name, spec.loader.path, self.interception)
+        spec.loader = _Loader(name, spec.loader.path, self.interception.cache)
         return spec
 
     def _found(
@@ -158,9 +156,9 @@ class _Loader(importlib.machinery.SourceFileLoader):
     """Python's source loader, with the module's code substituted and kept in pyct's cache, run
     with `len`, `ord` and `chr` bound in its builtins."""
 
-    def __init__(self, fullname: str, path: str, interception: Interception) -> None:
+    def __init__(self, fullname: str, path: str, cache: Path) -> None:
         super().__init__(fullname, path)
-        self.interception = interception
+        self.cache = cache
 
     def exec_module(self, module: types.ModuleType) -> None:
         """Run the module's code with its builtins bound (`pyct.intercept.wrap`), a reload too."""
@@ -168,17 +166,15 @@ class _Loader(importlib.machinery.SourceFileLoader):
         super().exec_module(module)
 
     def get_code(self, fullname: str) -> types.CodeType:
-        """The module's code, substituted, for the source file as it is now, kept apart when the
-        interception's pieces switch is on.
+        """The module's code, substituted, for the source file as it is now.
 
         Reading the file is pyct's work for the target, so a raise out of it
         is the target's, as it is in Python's own import.
         """
         path = self.get_filename(fullname)
         return cached(
-            self.interception.cache,
+            self.cache,
             path,
             lambda: own(self.get_data, path),
-            lambda source: substituted_code(source, path, pieces=self.interception.pieces),
-            "pieces" if self.interception.pieces else "",
+            lambda source: substituted_code(source, path),
         )
