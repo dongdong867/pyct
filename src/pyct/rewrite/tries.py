@@ -1,11 +1,9 @@
 """One condition's tries at one stuck moment: ask for a rewrite, check it, ask the solver for it
 alone, and run its input on the real code, up to 4 asks.
 
-The solver's ask holds the rewrite's own forks and facts alone
-(``pyct.rewrite.ask``), and no kept rewrite of another condition. The input
-it gives runs aimed at the condition's kept plan, and counts when it takes
-the wanted side; for a condition that recorded no fork, it runs with no
-plan, and counts when it runs a missed line that side guards.
+The solver's ask holds no kept rewrite of another condition. The input it
+gives runs aimed at the condition's kept plan, or with no plan for a
+condition that recorded no fork.
 
 A parameter that is an object on the input is read only as ``name.field``
 (``pyct.rewrite.condition``); one that holds an object inside a list, tuple

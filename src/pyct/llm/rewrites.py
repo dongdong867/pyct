@@ -55,12 +55,7 @@ class LlmRewrites:
 
 
 def request_text(request: RewriteRequest) -> str:
-    """The exact text a rewrites ask sends: the task, the condition and the side its line needs,
-    the path's earlier conditions, the function's code, the input, the parameters a rewrite may
-    not read, the solver's answer, and for ``unsat`` and ``no fork`` the ask for another path,
-    this moment's earlier tries, and the answer's form. For ``no fork`` the opening says pyct
-    does not follow the value the condition reads, in place of the solver's answer, and the path
-    and the input are those of an input that ran the condition."""
+    """The exact text a rewrites ask sends."""
     no_fork = request.answer == Reason.NO_FORK
     opening = NOT_FOLLOWED if no_fork else "The solver could not answer for the condition below."
     parts = [

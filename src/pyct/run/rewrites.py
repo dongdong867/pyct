@@ -258,8 +258,7 @@ class _Around:
 
     def ask(self, asked: tuple[Branch | Fact, ...], given: GivenUp) -> Answer | None:
         """The solver's answer to ``asked`` alone, from ``given``'s input, within the seconds
-        one ask gets, its programs handed out as the run's asks are, aimed at ``given``'s plan,
-        or with none at the rewrite's own fork on ``given``'s path; None when no time is
+        one ask gets, its programs handed out as the run's asks are; None when no time is
         left."""
         limit = self._limit()
         if limit <= 0:

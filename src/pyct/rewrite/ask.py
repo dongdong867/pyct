@@ -6,9 +6,7 @@ whose path the given-up plan extends, each operation's fork before a raise
 kept on the side that did not raise, and its own branch taken true. It
 holds none of the path's forks and none of pyct's facts at the condition's
 place. What the rewrite's child recorded outside the rewrite's own code, as
-it built the objects the rewrite reads fields of, is left out too. A kept
-rewrite stands in for its condition in a later plan's ask on that plan's own
-path (``in_place``, ``pyct.rewrite.kept``).
+it built the objects the rewrite reads fields of, is left out too.
 """
 
 from __future__ import annotations
