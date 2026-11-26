@@ -96,9 +96,10 @@ def run_rewrites(
 ) -> Rewritten:
     """``run()`` on ``spec`` from ``seed`` inside the block that substitutes its package, every
     input in this process and each rewrite in a child of it, with ``provider`` as the rewrites
-    helper (none for a plain run) and ``summaries`` as the summaries helper. A ``seed`` given as
-    a function is made once the target has loaded, so an instance it hands in is of the target's
-    own classes."""
+    helper (none for a plain run). With ``summaries`` as the summaries helper, each input runs in
+    a child of this process instead, since summaries ask about no input run in pyct's own. A
+    ``seed`` given as a function is made once the target has loaded, so an instance it hands in
+    is of the target's own classes."""
     records: list[InputRecord] = []
     said: list[str] = []
 
@@ -112,7 +113,8 @@ def run_rewrites(
             said.append(line)
 
     helpers = Helpers(summaries=summaries, rewrites=provider)
-    setup = Setup(isolation=Isolation.IN_PROCESS, helpers=helpers)
+    isolation = Isolation.IN_PROCESS if summaries is None else Isolation.AUTO
+    setup = Setup(isolation=isolation, helpers=helpers)
     tell = Tell(report=report, noted=noted)
     with interception(spec):
         target = load_target(spec)
