@@ -21,7 +21,7 @@ from pyct.branches.compare import Parts, same_expression
 from pyct.branches.plan import Plan
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
-from pyct.results.causes import Condition
+from pyct.results.causes import Condition, Reason
 from pyct.results.failure import FailureKind
 from pyct.results.record import Aim, InputRecord, MissWhy
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite
@@ -72,6 +72,16 @@ class GivenUp:
     forks: tuple[Branch, ...] = ()
     lines: tuple[int, ...] = ()
     path: int = 0
+
+    @property
+    def no_fork(self) -> bool:
+        """Whether the condition recorded no fork, so ``plan`` and ``answer`` are None."""
+        return self.plan is None
+
+    @property
+    def said(self) -> str:
+        """The answer a request names: the solver's, or ``no fork``."""
+        return Reason.NO_FORK.value if self.answer is None else self.answer.value
 
     @property
     def earlier(self) -> tuple[Branch, ...]:
@@ -193,7 +203,7 @@ def in_place(
 def reached(record: InputRecord, given: GivenUp) -> bool:
     """Whether an input counts for a condition: with a plan, it took the side the missed line
     needs (``takes``); with none, it ran a line of ``given.lines``."""
-    if given.plan is None:
+    if given.no_fork:
         return not record.covered_lines.isdisjoint(given.lines)
     return takes(record, given.condition)
 

@@ -266,7 +266,7 @@ class Asking:
         if reached(record, given):
             return None
         written = _written(record.args, self.kinds)
-        missed = "took the other side" if given.plan is not None else NO_GUARDED_LINE
+        missed = NO_GUARDED_LINE if given.no_fork else "took the other side"
         return EarlierTry(expression, f"the input {written} {missed}")
 
 

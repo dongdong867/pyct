@@ -258,7 +258,7 @@ class _Around:
         limit = self._limit()
         if limit <= 0:
             return None
-        wanted = _own_fork_plan(asked, given.path) if given.plan is None else given.plan
+        wanted = given.plan or _own_fork_plan(asked, given.path)
         solved = solver_answer(wanted, given.origin, limit, asked)
         self.run.tell_ask(solved.asked)
         return solved.answer

@@ -74,13 +74,13 @@ def request_text(request: RewriteRequest) -> str:
         took = "that input's path took" if no_fork else "the path took before it"
         parts.append(f"The conditions {took}, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
-    parts.append(_input(request))
+    parts.append(_input(request, no_fork))
     if request.holders:
         parts.append(
             "Parameters your condition may not read, since each holds an object inside a list,"
             " tuple or dict: " + ", ".join(request.holders)
         )
-    parts.extend(_answer(request.answer))
+    parts.extend(_answer(request.answer, no_fork))
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")
@@ -88,22 +88,21 @@ def request_text(request: RewriteRequest) -> str:
     return "\n\n".join(parts)
 
 
-def _answer(answer: str) -> tuple[str, ...]:
+def _answer(answer: str, no_fork: bool) -> tuple[str, ...]:
     """The solver's answer, none for ``no fork``, and for ``unsat`` and ``no fork`` the ask for
     another path."""
-    if answer == Reason.NO_FORK:
+    if no_fork:
         return (OTHER_PATH,)
     said = f"The solver's answer for the condition: {answer}"
     return (said, OTHER_PATH) if answer == MissWhy.UNSAT else (said,)
 
 
-def _input(request: RewriteRequest) -> str:
+def _input(request: RewriteRequest, no_fork: bool) -> str:
     """The input's values, and how the code reads a plain dict's escaped key when a value or an
     earlier try's reason shows one."""
     values = "\n".join(f"{name} = {value}" for name, value in request.args)
     shown = [value for _, value in request.args] + [each.reason for each in request.tries]
     said = f"\n{ESCAPED_KEY}" if any(_ESCAPED.search(text) for text in shown) else ""
-    no_fork = request.answer == Reason.NO_FORK
     whose = (
         "An input that ran the condition" if no_fork else "The input whose path the solver extended"
     )
