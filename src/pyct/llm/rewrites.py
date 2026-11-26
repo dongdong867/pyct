@@ -12,6 +12,7 @@ import re
 from pyct.config.llm import REWRITES_TOOL
 from pyct.llm.connection import Connection
 from pyct.llm.tool import Tool
+from pyct.results.causes import Reason
 from pyct.results.llm_asks import Unanswered
 from pyct.results.record import MissWhy
 from pyct.rewrite.condition import FORM
@@ -27,7 +28,13 @@ ESCAPED_KEY = (
 )
 # a quoted key of one or more "!" then "__class__", as JSON or Python writes it
 _ESCAPED = re.compile(r"[\"']!+__class__[\"']")
-# what a request asks once the solver answered unsat for the condition on the input's path
+# what a request says of a condition that recorded no fork, in place of the solver's answer
+NOT_FOLLOWED = (
+    "pyct does not follow the value the condition below reads, so it recorded no branch there"
+    " for the solver to flip."
+)
+# what a request asks once the solver answered unsat for the condition on the input's path, or
+# the condition recorded no fork
 OTHER_PATH = (
     "The input's path cannot reach the wanted side as it stands. Write an expression whose"
     " inputs reach it along another path, one you read from the code."
@@ -50,11 +57,15 @@ class LlmRewrites:
 def request_text(request: RewriteRequest) -> str:
     """The exact text a rewrites ask sends: the task, the condition and the side its line needs,
     the path's earlier conditions, the function's code, the input, the parameters a rewrite may
-    not read, the solver's answer, and for ``unsat`` the ask for another path, this moment's
-    earlier tries, and the answer's form."""
+    not read, the solver's answer, and for ``unsat`` and ``no fork`` the ask for another path,
+    this moment's earlier tries, and the answer's form. For ``no fork`` the opening says pyct
+    does not follow the value the condition reads, in place of the solver's answer, and the path
+    and the input are those of an input that ran the condition."""
+    no_fork = request.answer == Reason.NO_FORK
+    opening = NOT_FOLLOWED if no_fork else "The solver could not answer for the condition below."
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
-        " branches each input took. The solver could not answer for the condition below."
+        f" branches each input took. {opening}"
         " Write an expression on the parameters that is equivalent to the condition or narrower,"
         " so that each input meeting it reaches the condition and takes the wanted side, and"
         ' that fixes each value it reads to a concrete one, such as `s == "1e-30"`. pyct'
@@ -65,7 +76,8 @@ def request_text(request: RewriteRequest) -> str:
     ]
     if request.earlier:
         listed = "\n".join(f"{each.text}: {_side(each)}" for each in request.earlier)
-        parts.append(f"The conditions the path took before it, nearest last:\n{listed}")
+        took = "that input's path took" if no_fork else "the path took before it"
+        parts.append(f"The conditions {took}, nearest last:\n{listed}")
     parts.append(f"The function's code:\n```python\n{request.code}\n```")
     parts.append(_input(request))
     if request.holders:
@@ -73,14 +85,21 @@ def request_text(request: RewriteRequest) -> str:
             "Parameters your condition may not read, since each holds an object inside a list,"
             " tuple or dict: " + ", ".join(request.holders)
         )
-    parts.append(f"The solver's answer for the condition: {request.answer}")
-    if request.answer == MissWhy.UNSAT:
-        parts.append(OTHER_PATH)
+    parts.extend(_answer(request.answer))
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")
     parts.append(FORM)
     return "\n\n".join(parts)
+
+
+def _answer(answer: str) -> tuple[str, ...]:
+    """The solver's answer, none for ``no fork``, and for ``unsat`` and ``no fork`` the ask for
+    another path."""
+    if answer == Reason.NO_FORK:
+        return (OTHER_PATH,)
+    said = f"The solver's answer for the condition: {answer}"
+    return (said, OTHER_PATH) if answer == MissWhy.UNSAT else (said,)
 
 
 def _input(request: RewriteRequest) -> str:
@@ -89,8 +108,12 @@ def _input(request: RewriteRequest) -> str:
     values = "\n".join(f"{name} = {value}" for name, value in request.args)
     shown = [value for _, value in request.args] + [each.reason for each in request.tries]
     said = f"\n{ESCAPED_KEY}" if any(_ESCAPED.search(text) for text in shown) else ""
+    no_fork = request.answer == Reason.NO_FORK
+    whose = (
+        "An input that ran the condition" if no_fork else "The input whose path the solver extended"
+    )
     return (
-        "The input whose path the solver extended, each value as JSON, or as Python writes it"
+        f"{whose}, each value as JSON, or as Python writes it"
         " when JSON cannot hold it, an object as <Name object, built from ARGS>, ARGS the"
         " arguments pyct builds it from, or as <Name object>, and a value that holds an object"
         f" inside a list, tuple or dict as <holds an object>:\n{values}{said}"

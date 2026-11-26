@@ -51,27 +51,38 @@ class Unread:
 # recorded, why the reader read no field, or why it did not run
 type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResult | Unread | str]
 
-# runs a real input aimed at a plan, as the loop runs every input: its record, or the stop it met
-type RunInput = Callable[[Seed, Plan], InputRecord | Stop]
+# runs a real input, aimed at a plan when one is given, as the loop runs every input: its record,
+# or the stop it met
+type RunInput = Callable[[Seed, Plan | None], InputRecord | Stop]
 
 
 @dataclass(frozen=True)
 class GivenUp:
     """A condition the solver gave up on: the first plan aimed at it whose ask ended in
-    ``timeout`` or ``unknown``, or had no time left after a kept rewrite's ask, the input whose
-    path that plan extends, and the answer. A plan whose path holds its own check on the other
-    side (``holds_its_own_check``) is answered ``unsat`` before any ask in a run with rewrites,
-    so it is never kept."""
+    ``timeout``, ``unknown`` or ``unsat``, or had no time left after a kept rewrite's ask, the
+    input whose path that plan extends, and the answer. A plan whose path holds its own check on
+    the other side (``holds_its_own_check``) is answered ``unsat`` before any ask in a run with
+    rewrites, so it is never kept.
+
+    For a condition that recorded no fork, ``plan`` and ``answer`` are None,
+    ``origin`` is an input that ran the condition, ``forks`` the forks that
+    input took, ``lines`` the missed lines the condition's side guards, and
+    ``path`` that input's place among the run's inputs, from 0, as
+    ``Plan.path`` counts it.
+    """
 
     condition: Condition
-    plan: Plan
+    plan: Plan | None
     origin: Seed
-    answer: MissWhy
+    answer: MissWhy | None
+    forks: tuple[Branch, ...] = ()
+    lines: tuple[int, ...] = ()
+    path: int = 0
 
     @property
     def earlier(self) -> tuple[Branch, ...]:
-        """The forks the plan's path took before its aimed fork."""
-        return self.plan.prefix[:-1]
+        """The forks the plan's path took before its aimed fork, or with no plan ``forks``."""
+        return self.forks if self.plan is None else self.plan.prefix[:-1]
 
 
 @dataclass(frozen=True)
@@ -183,6 +194,14 @@ def in_place(
         else:
             made.append(item)
     return tuple(made)
+
+
+def reached(record: InputRecord, given: GivenUp) -> bool:
+    """Whether an input counts for a condition: with a plan, it took the side the missed line
+    needs (``takes``); with none, it ran a line of ``given.lines``."""
+    if given.plan is None:
+        return not record.covered_lines.isdisjoint(given.lines)
+    return takes(record, given.condition)
 
 
 def takes(record: InputRecord, condition: Condition) -> bool:

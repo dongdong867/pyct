@@ -3,7 +3,9 @@ alone, and run its input on the real code, up to 4 asks.
 
 The solver's ask holds the rewrite's own forks and facts alone
 (``pyct.rewrite.ask``), and no kept rewrite of another condition. The input
-it gives runs aimed at the condition's kept plan.
+it gives runs aimed at the condition's kept plan, and counts when it takes
+the wanted side; for a condition that recorded no fork, it runs with no
+plan, and counts when it runs a missed line that side guards.
 
 A parameter that is an object on the input is read only as ``name.field``
 (``pyct.rewrite.condition``); one that holds an object inside a list, tuple
@@ -13,7 +15,8 @@ which covers how it reads objects, pyct's reader reads no field it
 names, pyct follows no value through an operation in it, it reads no
 argument or no value an input sets, it raised on the input, the input whose
 path it extends already meets it, the solver failed or gave no input for it,
-or its input took the other side. A reply that got no answer ends the
+or its input took the other side or, for a condition with no fork, ran none
+of the lines that side guards. A reply that got no answer ends the
 condition's tries at this moment, and so does a rewrite pyct cannot run,
 found before an ask or after it, a spent budget, checked before the solver's
 ask, and an input that met the run's stop.
@@ -41,7 +44,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.intercept.model_code import Refused
 from pyct.results.llm_asks import Unanswered
 from pyct.results.record import InputRecord, Stop
-from pyct.rewrite.ask import GivenUp, Recorded, Unread, recorded, takes
+from pyct.rewrite.ask import GivenUp, Recorded, Unread, reached, recorded
 from pyct.rewrite.condition import NO_EXPRESSION, Rewrite, expression_in, rewrite_code
 from pyct.rewrite.kept import Kept
 from pyct.rewrite.kinds import Kind, Kinds
@@ -66,12 +69,15 @@ BUDGET_SPENT = "budget spent"
 # why the condition is given up before an ask when no parameter is left that a rewrite may read,
 # each holding an object inside a list, tuple or dict
 NOTHING_READABLE = "no argument a rewrite may read"
+# why a try at a condition that recorded no fork fails when its input ran no missed line
+NO_GUARDED_LINE = "ran none of the lines that side guards"
 
 
 class Around(Protocol):
     """The run as a condition's tries see it: whether to go on, why no rewrite could run now,
     the solver's answer to a rewrite's ask, the clock paused for the model's wait, a note said,
-    a rewrite run in a child of pyct's process, and a real input run aimed at a plan."""
+    a rewrite run in a child of pyct's process, and a real input run, aimed at a plan when one
+    is given."""
 
     def going(self) -> bool: ...
 
@@ -92,7 +98,7 @@ class Around(Protocol):
         self, code: types.CodeType, args: Mapping[str, object]
     ) -> ExecutionResult | Unread | str: ...
 
-    def run_input(self, seed: Seed, plan: Plan) -> InputRecord | Stop: ...
+    def run_input(self, seed: Seed, plan: Plan | None) -> InputRecord | Stop: ...
 
 
 @dataclass(frozen=True)
@@ -259,10 +265,11 @@ class Asking:
         record = around.run_input(apply(given.origin, answer.model), given.plan)
         if isinstance(record, Stop):
             return _Ended(record.reason)
-        if takes(record, given.condition):
+        if reached(record, given):
             return None
         written = _written(record.args, self.kinds)
-        return EarlierTry(expression, f"the input {written} took the other side")
+        missed = "took the other side" if given.plan is not None else NO_GUARDED_LINE
+        return EarlierTry(expression, f"the input {written} {missed}")
 
 
 def _written(args: Mapping[str, object], kinds: Kinds) -> str:
