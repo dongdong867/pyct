@@ -270,8 +270,9 @@ def test_the_ask_with_a_kept_rewrite_gets_what_its_child_left_of_the_limit(
 def test_an_entry_with_no_plan_kept_for_its_condition_is_skipped() -> None:
     tool, site = kept_at_line_2()
     entry = WhyEntry(site.file, (3,), Reason.NOT_TAKEN, condition=Condition(site, False))
+    going = types.SimpleNamespace(stopped=None, bounds=types.SimpleNamespace(until=None))
 
-    handled = tool.take((entry,), Moment(1, (entry,), run=None))  # pyrefly: ignore[bad-argument-type]
+    handled = tool.take((entry,), Moment(1, (entry,), run=going))  # pyrefly: ignore[bad-argument-type]
 
     assert handled == Handled((Outcome.SKIPPED,), asked=False)
 
