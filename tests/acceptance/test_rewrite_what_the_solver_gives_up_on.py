@@ -43,6 +43,22 @@ def test_a_rewrite_s_input_that_takes_the_side_covers_the_line() -> None:
     assert 3 in found.covered_lines
 
 
+# `big(s)`: `if s.isdigit() and int(s) > 10**30:` on line 2 guards `return 1` on line 3
+DIGITS = "targets.rewrites.digits::big"
+ONE_VALUE = 's == "1000000000000000000000000000001"'
+
+
+# llm-rewrite-when-the-solver-gives-up
+def test_a_reply_of_one_exact_value_covers_the_digits_line() -> None:
+    ran = run_rewrites(DIGITS, {"s": "5"}, FakeRewrites([ONE_VALUE]))
+
+    at = f"llm: rewrite for {file_of('digits')}:2:23"
+    assert llm_said(ran.said) == [f"{at}: {ONE_VALUE}", f"{at}: took the wanted side"]
+    [line_3] = [record for record in ran.records if 3 in record.covered_lines]
+    assert line_3.source is Source.REWRITE
+    assert line_3.args == {"s": "1000000000000000000000000000001"}
+
+
 # llm-rewrite-when-the-solver-gives-up-sends-the-condition-and-its-path
 def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_answer() -> None:
     provider = FakeRewrites(['s == "-1e-30"'])
