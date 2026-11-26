@@ -51,9 +51,8 @@ def request_text(request: RewriteRequest) -> str:
         " Write an expression on the parameters that is equivalent to the condition or narrower,"
         " so that each input meeting it reaches the condition and takes the wanted side, and"
         ' that fixes each value it reads to a concrete one, such as `s == "1e-30"`. pyct'
-        " solves your expression alone, with none of the conditions the path took before it,"
-        " then runs its input on the real code, and keeps it only when the input takes the"
-        " wanted side.",
+        " solves your expression alone, with none of the path's earlier conditions, then runs"
+        " its input on the real code, and keeps it only when the input takes the wanted side.",
         f"Condition at {request.place}: {request.condition.text}\n"
         f"Wanted side: {_side(request.condition)}",
     ]
