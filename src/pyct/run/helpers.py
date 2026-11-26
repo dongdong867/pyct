@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from pyct.rewrite.provider import RewriteProvider
+from pyct.run.guess_asks import GuessProvider
 from pyct.run.llm_seeds import SeedProvider
 from pyct.run.summaries import SummaryProvider
 
@@ -17,9 +18,11 @@ class Helpers:
     ``seeds`` is asked once, before the first input, for seeds that run after the user's own.
     ``summaries`` is asked at a stuck moment for a formula of what a loop changes
     (``pyct.run.summaries``). ``rewrites`` is asked at a stuck moment for an easier condition
-    in place of one whose asks ran out (``pyct.run.rewrites``).
+    in place of one whose asks ran out (``pyct.run.rewrites``). ``guesses`` is asked at a stuck
+    moment for inputs that reach the lines no other tool took (``pyct.run.guesses``).
     """
 
     seeds: SeedProvider | None = None
     summaries: SummaryProvider | None = None
     rewrites: RewriteProvider | None = None
+    guesses: GuessProvider | None = None

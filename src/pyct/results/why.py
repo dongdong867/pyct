@@ -129,6 +129,32 @@ def _work_out(
 
 
 @dataclass(frozen=True)
+class Along:
+    """How far a run got along one line's way: the way's steps, in the order a run meets them,
+    and the number from 1 of the first input that passed the deepest of its nodes any input
+    passed, None when no input passed one or the stop came before it was found."""
+
+    steps: tuple[Step, ...] = ()
+    furthest: int | None = None
+
+
+def along(file: str, lines: Sequence[int], run: Run) -> tuple[Along, ...]:
+    """How far the run's inputs got along the way to each of ``lines`` of ``file``, until the
+    run's stop, the file's inputs read once for them all.
+
+    Empty for a line no function holds, for one of a function too large to read before the
+    stop, and when the stop comes before the way is read.
+    """
+    try:
+        if run.late():
+            raise OutOfTimeError
+        seen = _Seen.of(file, frozenset[int]().union(*(each.lines for each in run.walked)), run)
+    except OutOfTimeError:
+        return (Along(),) * len(lines)
+    return tuple(seen.along(line) for line in lines)
+
+
+@dataclass(frozen=True)
 class _Input:
     """One input as a file's flow reads it: its lines, its forks there, and how it ended."""
 
@@ -144,6 +170,8 @@ class _Seen:
     file: str
     covered: frozenset[int]
     inputs: tuple[_Input, ...]
+    # the number from 1 of the first walked input each of ``inputs`` stands for
+    numbers: tuple[int, ...]
     run: Run
     owners: dict[int, types.CodeType | None]
     # the operator of each fork recorded at each site, raising forks aside (`senses.heads_of`)
@@ -161,27 +189,22 @@ class _Seen:
         # inputs that took one path are one input to every question asked of them; one step
         # for each input and each of its forks, since one input may hold many
         pace = Pace(run.late)
-        inputs = tuple(
-            dict.fromkeys(
-                _Input(
-                    each.lines,
-                    tuple(
-                        _fork(branch)
-                        for branch in pace.each(each.tested)
-                        if branch.site.file == file
-                    ),
-                    each.failed,
-                )
-                for each in pace.each(run.walked)
+        firsts: dict[_Input, int] = {}
+        for number, each in enumerate(pace.each(run.walked), start=1):
+            forks = tuple(
+                _fork(branch) for branch in pace.each(each.tested) if branch.site.file == file
             )
-        )
+            firsts.setdefault(_Input(each.lines, forks, each.failed), number)
         heads = heads_of(
             ((branch.site.line, branch.site.col), branch.expression)
             for each in pace.each(run.walked)
             for branch in pace.each(each.tested)
             if branch.site.file == file and not branch.raising
         )
-        return cls(file, covered, inputs, run, _owners(file), heads, _own(file, run, pace))
+        own = _own(file, run, pace)
+        return cls(
+            file, covered, tuple(firsts), tuple(firsts.values()), run, _owners(file), heads, own
+        )
 
     @functools.cached_property
     def origins(self) -> Origins:
@@ -209,15 +232,32 @@ class _Seen:
             return WhyEntry(file=self.file, lines=(), reason=Reason.IMPORT)
         if id(code) not in self._called:
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
-        if id(code) in self.left:
-            return None
-        if id(code) not in self.flows:
+        walk = self._walk(code)
+        return None if walk is None else walk.cause_of(line)
+
+    def along(self, line: int) -> Along:
+        """How far the inputs got along the way to ``line``, each function's flow read once."""
+        code = self.owners.get(line)
+        try:
+            walk = None if code is None else self._walk(code)
+            if walk is None:
+                return Along()
+            steps = walk.flow.way(line)
+        except (OutOfTimeError, UnaffordableError):
+            return Along()
+        with contextlib.suppress(OutOfTimeError):
+            return Along(steps, walk.furthest(line))
+        return Along(steps)
+
+    def _walk(self, code: types.CodeType) -> _Walk | None:
+        """The flow walk of ``code``, read once, or None for a function too large to read before
+        the stop."""
+        if id(code) not in self.flows and id(code) not in self.left:
             try:
                 self.flows[id(code)] = _Walk.of(self, code)
             except UnaffordableError:
                 self.left.add(id(code))
-                return None
-        return self.flows[id(code)].cause_of(line)
+        return self.flows.get(id(code))
 
 
 def _own(file: str, run: Run, pace: Pace) -> dict[At, frozenset[bool]]:
@@ -358,6 +398,13 @@ class _Walk:
         """The deepest node on the line's way some input is shown to have passed."""
         chain = [node for node in self.flow.chain(line) if node in self.passed]
         return chain[-1] if chain else None
+
+    def furthest(self, line: int) -> int | None:
+        """The number from 1 of the first input that passed the deepest node on the line's way
+        any input passed, None when no input passed one."""
+        frontier = self._frontier(line)
+        marks = zip(self.seen.numbers, self._marks, strict=True)
+        return next((number for number, marked in marks if frontier in marked), None)
 
     def _reached(self, place: Place) -> bool:
         """Whether an input reached a condition: its block ran, or a fork was recorded there.

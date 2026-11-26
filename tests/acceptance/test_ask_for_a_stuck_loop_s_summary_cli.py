@@ -68,9 +68,8 @@ def test_llm_all_holds_summaries_after_seeds_and_before_rewrites(
     result = llm_run(stub.port, tmp_path, SEED, "--llm", "all", *PLATEAU, target=COUNTS)
 
     assert result.returncode == 0, result.stderr
-    assert (
-        llm_lines(result.stderr)[0] == "llm: openai:gpt-6-luna, tools: seeds, summaries, rewrites"
-    )
+    tools = "seeds, summaries, rewrites, guesses"
+    assert llm_lines(result.stderr)[0] == f"llm: openai:gpt-6-luna, tools: {tools}"
 
 
 # llm-summary-for-a-stuck-loop-recording-changes-no-input

@@ -14,9 +14,10 @@ SEEDS_TOOL = "seeds"
 SUMMARIES_TOOL = "summaries"
 # the rewrites tool's name, written the same ways
 REWRITES_TOOL = "rewrites"
-# every LLM tool this version has, in the order ``--llm all`` lists them: seeds, summaries,
-# rewrites, guesses, as each lands
-TOOLS = (SEEDS_TOOL, SUMMARIES_TOOL, REWRITES_TOOL)
+# the guesses tool's name, written the same ways
+GUESSES_TOOL = "guesses"
+# every LLM tool this version has, in the order ``--llm all`` lists them
+TOOLS = (SEEDS_TOOL, SUMMARIES_TOOL, REWRITES_TOOL, GUESSES_TOOL)
 # the word ``--llm`` takes for every tool in TOOLS
 ALL = "all"
 # the providers ``--llm-model`` takes, each with an adapter of its own

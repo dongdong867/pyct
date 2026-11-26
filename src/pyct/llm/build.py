@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pyct.config.llm import LlmSettings, Model
 from pyct.llm.caller import Caller, WorkerCaller
 from pyct.llm.connection import Connection
+from pyct.llm.guesses import GUESSES, LlmGuesses
 from pyct.llm.ledger import Ledger
 from pyct.llm.providers import PROVIDERS, Provider
 from pyct.llm.recording import Recording
@@ -75,5 +76,6 @@ def _built(settings: LlmSettings, model: Model, caller: Caller, noted: Noted | N
         seeds=LlmSeeds(connection) if SEEDS.name in tools else None,
         summaries=LlmSummaries(connection) if SUMMARIES.name in tools else None,
         rewrites=LlmRewrites(connection) if REWRITES.name in tools else None,
+        guesses=LlmGuesses(connection) if GUESSES.name in tools else None,
     )
     return Built(helpers, model, connection)

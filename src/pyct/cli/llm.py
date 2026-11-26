@@ -24,6 +24,10 @@ from pyct.run.helpers import Helpers
 from pyct.run.llm_seeds import NoSeedError
 from pyct.run.notes import (
     AskSkipped,
+    GuessDropped,
+    GuessesAsked,
+    GuessNote,
+    GuessReached,
     LimitReached,
     Note,
     ReplyIgnored,
@@ -182,6 +186,8 @@ def note_line(note: Note) -> str | None:
             return "llm: token limit reached; no more asks"
         case SeedsKept():
             return None
+        case GuessesAsked() | GuessReached() | GuessDropped():
+            return guess_line(note)
         case (
             SummaryRead()
             | SummaryChecked()
@@ -221,6 +227,26 @@ def summary_line(note: SummaryNote) -> str:
             return _escaped(f"{at} not used: {reason}")
         case SummaryDropped(_, number, reason):
             return _escaped(f"{at} dropped at input {number}: {reason}")
+
+
+def guess_line(note: GuessNote) -> str:
+    """The stderr line a guesses note gives, each line written ``file:line`` and each cause once
+    after its lines, each character a terminal reads escaped as Python escapes it."""
+    match note:
+        case GuessesAsked(causes):
+            said = ", ".join(
+                f"{_sites(tuple((each.file, line) for line in each.lines))} ({each.cause})"
+                for each in causes
+            )
+            return _escaped(f"llm: guesses for {said}")
+        case GuessReached(number, lines):
+            return _escaped(f"llm: guess {number} reached {_sites(lines)}")
+        case GuessDropped(number, reason):
+            return _escaped(f"llm: dropped guess {number}: {reason}")
+
+
+def _sites(lines: tuple[tuple[str, int], ...]) -> str:
+    return ", ".join(f"{file}:{line}" for file, line in lines)
 
 
 def rewrite_line(note: RewriteNote) -> str:
