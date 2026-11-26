@@ -43,16 +43,14 @@ def test_a_no_fork_line_whose_sources_are_loops_covers_its_line() -> None:
     assert line_14.source is Source.REWRITE
 
 
-# `squared(n)`: `r = pow(n, 2, 10)` on line 29, whose why line names `n lost in __pow__`, then
-# `if r == 9:` on line 30, whose false side guards `return "other"` on line 32
-
-
 # llm-rewrite-no-fork-lost-values-go-to-summaries
 def test_a_lost_value_s_no_fork_line_goes_to_summaries_and_rewrites_send_nothing() -> None:
     rewrites = FakeRewrites(["n == 2"])
     # a formula that fails its check on the seed, so line 32 stays missed
     summaries = FakeSummaries([HALF])
 
+    # `squared(n)`: `r = pow(n, 2, 10)` on line 29, whose why line names `n lost in __pow__`,
+    # then `if r == 9:` on line 30, whose false side guards `return "other"` on line 32
     ran = run_rewrites(SQUARED, {"n": 3}, rewrites, LIMITS, summaries)
 
     assert place(29, 8) in [request.place for request in summaries.requests]
