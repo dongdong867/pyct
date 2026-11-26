@@ -23,7 +23,7 @@ from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution.execute import ExecutionResult
 from pyct.results.causes import Condition
 from pyct.results.failure import FailureKind
-from pyct.results.record import Aim, InputRecord, MissWhy, Stop
+from pyct.results.record import Aim, InputRecord, MissWhy
 from pyct.rewrite.condition import HELD_COL, HELD_LINE, Rewrite
 from pyct.rewrite.kinds import Kinds
 
@@ -48,10 +48,6 @@ class Unread:
 # runs a rewrite's code in a child of pyct's process on an input's arguments: what the call
 # recorded, why the reader read no field, or why it did not run
 type RunRewrite = Callable[[types.CodeType, Mapping[str, object]], ExecutionResult | Unread | str]
-
-# runs a real input, aimed at a plan when one is given, as the loop runs every input: its record,
-# or the stop it met
-type RunInput = Callable[[Seed, Plan | None], InputRecord | Stop]
 
 
 @dataclass(frozen=True)
