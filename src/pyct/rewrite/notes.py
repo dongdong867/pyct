@@ -43,8 +43,9 @@ class RewriteSkipped:
 
 @dataclass(frozen=True)
 class RewriteGivenUp:
-    """The condition at ``site`` is given up at this moment before any ask, and why: no parameter
-    is left that a rewrite may read, each holding an object inside a list, tuple or dict."""
+    """The condition at ``site`` is given up at this moment before any ask, and why: no input ran
+    it, or no parameter is left that a rewrite may read, each holding an object inside a list,
+    tuple or dict."""
 
     site: Site
     reason: str
