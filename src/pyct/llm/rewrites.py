@@ -13,6 +13,7 @@ from pyct.config.llm import REWRITES_TOOL
 from pyct.llm.connection import Connection
 from pyct.llm.tool import Tool
 from pyct.results.llm_asks import Unanswered
+from pyct.results.record import MissWhy
 from pyct.rewrite.condition import FORM
 from pyct.rewrite.provider import RewriteReply, RewriteRequest, Side
 
@@ -26,6 +27,11 @@ ESCAPED_KEY = (
 )
 # a quoted key of one or more "!" then "__class__", as JSON or Python writes it
 _ESCAPED = re.compile(r"[\"']!+__class__[\"']")
+# what a request asks once the solver answered unsat for the condition on the input's path
+OTHER_PATH = (
+    "The input's path cannot reach the wanted side as it stands. Write an expression whose"
+    " inputs reach it along another path, one you read from the code."
+)
 
 
 class LlmRewrites:
@@ -44,7 +50,8 @@ class LlmRewrites:
 def request_text(request: RewriteRequest) -> str:
     """The exact text a rewrites ask sends: the task, the condition and the side its line needs,
     the path's earlier conditions, the function's code, the input, the parameters a rewrite may
-    not read, the solver's answer, this moment's earlier tries, and the answer's form."""
+    not read, the solver's answer, and for ``unsat`` the ask for another path, this moment's
+    earlier tries, and the answer's form."""
     parts = [
         "pyct tests one Python function by running it on inputs a solver finds by flipping the"
         " branches each input took. The solver could not answer for the condition below."
@@ -67,6 +74,8 @@ def request_text(request: RewriteRequest) -> str:
             " tuple or dict: " + ", ".join(request.holders)
         )
     parts.append(f"The solver's answer for the condition: {request.answer}")
+    if request.answer == MissWhy.UNSAT:
+        parts.append(OTHER_PATH)
     if request.tries:
         tried = "\n".join(f"{each.rewrite}  ->  {each.reason}" for each in request.tries)
         parts.append(f"Your earlier rewrites at this condition, and why each failed:\n{tried}")

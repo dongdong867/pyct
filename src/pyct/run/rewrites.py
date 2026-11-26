@@ -1,11 +1,11 @@
 """The rewrites tool in a run: the stuck moment's rewrites slot, and the loop's asker, which keeps
-the first plan whose ask ran out at each condition, and puts a kept rewrite first in each later
-ask that holds its condition. A plan whose path already holds its aimed fork's check on the
-other side is answered ``unsat`` before any ask, so it is never kept. A request is about a
+the first plan whose ask ran out or was unsat at each condition, and puts a kept rewrite first in
+each later ask that holds its condition. A plan whose path already holds its aimed fork's check
+on the other side is answered ``unsat`` before any ask, so it is never kept. A request is about a
 condition's kept plan, and the solver is asked for each rewrite alone (``pyct.rewrite.tries``).
 
 At a moment, rewrites take each ``not taken`` entry whose tries hold a
-``timeout`` or an ``unknown``, in line order, one condition at a time, and
+``timeout``, an ``unknown`` or an ``unsat``, in line order, one condition at a time, and
 ask about each up to 4 times (``pyct.rewrite.tries``). An ask that got no
 answer is said and ends that condition's tries; once any tool's reply leaves
 no token under the limit, or an ask meets it, no rewrite is asked for again
@@ -73,6 +73,13 @@ from pyct.run.token_limit import TokenLimit
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.given import Given
 
+# the solver's answers a rewrite is asked for in place of, by the words a request gives each
+_GAVE_UP: Mapping[type[Answer], MissWhy] = {
+    Timeout: MissWhy.TIMEOUT,
+    Unknown: MissWhy.UNKNOWN,
+    Unsat: MissWhy.UNSAT,
+}
+
 
 class Rewrites(Asker):
     """The rewrites tool for one run: the picks whose asks gave up, by condition, the rewrites
@@ -123,7 +130,7 @@ class Rewrites(Asker):
         when it gives no input, the plan's own, each within what is left of ``limit``. When
         the kept rewrite, in its run or its ask, used up ``limit``, the plan's own does not run
         and the pick ends as a ``timeout``, its limit run out. The first plan at a condition
-        whose ask ended in ``timeout`` or ``unknown`` is kept. A plan whose path
+        whose ask ended in ``timeout``, ``unknown`` or ``unsat`` is kept. A plan whose path
         already holds its aimed fork's check on the other side, which no input meets, is
         answered ``unsat`` before any ask or kept rewrite runs, so it is never kept."""
         self._used = ()
@@ -161,13 +168,13 @@ class Rewrites(Asker):
         return False
 
     def _keep(self, wanted: Plan, origin: Seed, solved: Solved) -> None:
-        """Keep the plan when it is the first at its condition whose ask ran out."""
-        answer = solved.answer
+        """Keep the plan when it is the first at its condition whose ask ran out or was
+        unsat."""
+        why = _GAVE_UP.get(type(solved.answer))
         aimed = wanted.prefix[-1]
-        if aimed.raising or not isinstance(answer, Timeout | Unknown):
+        if aimed.raising or why is None:
             return
         condition = Condition(aimed.site, aimed.taken)
-        why = MissWhy.TIMEOUT if isinstance(answer, Timeout) else MissWhy.UNKNOWN
         self.given_up.setdefault(condition, GivenUp(condition, wanted, origin, why))
 
     def _asking(self, given: GivenUp) -> Asking:

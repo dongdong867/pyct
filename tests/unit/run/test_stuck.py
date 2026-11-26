@@ -132,7 +132,7 @@ def test_each_tool_takes_the_entries_of_its_causes() -> None:
     held([guesses, rewrites, summaries])
 
     assert summaries.handed == [(1, (LOOPED, NO_SOURCE))]
-    assert rewrites.handed == [(1, (TIMED_OUT,))]
+    assert rewrites.handed == [(1, (TIMED_OUT, UNSAT))]
     assert guesses.handed == [(1, (HANDLER, ENDED))]
 
 
@@ -150,7 +150,7 @@ def test_guesses_take_a_switched_off_tool_s_entries_in_line_order() -> None:
 
     held([guesses])
 
-    assert guesses.handed == [(1, (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED))]
+    assert guesses.handed == [(1, (LOOPED, TIMED_OUT, NO_SOURCE, HANDLER, ENDED, UNSAT))]
 
 
 def test_guesses_take_what_a_tool_gave_up_on_and_not_what_it_took() -> None:
