@@ -99,6 +99,21 @@ def test_every_request_asks_for_an_equivalent_or_narrower_expression_with_concre
         assert EXPRESSION_ASKED in request_text(request)
 
 
+# what a request says once the solver answered unsat for the condition on the input's path
+OTHER_PATH = (
+    "The input's path cannot reach the wanted side as it stands. Write an expression whose"
+    " inputs reach it along another path, one you read from the code."
+)
+
+
+# llm-rewrite-when-the-solver-gives-up-asks-about-a-condition-that-is-unsat
+def test_an_unsat_request_asks_for_another_path() -> None:
+    unsat = dataclasses.replace(REQUEST, answer="unsat")
+
+    assert OTHER_PATH in request_text(unsat)
+    assert OTHER_PATH not in request_text(REQUEST)
+
+
 # what the request says once a value or a reason it shows writes a plain dict's escaped key
 ESCAPE_SAID = 'A dict key shown as "!__class__" is the key "__class__" the code reads'
 

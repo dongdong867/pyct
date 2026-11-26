@@ -202,7 +202,7 @@ def test_guesses_leave_an_entry_given_up_earlier_that_its_tool_takes_now() -> No
 def test_a_tool_with_no_entry_is_not_handed_any() -> None:
     rewrites = FakeTool(Kind.REWRITES)
 
-    held([rewrites], FakeRun(causes_given=(LOOPED, UNSAT)))
+    held([rewrites], FakeRun(causes_given=(HANDLER, NOT_CALLED)))
 
     assert rewrites.handed == []
 
@@ -259,7 +259,7 @@ def test_a_stop_a_tool_meets_ends_the_moment() -> None:
         (NO_SOURCE, Kind.SUMMARIES),
         (HANDLER, Kind.GUESSES),
         (ENDED, Kind.GUESSES),
-        (UNSAT, None),
+        (UNSAT, Kind.REWRITES),
         (dataclasses.replace(UNSAT, tries=Tries(unsat=1, unknown=1)), Kind.REWRITES),
         (dataclasses.replace(UNSAT, tries=Tries(left_the_plan=1, decided=1, not_tried=1)), None),
         (NOT_CALLED, None),

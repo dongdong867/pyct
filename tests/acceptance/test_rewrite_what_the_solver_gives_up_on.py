@@ -75,14 +75,16 @@ def test_the_request_holds_the_condition_its_path_the_code_the_input_and_the_ans
     assert request.place == "targets.rewrites.path:3:11"
 
 
-# llm-rewrite-when-the-solver-gives-up-skips-a-condition-that-is-unsat
-def test_a_condition_whose_flip_is_unsat_is_not_asked_about() -> None:
-    provider = FakeRewrites(["x == 1"])
+# llm-rewrite-when-the-solver-gives-up-asks-about-a-condition-that-is-unsat
+def test_a_condition_whose_flip_is_unsat_is_asked_about_and_each_failed_try_says_why() -> None:
+    provider = FakeRewrites(["x < 0 and x > 0"])
 
     ran = run_rewrites("targets.rewrites.never::never", {"x": 1}, provider)
 
+    assert provider.requests[0].answer == "unsat"
+    at = f"llm: rewrite for {file_of('never')}:3:11"
+    assert f"{at}, try 1: the solver answered unsat" in llm_said(ran.said)
     assert 4 in ran.result.coverage.uncovered[file_of("never")]
-    assert provider.requests == []
 
 
 # llm-rewrite-when-the-solver-gives-up-skips-a-line-with-no-fork
