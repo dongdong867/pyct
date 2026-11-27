@@ -166,6 +166,15 @@ def test_a_class_beside_none_sweep_cannot_seed_gets_today_s_value(
 
 
 # sweep-optional-class-seed
+def test_a_class_beside_plain_types_gets_its_constructor_seed_in_its_one_seed() -> None:
+    built = [as_json(seed) for seed in seeds_of(hinted(orders.Order | int))]
+    fallen_back = [as_json(seed) for seed in seeds_of(hinted(orders.Keyed | int))]
+
+    assert built == [as_json({"v": ORDER})]
+    assert fallen_back == [as_json({"v": 0})]
+
+
+# sweep-optional-class-seed
 def test_a_class_beside_none_needed_again_stops_at_null() -> None:
     assert as_json(first_seed(nodes.walk)) == as_json({"head": {"next": None}})
     assert as_json(first_seed(nodes.Link)) == as_json({"next": None})
