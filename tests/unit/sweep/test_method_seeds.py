@@ -1,3 +1,4 @@
+import enum
 import importlib
 import inspect
 import json
@@ -125,3 +126,26 @@ def test_every_method_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
     seed = method_seed(getattr(importlib.import_module(module), owner), method)
 
     assert SeedCheck.of(target).read(json.dumps(seed)) == (seed, [])
+
+
+# sweep-method-unbuildable
+def test_an_enum_method_is_skipped_with_a_reason() -> None:
+    class Level(enum.Enum):
+        LOW = 1
+
+        def doubled(self, by: int) -> int:
+            return self.value * by
+
+        @staticmethod
+        def clamp(n: int) -> int:
+            return n
+
+        @classmethod
+        def named(cls, text: str) -> str:
+            return text
+
+    written = "no seed for self: pyct run builds no Enum member as self"
+    assert method_reason(orders.Mode, "scaled") == written
+    assert method_reason(Level, "doubled") == written
+    assert as_json(method_seed(Level, "clamp")) == as_json({"n": 0})
+    assert as_json(method_seed(Level, "named")) == as_json({"text": ""})

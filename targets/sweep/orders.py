@@ -68,6 +68,9 @@ class Mode(enum.Enum):
     FAST = 1
     SLOW = 2
 
+    def scaled(self, by: int) -> int:
+        return self.value * by
+
 
 def ship(order: Order) -> str:
     if order.id > 10:
