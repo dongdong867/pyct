@@ -18,9 +18,9 @@ from pyct.run.target import (
     execution_context,
     interception,
     load_target,
+    self_class_of,
+    self_name_of,
 )
-from pyct.run.target import _self_class as self_class_of
-from pyct.run.target import _self_name as self_name_of
 from pyct.run.watch_page import WatchPage
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

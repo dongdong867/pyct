@@ -3,7 +3,8 @@
 ``PYCT`` acts as the boot that starts ``pyct run`` would for the entry its target names:
 ``ran`` and the functions ``f`` and ``h`` print a summary line and exit 0, and the rest end
 as their name says. Its summary line holds what it was given, so a test can read the folder
-it was handed to import from, the command, and its working directory.
+it was handed to import from, the command, its working directory, and the text of the
+seeds file it was given.
 """
 
 import sys
@@ -29,6 +30,9 @@ summary = {
     "imports_from": imports_from,
     "cache": os.environ.get("PYCT_CACHE_DIR"),
 }
+if "--seeds" in argv:
+    with open(argv[argv.index("--seeds") + 1]) as seeds:
+        summary["seeds"] = seeds.read()
 if name == "exits":
     print(json.dumps(summary))
     print("cvc5 crashed\\nsolver failed\\n", file=sys.stderr)

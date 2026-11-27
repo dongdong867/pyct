@@ -8,7 +8,6 @@ import pytest
 
 from pyct.sweep.entries import (
     GENERATED,
-    METHOD,
     Entry,
     Reading,
     Unread,
@@ -69,17 +68,20 @@ def test_a_decorated_function_is_read_through_wrapped() -> None:
     ]
 
 
-def test_a_class_is_its_constructor_and_its_own_methods_are_skipped() -> None:
+def test_a_class_is_its_constructor_and_its_own_methods_are_seeded() -> None:
     module = f"{SWEEP}.methods"
     found = entries(module, module)
 
     assert found[0] == Entry(module, "Cart", seed={"owner": ""})
-    assert sorted(entry.name for entry in found[1:4]) == ["Cart.empty", "Cart.rate", "Cart.total"]
+    assert sorted(found[1:4], key=lambda entry: entry.name) == [
+        Entry(module, "Cart.empty", skip="no parameter to vary"),
+        Entry(module, "Cart.rate", seed={"n": 0}),
+        Entry(module, "Cart.total", seed={"self": {"owner": ""}, "discount": 0}),
+    ]
     assert found[4:] == [
-        Entry(module, "Parser.parse", skip=METHOD),
+        Entry(module, "Parser.parse", seed={"self": {}, "text": ""}),
         Entry(module, "Special", seed={"owner": ""}),
     ]
-    assert {entry.skip for entry in found[1:4]} == {METHOD}
 
 
 def test_generated_code_and_code_no_name_holds_are_skipped_where_found() -> None:
@@ -106,7 +108,7 @@ def test_the_edges_of_what_a_name_holds() -> None:
         # the home holds it under another name only
         Entry(edges, "renamed", seed={"n": 0}),
         Entry(edges, "Built", skip="no name in tests.unit.sweep.factory holds it"),
-        Entry(edges, "Moved.shift", skip=METHOD),
+        Entry(edges, "Moved.shift", seed={"self": {}, "n": 0}),
     ]
 
 
@@ -132,7 +134,7 @@ def test_a_class_is_named_by_its_file_whatever_its_module_says() -> None:
         Entry(core, "Gadget", seed={"n": 0}),
         Entry(core, "Meter", seed={"n": 0}),
         Entry(core, "Widget", seed={"n": 0}),
-        Entry(core, "Widget.spin", skip=METHOD),
+        Entry(core, "Widget.spin", seed={"self": {"n": 0}, "times": 0}),
         Entry(f"{relabeled}.api", "gauge", seed={"n": 0}),
     ]
 
@@ -141,7 +143,7 @@ def test_a_class_that_borrows_a_same_named_constructor_is_named_by_its_own_body(
     package = f"{SWEEP}.borrowed.pkg"
     assert entries(package, package) == [
         Entry(package, "Thing", seed={"n": 0}),
-        Entry(package, "Thing.extra", skip=METHOD),
+        Entry(package, "Thing.extra", seed={"self": {"n": 0}, "k": 0}),
     ]
 
 
@@ -150,7 +152,7 @@ def test_a_class_that_borrows_from_a_same_named_class_of_the_package_keeps_its_o
     v2 = f"{inside}.v2"
     assert entries(v2, inside) == [
         Entry(v2, "Thing", seed={"n": 0}),
-        Entry(v2, "Thing.extra", skip=METHOD),
+        Entry(v2, "Thing.extra", seed={"self": {"n": 0}, "k": 0}),
     ]
 
 
@@ -171,7 +173,7 @@ def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
         Entry(module, "Pair", seed={"a": 0, "b": 0}),
         Entry(module, "Point", seed={"x": 0, "y": 0}),
         Entry(module, "Span", seed={"start": 0, "end": 0}),
-        Entry(module, "Span.length", skip=METHOD),
+        Entry(module, "Span.length", seed={"self": {"start": 0, "end": 0}}),
         Entry(module, "Box", seed={"width": 0, "label": "box"}),
     ]
 

@@ -44,6 +44,25 @@ def test_a_run_that_prints_its_summary_and_exits_zero_ran_with_it() -> None:
     ]
 
 
+def test_an_entry_with_two_seeds_runs_with_a_seeds_file_of_both_in_order() -> None:
+    row = run_entry(
+        Row("p", "ran", Status.LISTED, seed=[{"n": 0}, {"n": 1}]),
+        LIMITS,
+        budget=2.5,
+        pyct=PYCT,
+    )
+
+    assert (row.status, row.seed) == (Status.RAN, [{"n": 0}, {"n": 1}])
+    assert row.run is not None
+    argv = row.run["argv"]
+    assert isinstance(argv, list)
+    assert argv[:4] == ["run", "p::ran", "--seeds", argv[3]]
+    assert "--args" not in argv
+    assert row.run["seeds"] == '{"n": 0}\n{"n": 1}\n'
+    assert row.run["files"] == []
+    assert not Path(argv[3]).exists()
+
+
 def test_a_run_with_no_budget_is_handed_budget_none() -> None:
     row = ran("ran", budget=None)
 

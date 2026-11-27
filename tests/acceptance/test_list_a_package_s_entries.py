@@ -129,24 +129,6 @@ def test_looks_through_decorators() -> None:
     assert (fetch["status"], fetch["seed"]) == ("listed", {"key": 0})
 
 
-# sweep-a-package-lists-methods-as-skipped
-def test_lists_methods_as_skipped() -> None:
-    module = f"{FIXTURES}.methods"
-    result = sweep(module, "--list")
-
-    assert result.returncode == 0, result.stderr
-    cart = row_named(result.stdout, module, "Cart")
-    special = row_named(result.stdout, module, "Special")
-    assert (cart["status"], cart["seed"]) == ("listed", {"owner": ""})
-    assert (special["status"], special["seed"]) == ("listed", {"owner": ""})
-    for name in ("Cart.empty", "Cart.rate", "Cart.total", "Parser.parse"):
-        row = row_named(result.stdout, module, name)
-        assert (row["status"], row["seed"]) == ("skipped", None)
-        assert row["reason"] == "sweep gives no seed for a method yet"
-    expected = ["Cart", "Cart.empty", "Cart.rate", "Cart.total", "Parser.parse", "Special"]
-    assert names(result.stdout) == expected
-
-
 # sweep-a-package-skips-an-entry-it-cannot-seed
 def test_skips_an_entry_it_cannot_seed() -> None:
     module = f"{FIXTURES}.cannot_seed"

@@ -105,7 +105,8 @@ def test_falls_back_when_chosen_keys_are_given_up() -> None:
 def test_falls_back_past_one_second() -> None:
     # six chosen keys in 200 int keys would run past the second the ask with chosen keys gets,
     # so the step guard skips it: the line-11 flip at pass 5
-    result = run_pyct(f"{SETTLED}::int_only", led_by_zeros(5), "--budget", "30", timeout=60)
+    # about 390 inputs reach line 12, which takes 30 s on a slower machine, so the budget is 60 s
+    result = run_pyct(f"{SETTLED}::int_only", led_by_zeros(5), "--budget", "60", timeout=120)
 
     assert result.returncode == 0, result.stderr
     assert f"missed {F}:11:15 unknown" in missed_lines(result.stderr)

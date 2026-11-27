@@ -14,8 +14,13 @@ module of the swept package, or a bound method of such code, named by a
 module that exposes it: the module of its function's code when that module
 does, and otherwise the first exposing module in name order. A class is an
 entry when its constructor is Python code, since ``pyct run MODULE::Class``
-calls it. Each method a class's own body defines under a public name is
-listed too, and skipped, since sweep gives no seed for a method yet.
+calls it. Each method a class's own body defines under a public name is an
+entry too, ``Class.method``, seeded with the constructor's seed under its
+first parameter when it runs on an instance (``seeds.method_seeds``).
+
+An entry's seed is one seed, or a list of two when the second seed, which
+builds the classes beside None that a None default leaves out, differs from
+the first (``seeds.seeds_of``).
 """
 
 import contextlib
@@ -24,17 +29,21 @@ import inspect
 import os
 import pkgutil
 import sys
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from types import FunctionType, MethodType, ModuleType
 
-from pyct.sweep.seeds import NoSeedError, seed_of
+from pyct.sweep.rows import Seed
+from pyct.sweep.seeds import (
+    NoSeedError,
+    function_of,
+    instance_of,
+    method_seeds,
+    python_constructor,
+    seeds_of,
+)
 
-METHOD = "sweep gives no seed for a method yet"
 GENERATED = "generated code"
-
-# the attributes whose Python code makes a class's constructor Python code
-CONSTRUCTORS = ("__init__", "__new__")
 
 
 @dataclass(frozen=True)
@@ -43,7 +52,7 @@ class Entry:
 
     module: str
     name: str
-    seed: Mapping[str, object] | None = None
+    seed: Seed | None = None
     skip: str | None = None
 
 
@@ -200,14 +209,18 @@ class _Package:
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
         home = self._class_home(cls)
-        constructed = _python_constructor(cls)
+        constructed = python_constructor(cls)
         methods = own_methods(cls)
         if home is None or not (constructed or methods):
             return []
         name = self._name_in(home, cls)
         if name is None:
             return [_unnamed(home, found_in, found_as)]
-        rows = [Entry(home, f"{name}.{method}", skip=METHOD) for method in methods]
+        instance = instance_of(cls) if methods else None
+        rows = [
+            _entry(home, f"{name}.{method}", functools.partial(method_seeds, cls, method, instance))
+            for method in methods
+        ]
         return [seeded(home, name, cls), *rows] if constructed else rows
 
     def _class_home(self, cls: type) -> str | None:
@@ -281,27 +294,17 @@ def _unnamed(home: str, found_in: str, found_as: str) -> Entry:
 
 def seeded(module: str, name: str, value: Callable[..., object]) -> Entry:
     """The entry with the seed sweep gives ``value``, or skipped with the reason it has none."""
+    return _entry(module, name, functools.partial(seeds_of, value))
+
+
+def _entry(module: str, name: str, seeds: Callable[[], list[dict[str, object]]]) -> Entry:
+    """The entry with the seeds ``seeds`` gives, one or two, or skipped with the reason it
+    raises."""
     try:
-        return Entry(module, name, seed=seed_of(value))
+        found = seeds()
+        return Entry(module, name, seed=found[0] if len(found) == 1 else found)
     except NoSeedError as error:
         return Entry(module, name, skip=str(error))
-
-
-def function_of(value: object) -> object | None:
-    """The Python function ``value`` is, or wraps through ``__wrapped__``, or None.
-
-    A staticmethod or classmethod is read at its function. ``inspect.unwrap``
-    raises on a wrapper loop, which is no function either.
-    """
-    if isinstance(value, staticmethod | classmethod):
-        value = value.__func__
-    if not callable(value):
-        return None
-    try:
-        target = inspect.unwrap(value)
-    except Exception:
-        return None
-    return target if inspect.isfunction(target) else None
 
 
 def _inherited(cls: type, key: str, value: object) -> bool:
@@ -328,11 +331,6 @@ def own_methods(cls: type) -> list[str]:
         for name, value in vars(cls).items()
         if not name.startswith("_") and function_of(value) is not None
     ]
-
-
-def _python_constructor(cls: type) -> bool:
-    """Whether the ``__init__`` or ``__new__`` the class takes is Python code, generated or not."""
-    return any(function_of(getattr(cls, name, None)) is not None for name in CONSTRUCTORS)
 
 
 def _code_file(target: object) -> str | None:
