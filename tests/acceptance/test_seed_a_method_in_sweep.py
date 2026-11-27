@@ -10,9 +10,10 @@ import json
 import pytest
 
 from tests.acceptance.harness import REPO_ROOT
-from tests.acceptance.sweeping import FIXTURES, row_named, sweep
+from tests.acceptance.sweeping import FIXTURES, names, row_named, rows, sweep
 
 ORDERS = f"{FIXTURES}.orders"
+METHODS = f"{FIXTURES}.methods"
 
 # what sweep seeds targets.sweep.orders.Order with
 ORDER = {"id": 0, "items": []}
@@ -55,3 +56,58 @@ def test_runs_a_class_hinted_seed_as_that_class() -> None:
     lines = path.read_text().splitlines()
     big = lines.index('        return "big"') + 1
     assert big in ship["run"]["covered"][str(path)], ship
+
+
+def line_of(text: str) -> int:
+    """The number of the line of targets/sweep/orders.py that reads ``text``."""
+    lines = (REPO_ROOT / "targets" / "sweep" / "orders.py").read_text().splitlines()
+    return lines.index(text) + 1
+
+
+# sweep-method-entry
+def test_lists_each_method_with_a_seed() -> None:
+    result = sweep(METHODS, "--list")
+
+    assert result.returncode == 0, result.stderr
+    seeds = {
+        "Cart.total": {"self": {"owner": ""}, "discount": 0},
+        "Cart.rate": {"n": 0},
+        "Parser.parse": {"self": {}, "text": ""},
+    }
+    for name, seed in seeds.items():
+        row = row_named(result.stdout, METHODS, name)
+        assert row["status"] == "listed", row
+        assert as_json(row["seed"]) == as_json(seed)
+    empty = row_named(result.stdout, METHODS, "Cart.empty")
+    assert (empty["status"], empty["reason"]) == ("skipped", "no parameter to vary")
+    expected = ["Cart", "Cart.empty", "Cart.rate", "Cart.total", "Parser.parse", "Special"]
+    assert names(result.stdout) == expected
+
+
+# sweep-method-unbuildable
+def test_skips_a_method_whose_object_cannot_be_seeded() -> None:
+    result = sweep(ORDERS, "--list")
+
+    assert result.returncode == 0, result.stderr
+    run = row_named(result.stdout, ORDERS, "Keyed.run")
+    written = "no seed for self: no seed for key: collections.abc.Callable[[int], int]"
+    assert (run["status"], run["reason"]) == ("skipped", written)
+    name = row_named(result.stdout, ORDERS, "Tag.name")
+    assert (name["status"], name["reason"]) == ("skipped", "no parameter to vary")
+    reasons = {row.get("reason") for row in rows(result.stdout)}
+    assert "sweep gives no seed for a method yet" not in reasons
+
+
+# sweep-method-entry
+@pytest.mark.timeout(240)
+def test_runs_each_method_as_its_own_run() -> None:
+    result = sweep(ORDERS, "--budget", "10", timeout=230)
+
+    assert result.returncode == 0, result.stderr
+    path = str(REPO_ROOT / "targets" / "sweep" / "orders.py")
+    total = row_named(result.stdout, ORDERS, "Order.total")
+    assert total["status"] == "ran", total
+    assert line_of("            return max(self.id - discount, 0)") in total["run"]["covered"][path]
+    for name in ("Order.count", "Order.blank", "Customer.owes"):
+        row = row_named(result.stdout, ORDERS, name)
+        assert row["status"] == "ran", row

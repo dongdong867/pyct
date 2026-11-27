@@ -1,4 +1,5 @@
-"""A sweep fixture: functions whose parameters are hinted with the module's own classes."""
+"""A sweep fixture: functions whose parameters are hinted with the module's own classes, and
+those classes' methods."""
 
 import enum
 from collections.abc import Callable
@@ -9,16 +10,35 @@ class Order:
         self.id = id
         self.items = items
 
+    def total(self, discount: int, strict: bool = False) -> int:
+        if strict:
+            return max(self.id - discount, 0)
+        return self.id - discount
+
+    @staticmethod
+    def count(items: list[str]) -> int:
+        return len(items)
+
+    @classmethod
+    def blank(cls, id: int) -> "Order":
+        return cls(id, [])
+
 
 class Customer:
     def __init__(self, name: str, order: Order) -> None:
         self.name = name
         self.order = order
 
+    def owes(self, amount: int) -> bool:
+        return amount > self.order.id
+
 
 class Keyed:
     def __init__(self, key: Callable[[int], int]) -> None:
         self.key = key
+
+    def run(self, n: int) -> int:
+        return self.key(n)
 
 
 class Hook:
@@ -27,7 +47,8 @@ class Hook:
 
 
 class Tag:
-    pass
+    def name(self) -> str:
+        return "tag"
 
 
 class Stamp:
