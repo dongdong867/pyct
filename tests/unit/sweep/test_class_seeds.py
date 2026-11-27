@@ -10,7 +10,7 @@ import pytest
 
 from pyct.run.seed_checks import SeedCheck
 from pyct.run.target import load_target
-from pyct.sweep.seeds import NoSeedError, method_seeds, seed_of, seeds_of
+from pyct.sweep.seeds import NoSeedError, first_seed, method_seeds, seeds_of
 from targets.sweep import nodes, orders
 from tests.unit.sweep import later_named
 
@@ -72,7 +72,7 @@ def as_json(value: object) -> str:
 
 def reason(fn: Callable[..., object]) -> str:
     with pytest.raises(NoSeedError) as raised:
-        seed_of(fn)
+        first_seed(fn)
     return str(raised.value)
 
 
@@ -99,18 +99,18 @@ def hinted(annotation: object) -> Callable[..., object]:
 def test_a_class_hint_gets_its_constructor_seed(
     fn: Callable[..., object], seed: dict[str, object]
 ) -> None:
-    assert as_json(seed_of(fn)) == as_json(seed)
+    assert as_json(first_seed(fn)) == as_json(seed)
 
 
 # sweep-class-hint-seed
 def test_a_class_seed_nests_level_by_level() -> None:
     expected = {"customer": {"name": "", "order": ORDER}}
-    assert as_json(seed_of(orders.bill)) == as_json(expected)
+    assert as_json(first_seed(orders.bill)) == as_json(expected)
 
 
 # sweep-class-hint-seed
 def test_a_class_with_no_python_constructor_or_no_parameter_gives_an_empty_object() -> None:
-    assert as_json(seed_of(orders.label)) == as_json({"tag": {}, "stamp": {}})
+    assert as_json(first_seed(orders.label)) == as_json({"tag": {}, "stamp": {}})
 
 
 # sweep-class-hint-seed
@@ -144,7 +144,7 @@ def test_a_class_its_own_seed_needs_again_skips() -> None:
 
 # sweep-none-default-class-seeds
 def test_a_class_beside_none_with_no_default_gives_null_then_the_object() -> None:
-    assert as_json(seed_of(orders.maybe)) == as_json({"order": None})
+    assert as_json(first_seed(orders.maybe)) == as_json({"order": None})
     assert [as_json(seed) for seed in seeds_of(orders.maybe)] == [
         as_json({"order": None}),
         as_json({"order": ORDER}),
@@ -162,13 +162,13 @@ def test_a_class_beside_none_with_no_default_gives_null_then_the_object() -> Non
 def test_a_class_beside_none_sweep_cannot_seed_gets_today_s_value(
     fn: Callable[..., object], seed: dict[str, object]
 ) -> None:
-    assert as_json(seed_of(fn)) == as_json(seed)
+    assert as_json(first_seed(fn)) == as_json(seed)
 
 
 # sweep-optional-class-seed
 def test_a_class_beside_none_needed_again_stops_at_null() -> None:
-    assert as_json(seed_of(nodes.walk)) == as_json({"head": {"next": None}})
-    assert as_json(seed_of(nodes.Link)) == as_json({"next": None})
+    assert as_json(first_seed(nodes.walk)) == as_json({"head": {"next": None}})
+    assert as_json(first_seed(nodes.Link)) == as_json({"next": None})
 
 
 # sweep-class-hint-seed
@@ -190,7 +190,7 @@ def test_a_hint_run_does_not_build_keeps_today_s_seed(annotation: object, outcom
     if isinstance(outcome, str):
         assert reason(target) == f"no seed for v: {outcome}"
     else:
-        assert as_json(seed_of(target)) == as_json(outcome)
+        assert as_json(first_seed(target)) == as_json(outcome)
 
 
 # sweep-class-hint-seed, sweep-optional-class-seed
@@ -211,7 +211,7 @@ def test_a_hint_run_does_not_build_keeps_today_s_seed(annotation: object, outcom
 )
 def test_every_class_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
     target = load_target(spec, keep_import_lines=False)
-    seed = seed_of(target.fn)
+    seed = first_seed(target.fn)
 
     assert SeedCheck.of(target).read(json.dumps(seed)) == (seed, [])
 
@@ -261,7 +261,7 @@ def test_a_none_default_class_gives_a_second_seed_with_it_built(
     ],
 )
 def test_one_seed_when_the_second_equals_the_first(fn: Callable[..., object]) -> None:
-    assert written(seeds_of(fn)) == [as_json(seed_of(fn))]
+    assert written(seeds_of(fn)) == [as_json(first_seed(fn))]
 
 
 # sweep-none-default-class-seeds

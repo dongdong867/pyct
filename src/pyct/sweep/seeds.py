@@ -102,8 +102,8 @@ class _Way:
 TOP = _Way()
 
 
-def seed_of(fn: Callable[..., object]) -> dict[str, object]:
-    """The seed for ``fn``, one key per parameter it varies, in signature order."""
+def first_seed(fn: Callable[..., object]) -> dict[str, object]:
+    """The first seed for ``fn``, one key per parameter it varies, in signature order."""
     seed = _seed(fn, TOP.into(fn) if is_a_class(fn) else TOP)
     if not seed:
         raise NoSeedError("no parameter to vary")
@@ -111,10 +111,10 @@ def seed_of(fn: Callable[..., object]) -> dict[str, object]:
 
 
 def seeds_of(fn: Callable[..., object]) -> list[dict[str, object]]:
-    """The seeds for ``fn``: ``seed_of``'s, then the second, in which every parameter whose
+    """The seeds for ``fn``: ``first_seed``'s, then the second, in which every parameter whose
     default is None, or that has no default and a hint beside None, and whose hint builds a
     class sweep seeds is built from it. One seed when the second's JSON text is the first's."""
-    first = seed_of(fn)
+    first = first_seed(fn)
     way = TOP.into(fn) if is_a_class(fn) else TOP
     return _pair(first, _seed(fn, way.in_second()))
 

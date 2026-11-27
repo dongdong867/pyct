@@ -12,7 +12,7 @@ from pyct.binding.annotations import contradictions
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.binding.seed_keys import read_key
-from pyct.sweep.seeds import NoSeedError, carried, seed_of
+from pyct.sweep.seeds import NoSeedError, carried, first_seed
 from targets.sweep import cannot_seed, defaults, seeds, seeds_as_text, text_annotations
 from tests.unit.sweep import later_named, own_t
 
@@ -46,24 +46,24 @@ def as_json(value: object) -> str:
 
 def reason(fn: Callable[..., object]) -> str:
     with pytest.raises(NoSeedError) as raised:
-        seed_of(fn)
+        first_seed(fn)
     return str(raised.value)
 
 
 def test_a_parameter_with_no_default_gets_the_first_value_its_annotation_accepts() -> None:
-    assert as_json(seed_of(seeds.f)) == as_json(EVERY_KIND)
+    assert as_json(first_seed(seeds.f)) == as_json(EVERY_KIND)
 
 
 def test_text_annotations_give_the_same_seed() -> None:
-    assert as_json(seed_of(seeds_as_text.f)) == as_json(EVERY_KIND)
+    assert as_json(first_seed(seeds_as_text.f)) == as_json(EVERY_KIND)
 
 
 def test_a_default_json_carries_stays_and_any_other_is_left_out() -> None:
-    assert as_json(seed_of(defaults.f)) == as_json(DEFAULTS)
+    assert as_json(first_seed(defaults.f)) == as_json(DEFAULTS)
 
 
 def test_a_default_is_checked_against_a_text_annotation() -> None:
-    assert as_json(seed_of(seeds_as_text.with_defaults)) == as_json(DEFAULTS)
+    assert as_json(first_seed(seeds_as_text.with_defaults)) == as_json(DEFAULTS)
 
 
 def test_a_default_that_is_no_finite_float_stays_as_pythons_json_writes_it() -> None:
@@ -71,7 +71,7 @@ def test_a_default_that_is_no_finite_float_stays_as_pythons_json_writes_it() -> 
         return None
 
     written = '{"x": 0, "low": -Infinity, "high": Infinity, "missing": NaN}'
-    assert as_json(seed_of(bounded)) == written
+    assert as_json(first_seed(bounded)) == written
 
 
 def test_a_default_dict_writes_its_class_key_escaped_at_any_depth() -> None:
@@ -80,14 +80,14 @@ def test_a_default_dict_writes_its_class_key_escaped_at_any_depth() -> None:
 
     written = {"!__class__": "plain", "n": 1}
     expected = {"d": written, "rows": [written], "nested": {"inner": written}}
-    assert as_json(seed_of(held)) == as_json(expected)
+    assert as_json(first_seed(held)) == as_json(expected)
 
 
 def test_a_default_key_of_bangs_then_class_takes_one_bang_more() -> None:
     def held(d=BANGED) -> None:
         return None
 
-    written = seed_of(held)["d"]
+    written = first_seed(held)["d"]
 
     assert as_json(written) == as_json({"!!__class__": 1, "!!!__class__": 2, "n": 3})
     assert isinstance(written, dict)
@@ -98,7 +98,7 @@ def test_escaping_leaves_the_default_itself_as_it_was() -> None:
     def held(d=CLASS_KEYED_IN_A_DICT) -> None:
         return None
 
-    seed_of(held)
+    first_seed(held)
 
     assert as_json(CLASS_KEYED_IN_A_DICT) == as_json({"inner": {"__class__": "plain", "n": 1}})
 
@@ -107,18 +107,18 @@ def test_a_default_with_no_class_key_is_written_as_it_is() -> None:
     def held(d=OTHER_KEYS, rows=OTHER_ROWS) -> None:
         return None
 
-    assert as_json(seed_of(held)) == as_json({"d": OTHER_KEYS, "rows": OTHER_ROWS})
+    assert as_json(first_seed(held)) == as_json({"d": OTHER_KEYS, "rows": OTHER_ROWS})
 
 
 def test_a_positional_only_and_a_keyword_only_parameter_are_both_named() -> None:
-    assert as_json(seed_of(defaults.g)) == as_json({"value": 0, "strict": False})
+    assert as_json(first_seed(defaults.g)) == as_json({"value": 0, "strict": False})
 
 
 def test_an_annotated_star_args_and_star_kwargs_are_never_named() -> None:
     def spread(first: str, *items: int, **named: int) -> None:
         return None
 
-    assert as_json(seed_of(spread)) == as_json({"first": ""})
+    assert as_json(first_seed(spread)) == as_json({"first": ""})
 
 
 @pytest.mark.parametrize(
@@ -150,13 +150,13 @@ def test_the_value_for_one_annotation(annotation: object, value: object) -> None
         return None
 
     target.__annotations__ = {"v": annotation}
-    assert as_json(seed_of(target)) == as_json({"v": value})
+    assert as_json(first_seed(target)) == as_json({"v": value})
 
 
 def test_a_list_value_is_a_fresh_list_each_time() -> None:
-    first = seed_of(seeds.f)
+    first = first_seed(seeds.f)
     typing.cast(list, first["e"]).append(1)
-    assert seed_of(seeds.f)["e"] == []
+    assert first_seed(seeds.f)["e"] == []
 
 
 @pytest.mark.parametrize(
@@ -184,11 +184,11 @@ def test_text_two_modules_read_as_different_objects_agrees_on_the_value(
     fn: Callable[..., object],
 ) -> None:
     # each module builds its own list[T]; both give [], and pyct run asks for a list
-    assert seed_of(fn) == {"items": []}
+    assert first_seed(fn) == {"items": []}
 
 
 def test_an_unresolved_text_annotation_gets_zero() -> None:
-    assert as_json(seed_of(text_annotations.f)) == as_json({"a": 0, "b": [], "c": 0})
+    assert as_json(first_seed(text_annotations.f)) == as_json({"a": 0, "b": [], "c": 0})
 
 
 @pytest.mark.parametrize("fn", [cannot_seed.main, cannot_seed.only, cannot_seed.later])
@@ -207,7 +207,7 @@ def test_a_class_is_seeded_at_its_constructor() -> None:
         def __init__(self, owner: str, limit: int = 3) -> None:
             self.owner = owner
 
-    assert seed_of(Cart) == {"owner": "", "limit": 3}
+    assert first_seed(Cart) == {"owner": "", "limit": 3}
 
 
 @pytest.mark.parametrize(
@@ -262,7 +262,7 @@ def test_json_does_not_carry(value: object) -> None:
     ],
 )
 def test_every_seed_passes_pyct_runs_seed_checks(fn: Callable[..., object]) -> None:
-    seed = seed_of(fn)
+    seed = first_seed(fn)
     signature = inspect.signature(fn)
 
     assert contradictions(checked_annotations(signature, fn), seed) == []
@@ -271,4 +271,4 @@ def test_every_seed_passes_pyct_runs_seed_checks(fn: Callable[..., object]) -> N
 
 
 def test_a_named_tuple_s_postponed_hints_are_read_as_text() -> None:
-    assert as_json(seed_of(later_named.Label)) == as_json({"text": "", "size": 0})
+    assert as_json(first_seed(later_named.Label)) == as_json({"text": "", "size": 0})
