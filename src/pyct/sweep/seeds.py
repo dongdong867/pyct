@@ -1,11 +1,5 @@
 """The one seed sweep gives an entry, read from its signature with no LLM.
 
-A method a class's own body defines gets the seed of its own parameters.
-When Python binds it to an instance read through the class, as ``pyct run``
-reads it (``self_class_of``), its first parameter holds the seed of the
-class's constructor, ``{}`` for a constructor that is not Python code, from
-which each input builds the instance.
-
 A parameter with no default gets the first of ``VALUES`` that Python's
 ``isinstance`` accepts for its annotation. ``[]`` and ``{}`` come before
 ``""`` because ``isinstance`` accepts ``""`` for ``Sequence`` too, and a
@@ -37,6 +31,12 @@ Enum to build. When sweep cannot seed the class, or the class is already
 being built on the way down to the parameter, the parameter gets the value
 the rule above gives its hint, ``null`` beside None. When that rule gives
 none, the entry is skipped with the constructor's reason.
+
+A method a class's own body defines gets the seed of its own parameters.
+When Python binds it to an instance read through the class, as ``pyct run``
+reads it (``self_class_of``), its first parameter holds the seed of the
+class's constructor, ``{}`` for a constructor that is not Python code, from
+which each input builds the instance.
 """
 
 import copy
