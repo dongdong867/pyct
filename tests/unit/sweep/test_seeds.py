@@ -13,13 +13,7 @@ from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.binding.seed_keys import read_key
 from pyct.sweep.seeds import NoSeedError, carried, seed_of
-from targets.sweep import (
-    cannot_seed,
-    defaults,
-    seeds,
-    seeds_as_text,
-    text_annotations,
-)
+from targets.sweep import cannot_seed, defaults, seeds, seeds_as_text, text_annotations
 from tests.unit.sweep import later_named, own_t
 
 T = TypeVar("T")
@@ -40,7 +34,6 @@ CLASS_KEYED_IN_A_LIST = [CLASS_KEYED]
 CLASS_KEYED_IN_A_DICT = {"inner": {"__class__": "plain", "n": 1}}
 # a default dict whose keys are already ! then __class__
 BANGED = {"!__class__": 1, "!!__class__": 2, "n": 3}
-
 # defaults whose keys are other dunder names, a ! key, and a str value "__class__"
 OTHER_KEYS = {"__complex__": True, "!x": [{"__args__": "__class__"}], "__class__x": 0}
 OTHER_ROWS = [OTHER_KEYS, "__class__"]
