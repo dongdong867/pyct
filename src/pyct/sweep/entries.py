@@ -28,13 +28,10 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import FunctionType, MethodType, ModuleType
 
-from pyct.sweep.seeds import NoSeedError, seed_of
+from pyct.sweep.seeds import NoSeedError, function_of, python_constructor, seed_of
 
 METHOD = "sweep gives no seed for a method yet"
 GENERATED = "generated code"
-
-# the attributes whose Python code makes a class's constructor Python code
-CONSTRUCTORS = ("__init__", "__new__")
 
 
 @dataclass(frozen=True)
@@ -200,7 +197,7 @@ class _Package:
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
         home = self._class_home(cls)
-        constructed = _python_constructor(cls)
+        constructed = python_constructor(cls)
         methods = own_methods(cls)
         if home is None or not (constructed or methods):
             return []
@@ -287,23 +284,6 @@ def seeded(module: str, name: str, value: Callable[..., object]) -> Entry:
         return Entry(module, name, skip=str(error))
 
 
-def function_of(value: object) -> object | None:
-    """The Python function ``value`` is, or wraps through ``__wrapped__``, or None.
-
-    A staticmethod or classmethod is read at its function. ``inspect.unwrap``
-    raises on a wrapper loop, which is no function either.
-    """
-    if isinstance(value, staticmethod | classmethod):
-        value = value.__func__
-    if not callable(value):
-        return None
-    try:
-        target = inspect.unwrap(value)
-    except Exception:
-        return None
-    return target if inspect.isfunction(target) else None
-
-
 def _inherited(cls: type, key: str, value: object) -> bool:
     """Whether a base of ``cls`` holds ``value`` under ``key`` too: the body borrowed it."""
     return any(vars(base).get(key) is value for base in cls.__mro__[1:])
@@ -328,11 +308,6 @@ def own_methods(cls: type) -> list[str]:
         for name, value in vars(cls).items()
         if not name.startswith("_") and function_of(value) is not None
     ]
-
-
-def _python_constructor(cls: type) -> bool:
-    """Whether the ``__init__`` or ``__new__`` the class takes is Python code, generated or not."""
-    return any(function_of(getattr(cls, name, None)) is not None for name in CONSTRUCTORS)
 
 
 def _code_file(target: object) -> str | None:
