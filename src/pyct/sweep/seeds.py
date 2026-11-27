@@ -36,7 +36,8 @@ A method a class's own body defines gets the seed of its own parameters.
 When Python binds it to an instance read through the class, as ``pyct run``
 reads it (``self_class_of``), its first parameter holds the seed of the
 class's constructor, ``{}`` for a constructor that is not Python code, from
-which each input builds the instance.
+which each input builds the instance. A method an Enum class binds to a member
+is skipped, since ``pyct run`` builds no member as ``self``.
 """
 
 import copy
@@ -163,6 +164,8 @@ def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[st
     own = _seed(method, way, skip=key)
     held: dict[str, object] = {}
     if key is not None:
+        if issubclass(cls, enum.Enum):
+            raise NoSeedError(f"no seed for {key}: pyct run builds no Enum member as self")
         built = instance.second if way.second else instance.first
         if built is None:
             raise NoSeedError(f"no seed for {key}: {instance.why}")
