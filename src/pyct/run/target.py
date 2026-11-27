@@ -132,7 +132,7 @@ def load_target(
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
-    self_name = None if self_class is None else _self_name(signature)
+    self_name = None if self_class is None else self_name_of(signature)
     built = None if self_class is None or self_name is None else self_class
     return Target(
         spec=spec,
@@ -189,7 +189,7 @@ def _self_build(target: Target) -> SelfBuild | None:
     return SelfBuild(target.self_class, target.self_name, positional)
 
 
-def _self_name(signature: inspect.Signature) -> str | None:
+def self_name_of(signature: inspect.Signature) -> str | None:
     """The method's first parameter, which Python passes the instance to, when it takes a
     position; None for a method whose first parameter takes none, or that has none."""
     first = next(iter(signature.parameters.values()), None)
@@ -216,7 +216,7 @@ def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], typ
         raise TargetError(f"cannot read {spec}: {one_line(error)}") from error
     if not callable(fn):
         raise TargetError(missing)
-    return fn, _self_class(owner, name.rpartition(".")[2], fn)
+    return fn, self_class_of(owner, name.rpartition(".")[2], fn)
 
 
 def _walked(module: ModuleType, name: str) -> tuple[object, object]:
@@ -236,7 +236,7 @@ def _has_get(kind: type) -> bool:
     return any("__get__" in vars(base) for base in inspect.getmro(kind))
 
 
-def _self_class(owner: object, name: str, fn: object) -> type | None:
+def self_class_of(owner: object, name: str, fn: object) -> type | None:
     """``owner`` when it is a class whose attribute ``name`` binds to an instance read through it.
 
     That is the first object its classes hold under ``name``, in the order

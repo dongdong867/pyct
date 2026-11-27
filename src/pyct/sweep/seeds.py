@@ -1,5 +1,11 @@
 """The one seed sweep gives an entry, read from its signature with no LLM.
 
+A method a class's own body defines gets the seed of its own parameters.
+When Python binds it to an instance read through the class, as ``pyct run``
+reads it (``self_class_of``), its first parameter holds the seed of the
+class's constructor, ``{}`` for a constructor that is not Python code, from
+which each input builds the instance.
+
 A parameter with no default gets the first of ``VALUES`` that Python's
 ``isinstance`` accepts for its annotation. ``[]`` and ``{}`` come before
 ``""`` because ``isinstance`` accepts ``""`` for ``Sequence`` too, and a
@@ -46,6 +52,7 @@ from pyct.binding.classes import is_a_class
 from pyct.binding.hints import hint_check
 from pyct.binding.resolve import GATHERING, as_text, checked_annotations, resolved
 from pyct.binding.seed_keys import written_key
+from pyct.run.target import self_class_of, self_name_of
 
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
@@ -92,27 +99,74 @@ def seed_of(fn: Callable[..., object]) -> dict[str, object]:
     return seed
 
 
+@dataclass(frozen=True)
+class Instance:
+    """The seed of the instance a class's methods run on, or why sweep cannot seed it."""
+
+    seed: dict[str, object] | None = None
+    why: str = ""
+
+
+def instance_of(cls: type) -> Instance:
+    """The seed of the instance ``cls``'s methods run on, read once for all of them."""
+    try:
+        return Instance(arguments_seed(cls))
+    except NoSeedError as error:
+        return Instance(why=str(error))
+
+
+def method_seed(cls: type, name: str, instance: Instance | None = None) -> dict[str, object]:
+    """The seed for the method ``cls`` holds under ``name``, ``Class.name`` to ``pyct run``.
+
+    The method's first parameter holds ``instance``, by default ``instance_of(cls)``, when
+    Python binds the method to an instance and that parameter takes a position.
+    """
+    method = getattr(cls, name)
+    key = None if self_class_of(cls, name, method) is None else self_name_of(_signature(method))
+    own = _seed(method, TOP, skip=key)
+    held: dict[str, object] = {}
+    if key is not None:
+        instance = instance_of(cls) if instance is None else instance
+        if instance.seed is None:
+            raise NoSeedError(f"no seed for {key}: {instance.why}")
+        held[key] = instance.seed
+    if not own and not any(held.values()):
+        raise NoSeedError("no parameter to vary")
+    return {**held, **own}
+
+
 def constructor_seed(cls: type, way: _Way = TOP) -> object:
     """The seed a hint that builds ``cls`` gets: its constructor's seed, ``{}`` for a constructor
     that is not Python code or takes no parameter, or an Enum's first member's value as a
     one-item list."""
-    inner = way.into(cls)
     if issubclass(cls, enum.Enum):
         return _member_seed(cls)
+    return arguments_seed(cls, way)
+
+
+def arguments_seed(cls: type, way: _Way = TOP) -> dict[str, object]:
+    """The seed of the arguments ``cls``'s constructor takes, ``{}`` for a constructor that is
+    not Python code."""
+    inner = way.into(cls)
     if not python_constructor(cls):
         return {}
     return _seed(cls, inner)
 
 
-def _seed(fn: Callable[..., object], way: _Way) -> dict[str, object]:
+def _signature(fn: Callable[..., object]) -> inspect.Signature:
     try:
-        signature = inspect.signature(fn)
+        return inspect.signature(fn)
     except Exception as error:
         raise NoSeedError(f"cannot read the signature: {error}") from error
+
+
+def _seed(fn: Callable[..., object], way: _Way, skip: str | None = None) -> dict[str, object]:
+    """The seed of ``fn``'s parameters, but ``skip``, the one a method's instance goes in."""
+    signature = _signature(fn)
     checks = checked_annotations(signature, fn)
     seed: dict[str, object] = {}
     for name, parameter in signature.parameters.items():
-        if parameter.kind in GATHERING:
+        if parameter.kind in GATHERING or name == skip:
             continue
         if parameter.default is inspect.Parameter.empty:
             seed[name] = _value_for(parameter, fn, way)

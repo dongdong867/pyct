@@ -14,8 +14,9 @@ module of the swept package, or a bound method of such code, named by a
 module that exposes it: the module of its function's code when that module
 does, and otherwise the first exposing module in name order. A class is an
 entry when its constructor is Python code, since ``pyct run MODULE::Class``
-calls it. Each method a class's own body defines under a public name is
-listed too, and skipped, since sweep gives no seed for a method yet.
+calls it. Each method a class's own body defines under a public name is an
+entry too, ``Class.method``, seeded with the constructor's seed under its
+first parameter when it runs on an instance (``seeds.method_seed``).
 """
 
 import contextlib
@@ -28,9 +29,15 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import FunctionType, MethodType, ModuleType
 
-from pyct.sweep.seeds import NoSeedError, function_of, python_constructor, seed_of
+from pyct.sweep.seeds import (
+    NoSeedError,
+    function_of,
+    instance_of,
+    method_seed,
+    python_constructor,
+    seed_of,
+)
 
-METHOD = "sweep gives no seed for a method yet"
 GENERATED = "generated code"
 
 
@@ -204,7 +211,11 @@ class _Package:
         name = self._name_in(home, cls)
         if name is None:
             return [_unnamed(home, found_in, found_as)]
-        rows = [Entry(home, f"{name}.{method}", skip=METHOD) for method in methods]
+        instance = instance_of(cls) if methods else None
+        rows = [
+            _entry(home, f"{name}.{method}", functools.partial(method_seed, cls, method, instance))
+            for method in methods
+        ]
         return [seeded(home, name, cls), *rows] if constructed else rows
 
     def _class_home(self, cls: type) -> str | None:
@@ -278,8 +289,13 @@ def _unnamed(home: str, found_in: str, found_as: str) -> Entry:
 
 def seeded(module: str, name: str, value: Callable[..., object]) -> Entry:
     """The entry with the seed sweep gives ``value``, or skipped with the reason it has none."""
+    return _entry(module, name, functools.partial(seed_of, value))
+
+
+def _entry(module: str, name: str, seed: Callable[[], dict[str, object]]) -> Entry:
+    """The entry with the seed ``seed`` gives, or skipped with the reason it raises."""
     try:
-        return Entry(module, name, seed=seed_of(value))
+        return Entry(module, name, seed=seed())
     except NoSeedError as error:
         return Entry(module, name, skip=str(error))
 
