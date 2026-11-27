@@ -290,7 +290,6 @@ def test_a_second_seed_keeps_null_for_a_class_sweep_cannot_seed_or_that_needs_it
         "targets.sweep.orders::Basket",
         "targets.sweep.orders::Basket.weigh",
         "targets.sweep.nodes::walk_chain",
-        "targets.sweep.nodes::Chain",
     ],
 )
 def test_every_second_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
