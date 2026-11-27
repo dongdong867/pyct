@@ -7,7 +7,7 @@ import pytest
 
 from pyct.run.seed_checks import SeedCheck
 from pyct.run.target import load_target
-from pyct.sweep.seeds import NoSeedError, method_seed
+from pyct.sweep.seeds import NoSeedError, method_seeds
 from targets.sweep import methods, orders
 
 # what sweep seeds targets.sweep.orders.Order with
@@ -21,14 +21,14 @@ def as_json(value: object) -> str:
 
 def method_reason(cls: type, name: str) -> str:
     with pytest.raises(NoSeedError) as raised:
-        method_seed(cls, name)
+        method_seeds(cls, name)
     return str(raised.value)
 
 
 # sweep-method-entry
 def test_a_method_seed_holds_the_constructor_seed_under_self() -> None:
     expected = {"self": ORDER, "discount": 0, "strict": False}
-    assert as_json(method_seed(orders.Order, "total")) == as_json(expected)
+    assert as_json(method_seeds(orders.Order, "total")[0]) == as_json(expected)
 
 
 # sweep-method-entry
@@ -41,7 +41,7 @@ def test_a_method_seed_writes_its_defaults() -> None:
             return f"{length}{self.unit}"
 
     expected = {"self": {"unit": "cm"}, "length": 0.0, "rounded": True, "places": 2}
-    assert as_json(method_seed(Ruler, "measure")) == as_json(expected)
+    assert as_json(method_seeds(Ruler, "measure")[0]) == as_json(expected)
 
 
 # sweep-method-entry
@@ -55,7 +55,7 @@ def test_a_method_seed_writes_its_defaults() -> None:
 def test_a_static_and_a_class_method_seed_holds_only_its_own_parameters(
     name: str, seed: dict[str, object]
 ) -> None:
-    assert as_json(method_seed(orders.Order, name)) == as_json(seed)
+    assert as_json(method_seeds(orders.Order, name)[0]) == as_json(seed)
 
 
 # sweep-method-entry
@@ -70,9 +70,9 @@ def test_a_method_s_object_is_keyed_by_its_first_parameter() -> None:
         def spread(*args: int) -> int:  # noqa: N805 - a first parameter that takes no position
             return len(args)
 
-    assert as_json(method_seed(Odd, "scaled")) == as_json({"this": {"n": 0}, "by": 0})
+    assert as_json(method_seeds(Odd, "scaled")[0]) == as_json({"this": {"n": 0}, "by": 0})
     with pytest.raises(NoSeedError, match="^no parameter to vary$"):
-        method_seed(Odd, "spread")
+        method_seeds(Odd, "spread")
 
 
 # sweep-method-unbuildable
@@ -123,7 +123,7 @@ def test_every_method_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
     module, _, name = spec.partition("::")
     owner, _, method = name.partition(".")
     target = load_target(spec, keep_import_lines=False)
-    seed = method_seed(getattr(importlib.import_module(module), owner), method)
+    seed = method_seeds(getattr(importlib.import_module(module), owner), method)[0]
 
     assert SeedCheck.of(target).read(json.dumps(seed)) == (seed, [])
 
@@ -147,5 +147,5 @@ def test_an_enum_method_is_skipped_with_a_reason() -> None:
     written = "no seed for self: pyct run builds no Enum member as self"
     assert method_reason(orders.Mode, "scaled") == written
     assert method_reason(Level, "doubled") == written
-    assert as_json(method_seed(Level, "clamp")) == as_json({"n": 0})
-    assert as_json(method_seed(Level, "named")) == as_json({"text": ""})
+    assert as_json(method_seeds(Level, "clamp")[0]) == as_json({"n": 0})
+    assert as_json(method_seeds(Level, "named")[0]) == as_json({"text": ""})

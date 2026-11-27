@@ -142,17 +142,9 @@ def instance_of(cls: type) -> Instance:
         return Instance(why=str(error))
 
 
-def method_seed(cls: type, name: str, instance: Instance | None = None) -> dict[str, object]:
-    """The first seed for the method ``cls`` holds under ``name``, ``Class.name`` to ``pyct run``.
-
-    The method's first parameter holds ``instance``, by default ``instance_of(cls)``, when
-    Python binds the method to an instance and that parameter takes a position.
-    """
-    return _method_seed(cls, name, instance_of(cls) if instance is None else instance, TOP)
-
-
 def method_seeds(cls: type, name: str, instance: Instance | None = None) -> list[dict[str, object]]:
-    """The seeds for the method: ``method_seed``'s, then the second, as ``seeds_of`` makes it."""
+    """The seeds for the method ``cls`` holds under ``name``, as ``seeds_of`` makes a function's,
+    with ``instance`` read by ``instance_of(cls)`` when none is given."""
     instance = instance_of(cls) if instance is None else instance
     first = _method_seed(cls, name, instance, TOP)
     return _pair(first, _method_seed(cls, name, instance, TOP.in_second()))
