@@ -34,14 +34,14 @@ def test_lists_a_class_hint_with_its_constructor_seed() -> None:
     assert as_json(ship["seed"]) == as_json({"order": ORDER})
 
 
-# sweep-optional-class-seed
-def test_lists_a_class_beside_none_with_its_constructor_seed() -> None:
+# sweep-none-default-class-seeds
+def test_lists_a_class_beside_none_with_null_then_its_constructor_seed() -> None:
     result = sweep(ORDERS, "--list")
 
     assert result.returncode == 0, result.stderr
     maybe = row_named(result.stdout, ORDERS, "maybe")
     assert maybe["status"] == "listed"
-    assert as_json(maybe["seed"]) == as_json({"order": ORDER})
+    assert as_json(maybe["seed"]) == as_json([{"order": None}, {"order": ORDER}])
 
 
 # sweep-class-hint-seed
@@ -111,3 +111,32 @@ def test_runs_each_method_as_its_own_run() -> None:
     for name in ("Order.count", "Order.blank", "Customer.owes"):
         row = row_named(result.stdout, ORDERS, name)
         assert row["status"] == "ran", row
+
+
+# sweep-none-default-class-seeds
+def test_lists_a_none_default_class_with_two_seeds() -> None:
+    result = sweep(ORDERS, "--list")
+
+    assert result.returncode == 0, result.stderr
+    later = row_named(result.stdout, ORDERS, "later")
+    assert later["status"] == "listed"
+    assert as_json(later["seed"]) == as_json([{"order": None}, {"order": ORDER}])
+    ship = row_named(result.stdout, ORDERS, "ship")
+    assert as_json(ship["seed"]) == as_json({"order": ORDER})
+
+
+# sweep-none-default-class-seeds
+@pytest.mark.timeout(240)
+def test_runs_an_entry_with_two_seeds_as_one_run_from_both() -> None:
+    result = sweep(ORDERS, "--budget", "10", timeout=230)
+
+    assert result.returncode == 0, result.stderr
+    later = row_named(result.stdout, ORDERS, "later")
+    assert later["status"] == "ran", later
+    path = str(REPO_ROOT / "targets" / "sweep" / "orders.py")
+    lines = (REPO_ROOT / "targets" / "sweep" / "orders.py").read_text().splitlines()
+    start = lines.index("def later(order: Order | None = None) -> int:")
+    none_side = lines.index("        return 0", start) + 1
+    built_side = lines.index("    if order.id > 5:", start) + 1
+    covered = later["run"]["covered"][path]
+    assert none_side in covered and built_side in covered, later

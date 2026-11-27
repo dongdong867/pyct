@@ -1,6 +1,7 @@
 import abc
 import enum
 import fractions
+import importlib
 import json
 from collections.abc import Callable
 from typing import Protocol
@@ -9,7 +10,7 @@ import pytest
 
 from pyct.run.seed_checks import SeedCheck
 from pyct.run.target import load_target
-from pyct.sweep.seeds import NoSeedError, seed_of
+from pyct.sweep.seeds import NoSeedError, method_seeds, seed_of, seeds_of
 from targets.sweep import nodes, orders
 from tests.unit.sweep import later_named
 
@@ -40,6 +41,28 @@ class Shaped(Protocol):
 class Shape(abc.ABC):
     @abc.abstractmethod
     def area(self) -> float: ...
+
+
+class Pocket:
+    def __init__(self, coin: int = 0) -> None:
+        self.coin = coin
+
+
+class Purse:
+    def __init__(self, pocket: Pocket | None = None, order: orders.Order | None = None) -> None:
+        self.pocket = pocket
+
+
+def hold(purse: Purse | None = None, spare: Pocket | None = None) -> None:
+    return None
+
+
+def hold_two(order: orders.Order | None = None, keyed: orders.Keyed | None = None) -> None:
+    return None
+
+
+def bare(order: orders.Order = None) -> None:  # type: ignore[assignment]  # noqa: RUF013
+    return None
 
 
 def as_json(value: object) -> str:
@@ -119,9 +142,13 @@ def test_a_class_its_own_seed_needs_again_skips() -> None:
     assert reason(nodes.follow) == "no seed for head: no seed for next: Node needs a Node to build"
 
 
-# sweep-optional-class-seed
-def test_a_class_beside_none_gets_its_constructor_seed() -> None:
-    assert as_json(seed_of(orders.maybe)) == as_json({"order": ORDER})
+# sweep-none-default-class-seeds
+def test_a_class_beside_none_with_no_default_gives_null_then_the_object() -> None:
+    assert as_json(seed_of(orders.maybe)) == as_json({"order": None})
+    assert [as_json(seed) for seed in seeds_of(orders.maybe)] == [
+        as_json({"order": None}),
+        as_json({"order": ORDER}),
+    ]
 
 
 # sweep-optional-class-seed
@@ -187,3 +214,94 @@ def test_every_class_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
     seed = seed_of(target.fn)
 
     assert SeedCheck.of(target).read(json.dumps(seed)) == (seed, [])
+
+
+def written(seeds: list[dict[str, object]]) -> list[str]:
+    return [as_json(seed) for seed in seeds]
+
+
+# sweep-none-default-class-seeds
+@pytest.mark.parametrize(
+    ("seeds", "expected"),
+    [
+        pytest.param(
+            seeds_of(orders.later),
+            [{"order": None}, {"order": ORDER}],
+            id="a class beside None, default None",
+        ),
+        pytest.param(
+            seeds_of(bare), [{"order": None}, {"order": ORDER}], id="a bare class, default None"
+        ),
+        pytest.param(
+            seeds_of(orders.Basket),
+            [{"order": None}, {"order": ORDER}],
+            id="a constructor's parameter",
+        ),
+        pytest.param(
+            method_seeds(orders.Basket, "weigh"),
+            [{"self": {"order": None}, "n": 0}, {"self": {"order": ORDER}, "n": 0}],
+            id="a method's constructor",
+        ),
+    ],
+)
+def test_a_none_default_class_gives_a_second_seed_with_it_built(
+    seeds: list[dict[str, object]], expected: list[dict[str, object]]
+) -> None:
+    assert written(seeds) == written(expected)
+
+
+# sweep-none-default-class-seeds
+@pytest.mark.parametrize(
+    "fn",
+    [
+        pytest.param(orders.ship, id="no None default"),
+        pytest.param(orders.maybe_apply, id="a class sweep cannot seed"),
+        pytest.param(nodes.walk, id="a class that needs itself"),
+        pytest.param(hinted(int | None), id="plain types beside None"),
+    ],
+)
+def test_one_seed_when_the_second_equals_the_first(fn: Callable[..., object]) -> None:
+    assert written(seeds_of(fn)) == [as_json(seed_of(fn))]
+
+
+# sweep-none-default-class-seeds
+def test_a_second_seed_builds_every_such_parameter_at_every_depth() -> None:
+    first = {"purse": None, "spare": None}
+    purse = {"pocket": {"coin": 0}, "order": ORDER}
+    second = {"purse": purse, "spare": {"coin": 0}}
+    assert written(seeds_of(hold)) == written([first, second])
+
+
+# sweep-none-default-class-seeds
+def test_a_second_seed_keeps_null_for_a_class_sweep_cannot_seed_or_that_needs_itself() -> None:
+    first = {"order": None, "keyed": None}
+    assert written(seeds_of(hold_two)) == written([first, {"order": ORDER, "keyed": None}])
+    assert written(seeds_of(nodes.walk_chain)) == written(
+        [{"head": None}, {"head": {"next": None}}]
+    )
+
+
+# sweep-none-default-class-seeds
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "targets.sweep.orders::later",
+        "targets.sweep.orders::maybe",
+        "targets.sweep.orders::Basket",
+        "targets.sweep.orders::Basket.weigh",
+        "targets.sweep.nodes::walk_chain",
+        "targets.sweep.nodes::Chain",
+    ],
+)
+def test_every_second_seed_passes_pyct_run_s_seed_check(spec: str) -> None:
+    target = load_target(spec, keep_import_lines=False)
+    module, _, name = spec.partition("::")
+    owner, _, method = name.partition(".")
+    if method:
+        seeds = method_seeds(getattr(importlib.import_module(module), owner), method)
+    else:
+        seeds = seeds_of(target.fn)
+
+    assert len(seeds) == 2
+    for seed in seeds:
+        assert SeedCheck.of(target).read(json.dumps(seed)) == (seed, [])

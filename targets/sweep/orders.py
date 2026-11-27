@@ -56,6 +56,14 @@ class Stamp:
         self.at = 0
 
 
+class Basket:
+    def __init__(self, order: Order | None = None) -> None:
+        self.order = order
+
+    def weigh(self, n: int) -> int:
+        return n if self.order is None else n + self.order.id
+
+
 class Mode(enum.Enum):
     FAST = 1
     SLOW = 2
@@ -95,3 +103,11 @@ def label(tag: Tag, stamp: Stamp) -> str:
 
 def pick(mode: Mode) -> int:
     return mode.value
+
+
+def later(order: Order | None = None) -> int:
+    if order is None:
+        return 0
+    if order.id > 5:
+        return 2
+    return 1
