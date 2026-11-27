@@ -1,7 +1,9 @@
+import abc
 import enum
 import importlib
 import inspect
 import json
+import typing
 
 import pytest
 
@@ -149,3 +151,27 @@ def test_an_enum_method_is_skipped_with_a_reason() -> None:
     assert method_reason(Level, "doubled") == written
     assert as_json(method_seeds(Level, "clamp")[0]) == as_json({"n": 0})
     assert as_json(method_seeds(Level, "named")[0]) == as_json({"text": ""})
+
+
+# sweep-method-unbuildable
+def test_a_method_of_an_abstract_class_or_a_protocol_is_skipped() -> None:
+    class Shape(abc.ABC):
+        @abc.abstractmethod
+        def area(self) -> int: ...
+
+        def scaled(self, k: int) -> int:
+            return self.area() * k
+
+        @staticmethod
+        def unit(k: int) -> int:
+            return k
+
+    class Sized(typing.Protocol):
+        def size(self) -> int: ...
+
+        def grown(self, k: int) -> int:
+            return self.size() + k
+
+    assert method_reason(Shape, "scaled") == "no seed for self: Shape is an abstract class"
+    assert method_reason(Sized, "grown") == "no seed for self: Sized is a Protocol"
+    assert as_json(method_seeds(Shape, "unit")[0]) == as_json({"k": 0})
