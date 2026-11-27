@@ -39,7 +39,8 @@ When Python binds it to an instance read through the class, as ``pyct run``
 reads it (``self_class_of``), its first parameter holds the seed of the
 class's constructor, ``{}`` for a constructor that is not Python code, from
 which each input builds the instance. A method an Enum class binds to a member
-is skipped, since ``pyct run`` builds no member as ``self``.
+is skipped, since ``pyct run`` builds no member as ``self``, and so is one an
+abstract class or a Protocol binds to an instance, since Python builds neither.
 """
 
 import copy
@@ -52,7 +53,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.annotations import Builds, Check, contradictions
-from pyct.binding.classes import is_a_class
+from pyct.binding.classes import is_a_class, is_a_protocol
 from pyct.binding.hints import hint_check
 from pyct.binding.resolve import GATHERING, as_text, checked_annotations, resolved
 from pyct.binding.seed_keys import written_key
@@ -136,6 +137,12 @@ class Instance:
 
 def instance_of(cls: type) -> Instance:
     """The seeds of the instance ``cls``'s methods run on, read once for all of them."""
+    # Python builds neither, so every input would raise before the method; a Protocol can be
+    # abstract too, so it is told first
+    if is_a_protocol(cls):
+        return Instance(why=f"{cls.__qualname__} is a Protocol")
+    if inspect.isabstract(cls):
+        return Instance(why=f"{cls.__qualname__} is an abstract class")
     try:
         return Instance(arguments_seed(cls), arguments_seed(cls, TOP.in_second()))
     except NoSeedError as error:
