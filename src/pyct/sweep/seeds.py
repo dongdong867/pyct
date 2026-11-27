@@ -1,4 +1,4 @@
-"""The one seed sweep gives an entry, read from its signature with no LLM.
+"""The seeds sweep gives an entry, one or two, read from its signature with no LLM.
 
 A parameter with no default gets the first of ``VALUES`` that Python's
 ``isinstance`` accepts for its annotation. ``[]`` and ``{}`` come before
