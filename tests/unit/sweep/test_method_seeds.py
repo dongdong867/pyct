@@ -172,6 +172,7 @@ def test_a_method_of_an_abstract_class_or_a_protocol_is_skipped() -> None:
         def grown(self, k: int) -> int:
             return self.size() + k
 
-    assert method_reason(Shape, "scaled") == "no seed for self: Shape is an abstract class"
-    assert method_reason(Sized, "grown") == "no seed for self: Sized is a Protocol"
+    abstract = f"no seed for self: {Shape.__qualname__} is an abstract class"
+    assert method_reason(Shape, "scaled") == abstract
+    assert method_reason(Sized, "grown") == f"no seed for self: {Sized.__qualname__} is a Protocol"
     assert as_json(method_seeds(Shape, "unit")[0]) == as_json({"k": 0})
