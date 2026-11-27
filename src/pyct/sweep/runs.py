@@ -18,13 +18,18 @@ already names one, so every entry keeps its substituted code in the one
 cache rather than in a temporary directory deleted after it
 (interception-code-cached-for-this-user-where-pyct-runs). The run otherwise
 gets the environment sweep got.
+
+An entry with one seed runs with ``--args``. An entry with two runs with ``--seeds``, a file of
+one JSON line per seed, in the row's order, in a temporary folder apart from the entry's working
+directory, deleted with it.
 """
 
+import contextlib
 import json
 import os
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TypeGuard
@@ -34,7 +39,7 @@ from pyct.intercept.cache import CACHE_VARIABLE, cache_folder
 from pyct.run.process import how
 from pyct.sweep.process import Finished, run_command
 from pyct.sweep.result import SweepLimits
-from pyct.sweep.rows import Row, Status
+from pyct.sweep.rows import Row, Seed, Status
 
 # what starts pyct, given the folder the entry's module imports from and then pyct's arguments:
 # pyct's command line, and with it every module it imports, the standard library's among them, is
@@ -62,15 +67,31 @@ def run_entry(
     every process it started; a run with no budget is never stopped.
     """
     here = os.getcwd()
-    argv = [*pyct, here, "run", f"{row.module}::{row.name}", "--args", json.dumps(row.seed)]
-    argv += ["--budget", NO_DEADLINE if budget is None else repr(budget)]
-    argv += ["--plateau", str(limits.plateau)]
-    argv += ["--solver-timeout", repr(limits.solver_timeout), "--goal", limits.goal.value]
-    with tempfile.TemporaryDirectory(prefix="pyct-sweep-") as directory:
+    tail = ["--budget", NO_DEADLINE if budget is None else repr(budget)]
+    tail += ["--plateau", str(limits.plateau)]
+    tail += ["--solver-timeout", repr(limits.solver_timeout), "--goal", limits.goal.value]
+    with (
+        _seed_arguments(row.seed) as seeded,
+        tempfile.TemporaryDirectory(prefix="pyct-sweep-") as directory,
+    ):
+        argv = [*pyct, here, "run", f"{row.module}::{row.name}", *seeded, *tail]
         limit = None if budget is None else budget + limits.grace
         env = {**os.environ, CACHE_VARIABLE: str(cache_folder())}
         finished = run_command(argv, cwd=Path(directory), env=env, limit=limit)
     return _outcome(row, finished, limits.grace)
+
+
+@contextlib.contextmanager
+def _seed_arguments(seed: Seed | None) -> Iterator[list[str]]:
+    """The arguments that give ``pyct run`` the seed: ``--args`` for one, and ``--seeds`` with a
+    file of both, in a temporary folder of its own that is deleted after, for a list of two."""
+    if not isinstance(seed, list):
+        yield ["--args", json.dumps(seed)]
+        return
+    with tempfile.TemporaryDirectory(prefix="pyct-sweep-seeds-") as folder:
+        path = Path(folder) / "seeds.jsonl"
+        path.write_text("".join(f"{json.dumps(each)}\n" for each in seed), encoding="utf-8")
+        yield ["--seeds", str(path)]
 
 
 def _outcome(row: Row, finished: Finished, grace: float) -> Row:

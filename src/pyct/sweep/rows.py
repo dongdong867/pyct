@@ -6,10 +6,13 @@ null when empty.
 """
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import cast
+
+# an entry's seed: one seed, or a list of two, the first one first
+type Seed = Mapping[str, object] | Sequence[Mapping[str, object]]
 
 
 class Status(StrEnum):
@@ -29,7 +32,7 @@ class Row:
     module: str
     name: str | None
     status: Status
-    seed: Mapping[str, object] | None = None
+    seed: Seed | None = None
     reason: str | None = None
     # the entry's pyct run summary line, as it printed it
     run: Mapping[str, object] | None = None
