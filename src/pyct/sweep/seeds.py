@@ -67,7 +67,7 @@ PLAIN = (bool, int, float, str)
 NO_FIT = object()
 UNTESTABLE = object()
 
-# a parameter the seed leaves out, and a class the second seed cannot build
+# a parameter the seed leaves out, and a class hint this seed does not build
 LEFT_OUT = object()
 NOT_BUILT = object()
 
@@ -210,17 +210,32 @@ def _parameter_value(
     parameter: inspect.Parameter, fn: Callable[..., object], way: _Way, checks: Mapping[str, Check]
 ) -> object:
     """The value a parameter starts from, or ``LEFT_OUT`` for the target's own default."""
+    why = None
+    try:
+        built = _class_seed(parameter, fn, way)
+    except NoSeedError as error:
+        built, why = NOT_BUILT, str(error)
+    if built is not NOT_BUILT:
+        return built
     default = parameter.default
     if default is inspect.Parameter.empty:
-        return _value_for(parameter, fn, way)
-    if default is None and way.second:
-        cls = _built_class(parameter, fn)
-        built = NOT_BUILT if cls is None else _built(cls, way)
-        if built is not NOT_BUILT:
-            return built
+        return 0 if parameter.annotation is inspect.Parameter.empty else _fitted(parameter, fn, why)
     if carried(default) and not contradictions(checks, {parameter.name: default}):
         return _written(default)
     return LEFT_OUT
+
+
+def _class_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _Way) -> object:
+    """The constructor seed of the class the parameter's hint builds, or ``NOT_BUILT`` when
+    this seed does not build it."""
+    default = parameter.default
+    if default is not inspect.Parameter.empty and not (default is None and way.second):
+        return NOT_BUILT
+    cls = _built_class(parameter, fn)
+    # a class beside None starts at its other value, and the second seed builds it
+    if cls is None or (not way.second and _beside_none(parameter, fn)):
+        return NOT_BUILT
+    return constructor_seed(cls, way)
 
 
 def _member_seed(cls: type[enum.Enum]) -> list[object]:
@@ -292,35 +307,12 @@ def _container(item: object) -> bool:
     return type(item) is list
 
 
-def _value_for(parameter: inspect.Parameter, fn: Callable[..., object], way: _Way) -> object:
-    """The value a parameter with no default starts from: its class's constructor seed when its
-    hint builds a class, and otherwise, or when sweep cannot seed that class, ``_fitted``'s. A
-    hint beside None keeps ``_fitted``'s in the first seed, which the second builds."""
-    if parameter.annotation is inspect.Parameter.empty:
-        return 0
-    cls = _built_class(parameter, fn)
-    if cls is None or (not way.second and _beside_none(parameter, fn)):
-        return _fitted(parameter, fn, None)
-    try:
-        return constructor_seed(cls, way)
-    except NoSeedError as error:
-        return _fitted(parameter, fn, str(error))
-
-
 def _built_class(parameter: inspect.Parameter, fn: Callable[..., object]) -> type | None:
     """The class the parameter's hint builds, as ``pyct run`` reads it, or None."""
     if parameter.annotation is inspect.Parameter.empty:
         return None
     check = hint_check(parameter.annotation, fn)
     return check.cls if isinstance(check, Builds) else None
-
-
-def _built(cls: type, way: _Way) -> object:
-    """The constructor seed of ``cls``, or ``NOT_BUILT`` when sweep cannot seed it."""
-    try:
-        return constructor_seed(cls, way)
-    except NoSeedError:
-        return NOT_BUILT
 
 
 def _beside_none(parameter: inspect.Parameter, fn: Callable[..., object]) -> bool:
