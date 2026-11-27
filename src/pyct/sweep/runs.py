@@ -83,8 +83,7 @@ def run_entry(
 
 @contextlib.contextmanager
 def _seed_arguments(seed: Seed | None) -> Iterator[list[str]]:
-    """The arguments that give ``pyct run`` the seed: ``--args`` for one, and ``--seeds`` with a
-    file of both, in a temporary folder of its own that is deleted after, for a list of two."""
+    """The arguments that give ``pyct run`` the entry's seed or seeds."""
     if not isinstance(seed, list):
         yield ["--args", json.dumps(seed)]
         return

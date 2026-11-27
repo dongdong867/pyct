@@ -23,14 +23,16 @@ agree on what a text asks of a seed agree on its value too, so the value
 passes that check.
 
 A parameter with no default whose hint builds a class, as ``pyct run``
-reads it (``hint_check``), gets that class's constructor seed instead: the
-seed of its constructor's signature by this same rule, ``{}`` for a
-constructor that is not Python code or takes no parameter, and an Enum's
-first member's value as a one-item list, which ``pyct run`` passes to the
-Enum to build. When sweep cannot seed the class, or the class is already
-being built on the way down to the parameter, the parameter gets the value
-the rule above gives its hint, ``null`` beside None. When that rule gives
-none, the entry is skipped with the constructor's reason.
+reads it (``hint_check``), gets that class's constructor seed: the seed of
+its constructor's signature by this same rule, ``{}`` for a constructor that
+is not Python code or takes no parameter, and an Enum's first member's value
+as a one-item list, which ``pyct run`` passes to the Enum to build. When the
+hint holds None beside the class, or when the default is None, the parameter
+gets it only in the entry's second seed, which ``seeds_of`` gives when its
+JSON text differs from the first's. When sweep cannot seed the class, or the class is
+already being built on the way down to the parameter, the parameter gets the
+value the rules above give it. When they give none, the entry is skipped
+with the constructor's reason.
 
 A method a class's own body defines gets the seed of its own parameters.
 When Python binds it to an instance read through the class, as ``pyct run``
@@ -111,9 +113,7 @@ def first_seed(fn: Callable[..., object]) -> dict[str, object]:
 
 
 def seeds_of(fn: Callable[..., object]) -> list[dict[str, object]]:
-    """The seeds for ``fn``: ``first_seed``'s, then the second, in which every parameter whose
-    default is None, or that has no default and a hint beside None, and whose hint builds a
-    class sweep seeds is built from it. One seed when the second's JSON text is the first's."""
+    """The seeds for ``fn``: ``first_seed``'s, then the second when its JSON text differs."""
     first = first_seed(fn)
     way = TOP.into(fn) if is_a_class(fn) else TOP
     return _pair(first, _seed(fn, way.in_second()))
@@ -168,17 +168,14 @@ def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[st
 
 
 def constructor_seed(cls: type, way: _Way = TOP) -> object:
-    """The seed a hint that builds ``cls`` gets: its constructor's seed, ``{}`` for a constructor
-    that is not Python code or takes no parameter, or an Enum's first member's value as a
-    one-item list."""
+    """The seed a hint that builds ``cls`` gets."""
     if issubclass(cls, enum.Enum):
         return _member_seed(cls)
     return arguments_seed(cls, way)
 
 
 def arguments_seed(cls: type, way: _Way = TOP) -> dict[str, object]:
-    """The seed of the arguments ``cls``'s constructor takes, ``{}`` for a constructor that is
-    not Python code."""
+    """The seed of the arguments ``cls``'s constructor takes."""
     inner = way.into(cls)
     if not python_constructor(cls):
         return {}
@@ -232,7 +229,6 @@ def _class_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _W
     if default is not inspect.Parameter.empty and not (default is None and way.second):
         return NOT_BUILT
     cls = _built_class(parameter, fn)
-    # a class beside None starts at its other value, and the second seed builds it
     if cls is None or (not way.second and _beside_none(parameter, fn)):
         return NOT_BUILT
     return constructor_seed(cls, way)
