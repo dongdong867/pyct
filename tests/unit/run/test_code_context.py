@@ -471,7 +471,7 @@ def test_a_cached_target_that_calls_itself_comes_once() -> None:
 
 
 class Wrapper:
-    """A callable object that records each attribute read on it, as a target's hook can."""
+    """A wrapper that records each attribute read on it, as a target's hook can."""
 
     reads: ClassVar[list[str]] = []
 
