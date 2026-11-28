@@ -485,7 +485,7 @@ held.__dict__["__wrapped__"] = helper
 
 
 def calls_wrapped(x: int) -> int:
-    return held(x)
+    return held(x)  # pyrefly: ignore[not-callable]
 
 
 def test_finding_a_wrapped_helper_reads_nothing_through_its_wrapper() -> None:
