@@ -45,6 +45,18 @@ def limited(x: int, limit: int = None) -> None:  # type: ignore[assignment]  # n
     return None
 
 
+def wait(timeout: float = None) -> None:  # type: ignore[assignment]  # noqa: RUF013
+    return None
+
+
+class Timer:
+    def __init__(self, timeout: float = None) -> None:  # type: ignore[assignment]  # noqa: RUF013
+        self.timeout = timeout
+
+    def start(self) -> None:
+        return None
+
+
 # sweep-none-default-class-seeds
 @pytest.mark.parametrize(
     ("fn", "expected"),
@@ -125,6 +137,28 @@ def test_a_none_default_on_a_plain_hint_gives_a_second_seed_with_its_value() -> 
     assert written(seeds_of(limited)) == written([{"x": 0}, {"x": 0, "limit": 0}])
     first = {"x": 0, "strict": False, "sep": ",", "ratio": 0.5, "tags": ["a"]}
     assert written(seeds_of(defaults.f)) == written([first, {**first, "limit": 0}])
+
+
+# sweep-none-default-class-seeds
+@pytest.mark.parametrize(
+    ("seeds", "expected"),
+    [
+        pytest.param(lambda: seeds_of(wait), [{}, {"timeout": 0.0}], id="a function"),
+        pytest.param(lambda: seeds_of(Timer), [{}, {"timeout": 0.0}], id="a constructor"),
+        pytest.param(
+            lambda: method_seeds(Timer, "start"),
+            [{"self": {}}, {"self": {"timeout": 0.0}}],
+            id="a method's constructor",
+        ),
+    ],
+)
+def test_a_none_default_on_a_plain_hint_alone_is_not_skipped(
+    seeds: Callable[[], list[dict[str, object]]], expected: list[dict[str, object]]
+) -> None:
+    # Given an entry whose only varied parameter has a None default under a plain hint alone
+    # When sweep reads its seeds
+    # Then the first seed leaves the parameter out and the second gives its plain value
+    assert written(seeds()) == written(expected)
 
 
 # sweep-none-default-class-seeds
