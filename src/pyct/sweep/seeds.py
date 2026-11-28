@@ -34,6 +34,15 @@ already being built on the way down to the parameter, the parameter gets the
 value the rules above give it. When they give none, the entry is skipped
 with the constructor's reason.
 
+A parameter whose default is None and whose hint is a plain type, beside None
+or alone, keeps the default in the first seed and gets, in the second, the
+value the rules above give a parameter with no default and that hint: ``""``
+for ``str | None``, ``0`` for ``int | None`` or ``int``, and a ``Literal``'s
+first value. A hint with a class beside plain types and None
+gives the class when sweep can seed it, and the plain value when it cannot. A
+hint with no such value, one Python cannot test, or one that modules disagree
+on keeps ``null``.
+
 A method a class's own body defines gets the seed of its own parameters.
 When Python binds it to an instance read through the class, as ``pyct run``
 reads it (``self_class_of``), its first parameter holds the seed of the
@@ -85,7 +94,8 @@ class NoSeedError(Exception):
 @dataclass(frozen=True)
 class _Way:
     """The classes whose constructor seeds are read on the way down to a parameter, outer
-    first, and whether this is the second seed, which builds a None default's class."""
+    first, and whether this is the second seed, which gives a None default a class or a plain
+    value."""
 
     building: tuple[type, ...] = ()
     second: bool = False
@@ -114,10 +124,13 @@ def first_seed(fn: Callable[..., object]) -> dict[str, object]:
 
 
 def seeds_of(fn: Callable[..., object]) -> list[dict[str, object]]:
-    """The seeds for ``fn``: ``first_seed``'s, then the second when its JSON text differs."""
-    first = first_seed(fn)
+    """The seeds for ``fn``: the first, then the second when its JSON text differs. The first
+    may be empty when the second gives a value to a parameter the first leaves out."""
     way = TOP.into(fn) if is_a_class(fn) else TOP
-    return _pair(first, _seed(fn, way.in_second()))
+    first, second = _seed(fn, way), _seed(fn, way.in_second())
+    if not first and not second:
+        raise NoSeedError("no parameter to vary")
+    return _pair(first, second)
 
 
 def _pair(first: dict[str, object], second: dict[str, object]) -> list[dict[str, object]]:
@@ -153,11 +166,18 @@ def method_seeds(cls: type, name: str, instance: Instance | None = None) -> list
     """The seeds for the method ``cls`` holds under ``name``, as ``seeds_of`` makes a function's,
     with ``instance`` read by ``instance_of(cls)`` when none is given."""
     instance = instance_of(cls) if instance is None else instance
-    first = _method_seed(cls, name, instance, TOP)
-    return _pair(first, _method_seed(cls, name, instance, TOP.in_second()))
+    (first, first_varies), (second, second_varies) = (
+        _method_seed(cls, name, instance, way) for way in (TOP, TOP.in_second())
+    )
+    if not first_varies and not second_varies:
+        raise NoSeedError("no parameter to vary")
+    return _pair(first, second)
 
 
-def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[str, object]:
+def _method_seed(
+    cls: type, name: str, instance: Instance, way: _Way
+) -> tuple[dict[str, object], bool]:
+    """The method's seed, and whether it varies a parameter of its own or of its instance."""
     method = getattr(cls, name)
     key = None if self_class_of(cls, name, method) is None else self_name_of(_signature(method))
     own = _seed(method, way, skip=key)
@@ -169,9 +189,7 @@ def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[st
         if built is None:
             raise NoSeedError(f"no seed for {key}: {instance.why}")
         held[key] = built
-    if not own and not any(held.values()):
-        raise NoSeedError("no parameter to vary")
-    return {**held, **own}
+    return {**held, **own}, bool(own) or any(held.values())
 
 
 def constructor_seed(cls: type, way: _Way = TOP) -> object:
@@ -224,6 +242,9 @@ def _parameter_value(
     default = parameter.default
     if default is inspect.Parameter.empty:
         return 0 if parameter.annotation is inspect.Parameter.empty else _fitted(parameter, fn, why)
+    plain = _plain_seed(parameter, fn, way)
+    if plain is not NOT_BUILT:
+        return plain
     if carried(default) and not contradictions(checks, {parameter.name: default}):
         return _written(default)
     return LEFT_OUT
@@ -239,6 +260,18 @@ def _class_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _W
     if cls is None or (not way.second and _beside_none(parameter, fn)):
         return NOT_BUILT
     return constructor_seed(cls, way)
+
+
+def _plain_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _Way) -> object:
+    """The plain value the parameter's hint fits, for the second seed of a None default, or
+    ``NOT_BUILT`` when this seed gives none."""
+    if parameter.default is not None or not way.second:
+        return NOT_BUILT
+    if parameter.annotation is inspect.Parameter.empty:
+        return NOT_BUILT
+    agreed = resolved(parameter.annotation, fn, _typed_fit)
+    fit = NO_FIT if agreed is None else agreed[1]
+    return NOT_BUILT if fit is None or fit is NO_FIT or fit is UNTESTABLE else fit
 
 
 def _member_seed(cls: type[enum.Enum]) -> list[object]:

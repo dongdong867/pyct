@@ -19,8 +19,8 @@ entry too, ``Class.method``, seeded with the constructor's seed under its
 first parameter when it runs on an instance (``seeds.method_seeds``).
 
 An entry's seed is one seed, or a list of two when the second seed, which
-builds the classes beside None that a None default leaves out, differs from
-the first (``seeds.seeds_of``).
+builds the classes and gives the plain values that a None default leaves out,
+differs from the first (``seeds.seeds_of``).
 """
 
 import contextlib

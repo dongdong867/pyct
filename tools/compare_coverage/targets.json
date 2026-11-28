@@ -991,6 +991,7 @@
     {"set": "v2", "module": "targets.sweep.nodes", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.not_its_own", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.nothing", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.optional", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.orders", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.pair", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.relabeled.core", "left_out": "a sweep fixture"},

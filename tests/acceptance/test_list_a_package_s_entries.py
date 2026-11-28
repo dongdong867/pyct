@@ -50,7 +50,7 @@ def test_keeps_a_default_seed_json_carries() -> None:
     assert result.returncode == 0, result.stderr
     f = row_named(result.stdout, f"{FIXTURES}.defaults", "f")
     expected = {"x": 0, "strict": False, "sep": ",", "ratio": 0.5, "tags": ["a"]}
-    assert as_json(f["seed"]) == as_json(expected)
+    assert as_json(f["seed"]) == as_json([expected, {**expected, "limit": 0}])
     g = row_named(result.stdout, f"{FIXTURES}.defaults", "g")
     assert as_json(g["seed"]) == as_json({"value": 0, "strict": False})
 
