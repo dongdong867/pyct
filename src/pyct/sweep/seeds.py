@@ -124,10 +124,13 @@ def first_seed(fn: Callable[..., object]) -> dict[str, object]:
 
 
 def seeds_of(fn: Callable[..., object]) -> list[dict[str, object]]:
-    """The seeds for ``fn``: ``first_seed``'s, then the second when its JSON text differs."""
-    first = first_seed(fn)
+    """The seeds for ``fn``: the first, then the second when its JSON text differs. The first
+    may be empty when the second gives a value to a parameter the first leaves out."""
     way = TOP.into(fn) if is_a_class(fn) else TOP
-    return _pair(first, _seed(fn, way.in_second()))
+    first, second = _seed(fn, way), _seed(fn, way.in_second())
+    if not first and not second:
+        raise NoSeedError("no parameter to vary")
+    return _pair(first, second)
 
 
 def _pair(first: dict[str, object], second: dict[str, object]) -> list[dict[str, object]]:
@@ -163,11 +166,18 @@ def method_seeds(cls: type, name: str, instance: Instance | None = None) -> list
     """The seeds for the method ``cls`` holds under ``name``, as ``seeds_of`` makes a function's,
     with ``instance`` read by ``instance_of(cls)`` when none is given."""
     instance = instance_of(cls) if instance is None else instance
-    first = _method_seed(cls, name, instance, TOP)
-    return _pair(first, _method_seed(cls, name, instance, TOP.in_second()))
+    (first, first_varies), (second, second_varies) = (
+        _method_seed(cls, name, instance, way) for way in (TOP, TOP.in_second())
+    )
+    if not first_varies and not second_varies:
+        raise NoSeedError("no parameter to vary")
+    return _pair(first, second)
 
 
-def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[str, object]:
+def _method_seed(
+    cls: type, name: str, instance: Instance, way: _Way
+) -> tuple[dict[str, object], bool]:
+    """The method's seed, and whether it varies a parameter of its own or of its instance."""
     method = getattr(cls, name)
     key = None if self_class_of(cls, name, method) is None else self_name_of(_signature(method))
     own = _seed(method, way, skip=key)
@@ -179,9 +189,7 @@ def _method_seed(cls: type, name: str, instance: Instance, way: _Way) -> dict[st
         if built is None:
             raise NoSeedError(f"no seed for {key}: {instance.why}")
         held[key] = built
-    if not own and not any(held.values()):
-        raise NoSeedError("no parameter to vary")
-    return {**held, **own}
+    return {**held, **own}, bool(own) or any(held.values())
 
 
 def constructor_seed(cls: type, way: _Way = TOP) -> object:
