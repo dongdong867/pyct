@@ -34,6 +34,15 @@ already being built on the way down to the parameter, the parameter gets the
 value the rules above give it. When they give none, the entry is skipped
 with the constructor's reason.
 
+A parameter whose default is None and whose hint is a plain type, beside None
+or alone, keeps the default in the first seed and gets, in the second, the
+value the rules above give a parameter with no default and that hint: ``""``
+for ``str | None``, ``0`` for ``int | None`` or ``int``, and a ``Literal``'s
+first value. A hint with a class beside plain types and None
+gives the class when sweep can seed it, and the plain value when it cannot. A
+hint with no such value, one Python cannot test, or one that modules disagree
+on keeps ``null``.
+
 A method a class's own body defines gets the seed of its own parameters.
 When Python binds it to an instance read through the class, as ``pyct run``
 reads it (``self_class_of``), its first parameter holds the seed of the
@@ -85,7 +94,8 @@ class NoSeedError(Exception):
 @dataclass(frozen=True)
 class _Way:
     """The classes whose constructor seeds are read on the way down to a parameter, outer
-    first, and whether this is the second seed, which builds a None default's class."""
+    first, and whether this is the second seed, which gives a None default a class or a plain
+    value."""
 
     building: tuple[type, ...] = ()
     second: bool = False
@@ -224,6 +234,9 @@ def _parameter_value(
     default = parameter.default
     if default is inspect.Parameter.empty:
         return 0 if parameter.annotation is inspect.Parameter.empty else _fitted(parameter, fn, why)
+    plain = _plain_seed(parameter, fn, way)
+    if plain is not NOT_BUILT:
+        return plain
     if carried(default) and not contradictions(checks, {parameter.name: default}):
         return _written(default)
     return LEFT_OUT
@@ -239,6 +252,18 @@ def _class_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _W
     if cls is None or (not way.second and _beside_none(parameter, fn)):
         return NOT_BUILT
     return constructor_seed(cls, way)
+
+
+def _plain_seed(parameter: inspect.Parameter, fn: Callable[..., object], way: _Way) -> object:
+    """The plain value the parameter's hint fits, for the second seed of a None default, or
+    ``NOT_BUILT`` when this seed gives none."""
+    if parameter.default is not None or not way.second:
+        return NOT_BUILT
+    if parameter.annotation is inspect.Parameter.empty:
+        return NOT_BUILT
+    agreed = resolved(parameter.annotation, fn, _typed_fit)
+    fit = NO_FIT if agreed is None else agreed[1]
+    return NOT_BUILT if fit is None or fit is NO_FIT or fit is UNTESTABLE else fit
 
 
 def _member_seed(cls: type[enum.Enum]) -> list[object]:
