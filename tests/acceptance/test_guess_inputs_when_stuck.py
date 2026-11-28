@@ -223,6 +223,16 @@ def test_the_request_holds_the_target_s_same_package_callee() -> None:
     assert "def __init__(self, x: int) -> None:\n    self.size = bin(x)" in code
 
 
+# llm-request-holds-called-code
+def test_the_request_holds_a_called_helper_wrapped_by_lru_cache() -> None:
+    provider = FakeGuesses([[]])
+
+    run_guesses("targets.llm.wrapped::wrapped", {"x": 3}, provider)
+
+    code = provider.requests[0].code
+    assert "def _lru_helper() -> str:\n    # comment inside the lru_cache helper" in code
+
+
 # llm-guess-for-a-stuck-line-ask-failed
 def test_an_unanswered_guess_ask_is_said_and_the_run_goes_on() -> None:
     failed = Unanswered(Why.TIMED_OUT, "no reply in 30 s", AskCost(1))

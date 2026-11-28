@@ -448,3 +448,61 @@ def test_a_piece_in_a_file_that_does_not_read_gives_no_code(tmp_path: Path) -> N
     target = load_target("targets.llm.seeds::f")
 
     assert code_with_piece(target, str(tmp_path / "gone.py"), (1, 2)) == ""
+
+
+def test_a_called_helper_behind_lru_cache_or_cache_brings_its_own_code() -> None:
+    code = code_context(load_target("targets.llm.wrapped::wrapped"))
+
+    assert "# targets.llm.wrapped._lru_helper\n" in code
+    assert "def _lru_helper() -> str:\n    # comment inside the lru_cache helper" in code
+    assert "# targets.llm.wrapped._cache_helper\n" in code
+    assert "def _cache_helper() -> str:\n    # comment inside the cache helper" in code
+
+
+def test_a_called_helper_behind_a_wrapper_that_sets_wrapped_brings_its_own_code() -> None:
+    code = code_context(load_target("targets.llm.wrapped::wrapped"))
+
+    assert "# targets.llm.wrapped._object_helper\n" in code
+    assert "def _object_helper() -> str:\n    # comment inside the callable object helper" in code
+    assert "# targets.llm.wrapped._chained_helper\n" in code
+    assert "def _chained_helper() -> str:\n    # comment inside the chained helper" in code
+
+
+def test_a_cached_target_that_calls_itself_comes_once() -> None:
+    code = code_context(load_target("targets.llm.wrapped::again"))
+
+    assert headers(code) == ["# targets.llm.wrapped.again", "# targets.llm.wrapped._base"]
+
+
+class Wrapper:
+    """A callable object that keeps a mark of each attribute read on it, as a target's hook
+    can, and holds the function it wraps in its own ``__dict__``."""
+
+    reads: ClassVar[list[str]] = []
+
+    def __init__(self, fn: object) -> None:
+        self.__dict__["__wrapped__"] = fn
+
+    def __getattribute__(self, name: str) -> object:
+        Wrapper.reads.append(name)
+        return super().__getattribute__(name)
+
+
+def wrapped_helper(x: int) -> int:
+    return x + 1
+
+
+held = Wrapper(wrapped_helper)
+
+
+def calls_wrapped(x: int) -> int:
+    return held(x)
+
+
+def test_finding_a_wrapped_helper_reads_nothing_through_its_wrapper() -> None:
+    Wrapper.reads.clear()
+
+    code = code_context(here("calls_wrapped", calls_wrapped))
+
+    assert headers(code) == [f"# {__name__}.calls_wrapped", f"# {__name__}.wrapped_helper"]
+    assert Wrapper.reads == []

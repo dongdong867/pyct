@@ -580,6 +580,7 @@
     {"set": "v2", "module": "targets.llm.shop.__main__", "left_out": "the package's __main__.py, whose class the LLM seeds request leaves out, run only through run() with a fake provider"},
     {"set": "v2", "module": "targets.llm.shop.greet", "left_out": "its seeds name classes with \"__class__\", a seed form legacy does not read"},
     {"set": "v2", "module": "targets.llm.shop.models", "left_out": "holds the classes greet.py's seeds name with \"__class__\", a seed form legacy does not read; its methods run on an instance each input builds"},
+    {"set": "v2", "module": "targets.llm.wrapped", "left_out": "a fixture of the LLM requests' code for helpers behind a decorator that sets __wrapped__, run only through run() with a fake provider"},
     {"set": "v2", "module": "targets.load.annotated_for_type_checking", "left_out": "annotated with a name only a type checker imports, by design"},
     {"set": "v2", "module": "targets.load.catches_one_stop_at_import", "left_out": "waits at import until a BaseException, by design"},
     {"set": "v2", "target": "targets.load.counts_its_imports::f", "seed": {"x": 0}},
