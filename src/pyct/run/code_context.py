@@ -5,8 +5,8 @@ that its package defines, breadth first, each once and whole, while the code sta
 limit. A call is found by its name, read from the module the function was written in, or from
 the class a method's ``self`` or ``cls`` names, and followed through ``__wrapped__`` to the
 function a decorator such as ``functools.lru_cache`` wraps. Each module, class and wrapper it
-reads to find a call is read by its type alone. The code itself is read by ``inspect.getsource``, as ``_part``
-says, which reads attributes as Python does.
+reads to find a call is read by its type alone. The code itself is read by
+``inspect.getsource``, as ``_part`` says, which reads attributes as Python does.
 """
 
 from __future__ import annotations
