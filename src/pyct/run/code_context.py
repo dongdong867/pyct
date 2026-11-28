@@ -3,9 +3,10 @@
 The target comes first, and for a method its class's ``__init__``, then each function they call
 that its package defines, breadth first, each once and whole, while the code stays within the
 limit. A call is found by its name, read from the module the function was written in, or from
-the class a method's ``self`` or ``cls`` names. Each module, class and wrapper it reads to find
-a call is read by its type alone. The code itself is read by ``inspect.getsource``, as ``_part``
-says, which reads attributes as Python does.
+the class a method's ``self`` or ``cls`` names, and followed through ``__wrapped__`` to the
+function a decorator such as ``functools.lru_cache`` wraps. Each module, class and wrapper it
+reads to find a call is read by its type alone. The code itself is read by
+``inspect.getsource``, as ``_part`` says, which reads attributes as Python does.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from pyct.run.target import Target
 CODE_LIMIT = 16_000
 # the lines of the function around a condition a request holds at most
 AROUND_LINES = 200
+# the ``__wrapped__`` steps followed from a called name at most, the count ``core`` follows
+_WRAPPED_STEPS = 8
 
 type Code = Callable[..., object]
 
@@ -124,7 +127,7 @@ def _gathered(starts: list[Code], written: Mapping[int, str], package: str, limi
     """The starts' code, then their callees' in ``package``, breadth first, each once, up to
     ``limit``; a function in ``written`` as written there."""
     waiting = deque(starts)
-    seen = {id(each) for each in waiting}
+    seen = {id(each) for each in waiting} | {id(_followed(each)) for each in waiting}
     parts: list[str] = []
     used = 0
     while waiting:
@@ -198,6 +201,18 @@ def _unwrapped(value: object) -> object:
     return value
 
 
+def _followed(value: object) -> object:
+    """What the value's ``__wrapped__`` chain ends at, at most ``_WRAPPED_STEPS`` steps, each
+    read with ``inspect.getattr_static`` so that no attribute hook of a wrapper runs; the
+    value itself when it has none."""
+    for _ in range(_WRAPPED_STEPS):
+        try:
+            value = inspect.getattr_static(value, "__wrapped__")
+        except AttributeError:
+            break
+    return value
+
+
 def _starts(target: Target) -> list[Code]:
     """The target, and for a method whose instance each input builds, its class's ``__init__``
     when the class defines one in Python."""
@@ -232,6 +247,7 @@ def _callees(function: Code, part: str, package: str) -> Iterator[Code]:
         found = _resolved(node.func, function)
         if _is_class(found):
             found = _function(found, "__init__")
+        found = _followed(found)
         if not _is_function(found):
             continue
         module = found.__module__

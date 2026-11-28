@@ -70,6 +70,23 @@ def test_the_request_holds_the_code_its_callee_the_signature_the_seed_and_the_go
     assert "coverage" in text
 
 
+# llm-request-holds-called-code
+def test_the_request_holds_a_called_helper_wrapped_by_lru_cache(stub: Stub, tmp_path: Path) -> None:
+    llm_run(
+        replying(stub, {"x": 7}),
+        tmp_path,
+        '{"x": 0}',
+        "--llm",
+        "seeds",
+        target="targets.llm.wrapped::wrapped",
+    )
+
+    [received] = stub.received
+    [message] = received.body["input"]  # type: ignore[misc]
+    text = message["content"]
+    assert "def _lru_helper() -> str:\n    # comment inside the lru_cache helper" in text
+
+
 # llm-seeds-at-start-wait-is-not-budget-time
 def test_the_wait_for_the_model_is_not_budget_time(stub: Stub, tmp_path: Path) -> None:
     stub.delay = 3
